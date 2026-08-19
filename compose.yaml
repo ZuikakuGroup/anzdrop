@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    tty: true
+    ports:
+      - 3000:3000
+      - 8787:8787
+    volumes:
+      - .:/app

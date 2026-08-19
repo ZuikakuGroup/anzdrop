@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "anzdrop",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-05-03",
+
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": ".open-next/assets"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "anzdrop"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "FILES_BUCKET",
+      "bucket_name": "anzdrop"
+    }
+  ]
+}
