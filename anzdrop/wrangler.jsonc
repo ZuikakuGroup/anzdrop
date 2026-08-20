@@ -3,6 +3,7 @@
   "name": "anzdrop",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-05-03",
+  "account_id": "2a1ab8b6a9b36f7f0c4292dce044e0c4",
 
   "compatibility_flags": ["nodejs_compat"],
 
@@ -13,7 +14,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "anzdrop"
+      "database_name": "anzdrop-db",
+      "database_id": "ad69638b-dbf8-4b71-beb2-0fc23d98d9cd"
     }
   ],
 

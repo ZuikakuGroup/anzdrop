@@ -1,25 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { generateKey, iterateEncryptedChunks } from "@/lib/crypto";
+import {
+  generateKey,
+  exportKey,
+  encryptChunk,
+  packChunk,
+  encodeBase64Url,
+  iterateEncryptedChunks,
+} from "@/lib/crypto";
 
 type UploadStartResponse = {
   success: boolean;
   shareId?: string;
   uploadSessionId?: string;
+  expiresAt?: string;
   error?: string;
 };
 
+type UploadCompleteResponse = {
+  success: boolean;
+  fileId?: string;
+  error?: string;
+};
+
+async function encryptFileName(
+  name: string,
+  key: CryptoKey
+): Promise<string> {
+  const nameBytes = new TextEncoder().encode(name);
+  const encrypted = await encryptChunk(nameBytes, key);
+  const packed = packChunk(encrypted);
+
+  return encodeBase64Url(packed);
+}
+
 export default function UploadForm() {
   const [files, setFiles] = useState<File[]>([]);
-  const [shareId, setShareId] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
-
-  const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/d/${shareId}`
-      : "";
 
   const handleFileChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -39,68 +59,91 @@ export default function UploadForm() {
 
     setError("");
     setIsUploading(true);
+    setShareUrl("");
 
     try {
-      const file = files[0];
-
-      const response = await fetch("/api/upload/start", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          encryptedFileName: file.name,
-        }),
-      });
-
-      const result =
-        (await response.json()) as UploadStartResponse;
-
-      console.log(result);
-
-      if (!response.ok) {
-        throw new Error(
-          result.error ?? "Upload start failed"
-        );
-      }
-
-      const uploadSessionId = result.uploadSessionId;
-
-      if (!uploadSessionId) {
-        throw new Error("uploadSessionId is missing");
-      }
-
+      // 共有全体で1本の鍵を使い回す
       const key = await generateKey();
 
-      let partNumber = 1;
+      let shareId: string | undefined;
 
-      for await (const chunk of iterateEncryptedChunks(file, key)) {
-        console.log(
-          `Uploading part ${partNumber}: ${chunk.byteLength} bytes`
-        );
+      for (const file of files) {
+        const encryptedFileName = await encryptFileName(file.name, key);
 
-        const body = chunk.buffer.slice(
-          chunk.byteOffset,
-          chunk.byteOffset + chunk.byteLength
-        ) as ArrayBuffer;
-
-        const chunkResponse = await fetch("/api/upload/chunk", {
+        const startResponse = await fetch("/api/upload/start", {
           method: "POST",
           headers: {
-            "Anzdrop-Upload-Session": uploadSessionId,
-            "Anzdrop-Part-Number": String(partNumber),
+            "Content-Type": "application/json",
           },
-          body,
+          body: JSON.stringify({
+            encryptedFileName,
+            fileSize: file.size,
+            shareId,
+          }),
         });
 
-        if (!chunkResponse.ok) {
-          throw new Error(`Chunk ${partNumber} upload failed`);
+        const startResult =
+          (await startResponse.json()) as UploadStartResponse;
+
+        if (!startResponse.ok || !startResult.uploadSessionId) {
+          throw new Error(
+            startResult.error ?? "Upload start failed"
+          );
         }
 
-        partNumber++;
+        shareId = startResult.shareId;
+
+        let partNumber = 1;
+
+        for await (const chunk of iterateEncryptedChunks(file, key)) {
+          const body = chunk.buffer.slice(
+            chunk.byteOffset,
+            chunk.byteOffset + chunk.byteLength
+          ) as ArrayBuffer;
+
+          const chunkResponse = await fetch("/api/upload/chunk", {
+            method: "POST",
+            headers: {
+              "Anzdrop-Upload-Session": startResult.uploadSessionId,
+              "Anzdrop-Part-Number": String(partNumber),
+            },
+            body,
+          });
+
+          if (!chunkResponse.ok) {
+            throw new Error(
+              `${file.name} のチャンク ${partNumber} アップロードに失敗しました`
+            );
+          }
+
+          partNumber++;
+        }
+
+        const completeResponse = await fetch("/api/upload/complete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            uploadSessionId: startResult.uploadSessionId,
+          }),
+        });
+
+        const completeResult =
+          (await completeResponse.json()) as UploadCompleteResponse;
+
+        if (!completeResponse.ok || !completeResult.success) {
+          throw new Error(
+            completeResult.error ?? `${file.name} の完了処理に失敗しました`
+          );
+        }
       }
 
-      setShareId(result.shareId ?? "");
+      const keyFragment = encodeBase64Url(await exportKey(key));
+
+      setShareUrl(
+        `${window.location.origin}/d/${shareId}#${keyFragment}`
+      );
     } catch (unknownErr) {
       const error =
         unknownErr instanceof Error
@@ -156,7 +199,7 @@ export default function UploadForm() {
           {error}
         </p>
       )}
-      {shareId && (
+      {shareUrl && (
         <div className="mt-6">
           <h2 className="font-semibold">
             共有URL

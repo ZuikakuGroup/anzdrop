@@ -11,6 +11,7 @@ type FileRecord = {
   share_id: string;
   storage_key: string;
   encrypted_file_name: string;
+  size: number;
 };
 
 type RouteContext = {
@@ -22,6 +23,7 @@ type RouteContext = {
 type DownloadResponseFile = {
   id: string;
   name: string;
+  size: number;
 };
 
 type DownloadResponseShare = {
@@ -75,7 +77,8 @@ export async function GET(
           id,
           share_id,
           storage_key,
-          encrypted_file_name
+          encrypted_file_name,
+          size
         FROM files
         WHERE share_id = ?
       `
@@ -91,6 +94,7 @@ export async function GET(
     const responseFiles: DownloadResponseFile[] = files.map((file) => ({
       id: file.id,
       name: file.encrypted_file_name,
+      size: file.size,
     }));
 
     return Response.json({
