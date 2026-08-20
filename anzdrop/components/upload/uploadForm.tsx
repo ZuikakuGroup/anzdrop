@@ -13,6 +13,7 @@ import {
 type UploadStartResponse = {
   success: boolean;
   shareId?: string;
+  uploadToken?: string;
   uploadSessionId?: string;
   expiresAt?: string;
   error?: string;
@@ -66,6 +67,7 @@ export default function UploadForm() {
       const key = await generateKey();
 
       let shareId: string | undefined;
+      let uploadToken: string | undefined;
 
       for (const file of files) {
         const encryptedFileName = await encryptFileName(file.name, key);
@@ -79,6 +81,7 @@ export default function UploadForm() {
             encryptedFileName,
             fileSize: file.size,
             shareId,
+            uploadToken,
           }),
         });
 
@@ -92,6 +95,7 @@ export default function UploadForm() {
         }
 
         shareId = startResult.shareId;
+        uploadToken = startResult.uploadToken;
 
         let partNumber = 1;
 
