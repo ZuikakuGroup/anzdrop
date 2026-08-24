@@ -2,6 +2,7 @@ type ShareRow = {
   created_at: string;
   expires_at: string;
   upload_token: string | null;
+  suspended_at: string | null;
 };
 
 export type ShareOwnership = {
@@ -28,7 +29,7 @@ export async function verifyShareOwnership(
   const share = await db
     .prepare(
       `
-        SELECT created_at, expires_at, upload_token FROM shares WHERE id = ?
+        SELECT created_at, expires_at, upload_token, suspended_at FROM shares WHERE id = ?
       `
     )
     .bind(shareId)
@@ -44,6 +45,10 @@ export async function verifyShareOwnership(
 
   if (new Date(share.expires_at) <= new Date()) {
     return { ok: false, status: 410, error: "Share has expired" };
+  }
+
+  if (share.suspended_at) {
+    return { ok: false, status: 403, error: "Share is suspended" };
   }
 
   return {

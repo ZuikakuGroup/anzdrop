@@ -17,12 +17,14 @@ type ReportRow = {
 type ShareInfoRow = {
   id: string;
   expires_at: string;
+  suspended_at: string | null;
   file_count: number;
 };
 
 type ReportShareInfo = {
   exists: boolean;
   expired: boolean;
+  suspended: boolean;
   fileCount: number;
 };
 
@@ -76,7 +78,8 @@ async function fetchShareInfoByIds(
 
   const { results } = await env.DB.prepare(
     `
-      SELECT s.id AS id, s.expires_at AS expires_at, COUNT(f.id) AS file_count
+      SELECT s.id AS id, s.expires_at AS expires_at, s.suspended_at AS suspended_at,
+             COUNT(f.id) AS file_count
       FROM shares s
       LEFT JOIN files f ON f.share_id = s.id
       WHERE s.id IN (${placeholders})
@@ -143,9 +146,10 @@ export async function GET(request: Request): Promise<Response> {
           ? {
               exists: true,
               expired: new Date(shareInfo.expires_at) <= now,
+              suspended: shareInfo.suspended_at !== null,
               fileCount: shareInfo.file_count,
             }
-          : { exists: false, expired: false, fileCount: 0 },
+          : { exists: false, expired: false, suspended: false, fileCount: 0 },
       };
     });
 

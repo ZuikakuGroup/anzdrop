@@ -36,7 +36,7 @@
 
 共有のメタデータとファイル一覧を返す。
 
-- 共有が存在しない/期限切れの場合はそれぞれ404/410。
+- 共有が存在しない/期限切れ/一時停止中の場合はそれぞれ404/410/403。
 - レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt }, files: [{ id, name, size }] }`
   - `files` の `name` は暗号化済みファイル名(クライアント側で復号が必要)。
   - ダウンロード回数上限(保存期間「1回」)に達したファイルは一覧から自動的に除外される。
@@ -46,7 +46,7 @@
 
 ファイル本体を暗号化済みバイナリのままストリーミング返却する。
 
-- 共有が期限切れの場合410。ファイル/共有が存在しない場合404。
+- 共有が期限切れの場合410、一時停止中の場合403。ファイル/共有が存在しない場合404。
 - ダウンロード回数の上限チェックと加算を1つの `UPDATE ... RETURNING` で原子的に行い、条件を満たさない(既に上限到達)場合は404扱い。
 - このリクエストが許可された最後の1回だった場合、レスポンスをブロックせず `ctx.waitUntil()` で裏からR2オブジェクトとDBレコードを削除する。
 - レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。
@@ -74,12 +74,20 @@
 通報一覧を取得する。`status` 省略時は `"open"`(未対応)。
 
 - レスポンスの `reports` は `created_at DESC` を基本としつつ、`category = "csam"` の通報を最優先で先頭に並べる。
-- 各要素に共有の現況(`share.exists`/`share.expired`/`share.fileCount`)も付与される。
+- 各要素に共有の現況(`share.exists`/`share.expired`/`share.suspended`/`share.fileCount`)も付与される。
 
 ### `POST /api/admin/reports/[reportId]/resolve`
 
 通報を対応済み(`resolved_at`設定)にする。
 
+### `DELETE /api/admin/reports/[reportId]`
+
+通報を削除する。誤送信・スパム的な通報などを一覧から完全に取り除く用途。既に削除済みの通報に対しても冪等に成功扱い。対応済みにする(`resolve`)とは異なり、行自体をDBから削除する。
+
 ### `DELETE /api/admin/shares/[shareId]`
 
 共有をR2/D1から完全に削除する(`lib/cleanup.ts` の `deleteShare()` を利用)。既に削除済みの共有に対しても冪等に成功扱い。
+
+### `POST /api/admin/shares/[shareId]/suspend` / `POST /api/admin/shares/[shareId]/unsuspend`
+
+共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗り、`POST /api/upload/start`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。

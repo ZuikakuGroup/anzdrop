@@ -5,6 +5,7 @@ type ShareRow = {
   created_at: string;
   expires_at: string;
   upload_token: string | null;
+  suspended_at: string | null;
 } | null;
 
 function createFakeDb(row: ShareRow) {
@@ -56,6 +57,7 @@ describe("verifyShareOwnership", () => {
       created_at: "2026-01-01T00:00:00.000Z",
       expires_at: "2099-01-01T00:00:00.000Z",
       upload_token: null,
+      suspended_at: null,
     });
 
     const result = await verifyShareOwnership(db, "share-1", "some-token");
@@ -72,6 +74,7 @@ describe("verifyShareOwnership", () => {
       created_at: "2026-01-01T00:00:00.000Z",
       expires_at: "2099-01-01T00:00:00.000Z",
       upload_token: "correct-token",
+      suspended_at: null,
     });
 
     const result = await verifyShareOwnership(db, "share-1", "wrong-token");
@@ -88,6 +91,7 @@ describe("verifyShareOwnership", () => {
       created_at: "2020-01-01T00:00:00.000Z",
       expires_at: "2020-01-02T00:00:00.000Z", // 過去
       upload_token: "correct-token",
+      suspended_at: null,
     });
 
     const result = await verifyShareOwnership(db, "share-1", "correct-token");
@@ -99,11 +103,29 @@ describe("verifyShareOwnership", () => {
     });
   });
 
+  it("returns 403 for a suspended share even with a correct, unexpired token", async () => {
+    const { db } = createFakeDb({
+      created_at: "2026-01-01T00:00:00.000Z",
+      expires_at: "2099-01-01T00:00:00.000Z",
+      upload_token: "correct-token",
+      suspended_at: "2026-02-01T00:00:00.000Z",
+    });
+
+    const result = await verifyShareOwnership(db, "share-1", "correct-token");
+
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      error: "Share is suspended",
+    });
+  });
+
   it("succeeds and returns the share's createdAt/expiresAt for a valid, unexpired, matching token", async () => {
     const { db, bind } = createFakeDb({
       created_at: "2026-01-01T00:00:00.000Z",
       expires_at: "2099-01-01T00:00:00.000Z",
       upload_token: "correct-token",
+      suspended_at: null,
     });
 
     const result = await verifyShareOwnership(db, "share-1", "correct-token");

@@ -6,6 +6,7 @@ type Share = {
   expires_at: string;
   wrapped_key: string | null;
   key_salt: string | null;
+  suspended_at: string | null;
 };
 
 type FileRecord = {
@@ -45,7 +46,7 @@ export async function GET(
     const { shareId } = await context.params;
     const share = await env.DB.prepare(
       `
-        SELECT id, created_at, expires_at, wrapped_key, key_salt
+        SELECT id, created_at, expires_at, wrapped_key, key_salt, suspended_at
         FROM shares
         WHERE id = ?
       `
@@ -72,6 +73,16 @@ export async function GET(
           error: "Share has expired",
         },
         { status: 410 }
+      );
+    }
+
+    if (share.suspended_at) {
+      return Response.json(
+        {
+          success: false,
+          error: "Share is suspended",
+        },
+        { status: 403 }
       );
     }
 

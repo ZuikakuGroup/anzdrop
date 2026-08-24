@@ -33,6 +33,7 @@ type Share = {
   id: string;
   created_at: string;
   expires_at: string;
+  suspended_at: string | null;
 };
 
 export async function GET(
@@ -70,7 +71,7 @@ export async function GET(
 
     const share = await env.DB.prepare(
       `
-    SELECT id, created_at, expires_at
+    SELECT id, created_at, expires_at, suspended_at
     FROM shares
     WHERE id = ?
   `
@@ -95,6 +96,16 @@ export async function GET(
           error: "Share has expired",
         },
         { status: 410 }
+      );
+    }
+
+    if (share.suspended_at) {
+      return Response.json(
+        {
+          success: false,
+          error: "Share is suspended",
+        },
+        { status: 403 }
       );
     }
 

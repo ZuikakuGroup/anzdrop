@@ -172,6 +172,12 @@ export default function DownloadPage({
             );
           }
 
+          if (response.status === 403) {
+            throw new FriendlyError(
+              "この共有は運営者により一時停止されています。"
+            );
+          }
+
           throw new Error(result.error ?? "Download failed");
         }
 

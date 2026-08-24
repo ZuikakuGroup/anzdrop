@@ -16,6 +16,7 @@
 | `upload_token` | TEXT (nullable) | 複数ファイル相乗り時の所有権証明トークン。`shareId`と異なりURLに含まれない(migration 0002) |
 | `wrapped_key` | TEXT (nullable) | パスワード保護時、パスワード由来鍵でラップされた暗号化鍵(migration 0004) |
 | `key_salt` | TEXT (nullable) | 上記のラップに使ったPBKDF2ソルト(migration 0004) |
+| `suspended_at` | TEXT (nullable) | 管理画面からの一時停止日時。設定されている間はダウンロード・追加アップロードとも拒否される(migration 0008) |
 
 ### `uploads`
 
@@ -87,5 +88,6 @@
 | `0005_add_report_resolution.sql` | `reports.resolved_at` 追加(対応済み管理) |
 | `0006_add_rights_holder_reports.sql` | 権利者向け申し立てフォーム対応(`report_type`/`claimant_name`/`contact_email`/`right_type`) |
 | `0007_add_report_category.sql` | 通報カテゴリ(`category`)追加 |
+| `0008_add_share_suspension.sql` | `shares.suspended_at` 追加(管理画面からの共有一時停止) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

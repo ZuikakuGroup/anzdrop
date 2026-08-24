@@ -10,6 +10,7 @@ type StatusFilter = "open" | "resolved" | "all";
 type ShareInfo = {
   exists: boolean;
   expired: boolean;
+  suspended: boolean;
   fileCount: number;
 };
 
@@ -88,6 +89,10 @@ function shareStatusLabel(share: ShareInfo): string {
     return "共有は既に存在しません";
   }
 
+  if (share.suspended) {
+    return `一時停止中・ファイル${share.fileCount}件`;
+  }
+
   if (share.expired) {
     return `期限切れ・ファイル${share.fileCount}件`;
   }
@@ -103,6 +108,9 @@ export default function AdminReportsPage() {
   const [resolvingId, setResolvingId] = useState("");
   const [confirmingShareId, setConfirmingShareId] = useState("");
   const [deletingShareId, setDeletingShareId] = useState("");
+  const [togglingShareId, setTogglingShareId] = useState("");
+  const [confirmingReportId, setConfirmingReportId] = useState("");
+  const [deletingReportId, setDeletingReportId] = useState("");
 
   const fetchReports = useCallback(
     async (targetStatus: StatusFilter): Promise<AdminReport[]> => {
@@ -247,6 +255,70 @@ export default function AdminReportsPage() {
     }
   };
 
+  const toggleSuspend = async (shareId: string, suspend: boolean) => {
+    if (togglingShareId) {
+      return;
+    }
+
+    setTogglingShareId(shareId);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/admin/shares/${shareId}/${suspend ? "suspend" : "unsuspend"}`,
+        { method: "POST" }
+      );
+      const result: ActionResponse = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error ?? "更新に失敗しました。");
+      }
+
+      await load(status);
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error
+          ? unknownErr
+          : new Error("Unknown error");
+
+      setError(err.message);
+    } finally {
+      setTogglingShareId("");
+    }
+  };
+
+  const confirmDeleteReport = async (reportId: string) => {
+    if (deletingReportId) {
+      return;
+    }
+
+    setDeletingReportId(reportId);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/admin/reports/${reportId}`, {
+        method: "DELETE",
+      });
+      const result: ActionResponse = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error ?? "削除に失敗しました。");
+      }
+
+      setConfirmingReportId("");
+      await load(status);
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error
+          ? unknownErr
+          : new Error("Unknown error");
+
+      setError(err.message);
+    } finally {
+      setDeletingReportId("");
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -337,9 +409,11 @@ export default function AdminReportsPage() {
                       </span>
                       <span
                         className={`rounded px-2 py-0.5 text-[11px] font-bold ${
-                          report.share.exists
-                            ? "bg-ink/10 text-ink/70"
-                            : "bg-ink/5 text-ink/40"
+                          report.share.exists && report.share.suspended
+                            ? "bg-amber-500/10 text-amber-700"
+                            : report.share.exists
+                              ? "bg-ink/10 text-ink/70"
+                              : "bg-ink/5 text-ink/40"
                         }`}
                       >
                         {shareStatusLabel(report.share)}
@@ -381,6 +455,22 @@ export default function AdminReportsPage() {
                       </button>
                     )}
 
+                    {report.share.exists && (
+                      <button
+                        onClick={() =>
+                          toggleSuspend(report.shareId, !report.share.suspended)
+                        }
+                        disabled={togglingShareId === report.shareId}
+                        className="rounded border-2 border-ink/20 px-3 py-1.5 text-xs font-bold transition-colors hover:bg-ink/[0.06] disabled:opacity-40"
+                      >
+                        {togglingShareId === report.shareId
+                          ? "更新中..."
+                          : report.share.suspended
+                            ? "一時停止を解除する"
+                            : "一時停止する"}
+                      </button>
+                    )}
+
                     {confirmingShareId === report.shareId ? (
                       <div className="flex items-center gap-2 rounded border-2 border-brand px-2 py-1">
                         <span className="text-xs font-bold text-brand">
@@ -414,6 +504,37 @@ export default function AdminReportsPage() {
                           共有を削除する
                         </button>
                       )
+                    )}
+
+                    {confirmingReportId === report.id ? (
+                      <div className="flex items-center gap-2 rounded border-2 border-ink/20 px-2 py-1">
+                        <span className="text-xs font-bold text-ink/70">
+                          この通報を削除しますか？
+                        </span>
+                        <button
+                          onClick={() => confirmDeleteReport(report.id)}
+                          disabled={deletingReportId === report.id}
+                          className="rounded bg-ink px-2 py-1 text-xs font-bold text-paper transition-colors hover:bg-ink/90 disabled:opacity-40"
+                        >
+                          {deletingReportId === report.id
+                            ? "削除中..."
+                            : "削除する"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingReportId("")}
+                          disabled={deletingReportId === report.id}
+                          className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingReportId(report.id)}
+                        className="rounded border-2 border-ink/20 px-3 py-1.5 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
+                      >
+                        この通報を削除する
+                      </button>
                     )}
                   </div>
                 </li>
