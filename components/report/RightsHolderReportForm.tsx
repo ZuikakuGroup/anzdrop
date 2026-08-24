@@ -4,7 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 
-type ReportFormProps = {
+type RightsHolderReportFormProps = {
   initialShareId: string;
 };
 
@@ -13,13 +13,12 @@ type ReportResponse = {
   error?: string;
 };
 
-type Category = "csam" | "malware" | "privacy" | "spam" | "other";
+type RightType = "copyright" | "trademark" | "portrait" | "other";
 
-const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
-  { value: "csam", label: "児童ポルノ等の違法コンテンツ" },
-  { value: "malware", label: "マルウェア・危険なファイル" },
-  { value: "privacy", label: "個人情報の無断掲載・晒し" },
-  { value: "spam", label: "スパム・迷惑行為" },
+const RIGHT_TYPE_OPTIONS: { value: RightType; label: string }[] = [
+  { value: "copyright", label: "著作権" },
+  { value: "trademark", label: "商標権" },
+  { value: "portrait", label: "肖像権・パブリシティ権" },
   { value: "other", label: "その他" },
 ];
 
@@ -29,12 +28,15 @@ const noopSubscribe = () => () => {};
 const getOriginSnapshot = () => window.location.origin;
 const getOriginServerSnapshot = () => "";
 
-export default function ReportForm({
+export default function RightsHolderReportForm({
   initialShareId,
-}: ReportFormProps) {
+}: RightsHolderReportFormProps) {
   const [shareId, setShareId] = useState(initialShareId);
-  const [category, setCategory] = useState<Category | "">("");
+  const [claimantName, setClaimantName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [rightType, setRightType] = useState<RightType>("copyright");
   const [reason, setReason] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -49,8 +51,18 @@ export default function ReportForm({
       return;
     }
 
-    if (!shareId.trim() || !category || !reason.trim()) {
-      setError("共有URL・通報の種類・理由を入力してください。");
+    if (
+      !shareId.trim() ||
+      !claimantName.trim() ||
+      !contactEmail.trim() ||
+      !reason.trim()
+    ) {
+      setError("必須項目をすべて入力してください。");
+      return;
+    }
+
+    if (!agreed) {
+      setError("申立内容が正当であることの確認にチェックしてください。");
       return;
     }
 
@@ -64,9 +76,11 @@ export default function ReportForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          reportType: "general",
+          reportType: "rights_holder",
           shareId,
-          category,
+          claimantName,
+          contactEmail,
+          rightType,
           reason,
         }),
       });
@@ -98,31 +112,31 @@ export default function ReportForm({
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
-              問題を報告
+              権利侵害の申し立て
             </h1>
             <p className="text-xs text-ink/50">
-              不正なファイルや迷惑行為を報告できます
+              著作権など、ご自身が権利をお持ちのコンテンツについて申し立てできます
             </p>
           </div>
 
           <div className="space-y-1 border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
             <p>
-              著作権など、ご自身が権利をお持ちのコンテンツについての申し立ては
+              権利者ご本人以外の方は
               {" "}
               <a
-                href={`/report/rights${
+                href={`/report${
                   shareId ? `?shareId=${encodeURIComponent(shareId)}` : ""
                 }`}
                 className="font-bold text-brand hover:underline"
               >
-                権利者の方向けフォーム
+                通常の通報フォーム
               </a>
               {" "}
               をご利用ください。
             </p>
           </div>
 
-          <div className="grid min-h-[400px]">
+          <div className="grid min-h-[560px]">
             <div
               className={`col-start-1 row-start-1 space-y-4 ${
                 submitted ? "invisible" : ""
@@ -132,13 +146,13 @@ export default function ReportForm({
             >
               <div className="space-y-1">
                 <label
-                  htmlFor="report-share-url"
+                  htmlFor="rh-report-share-url"
                   className="text-xs font-bold text-ink/50"
                 >
                   共有URL
                 </label>
                 <input
-                  id="report-share-url"
+                  id="rh-report-share-url"
                   type="text"
                   value={shareId}
                   onChange={(event) => setShareId(event.target.value)}
@@ -149,24 +163,55 @@ export default function ReportForm({
 
               <div className="space-y-1">
                 <label
-                  htmlFor="report-category"
+                  htmlFor="rh-report-claimant-name"
                   className="text-xs font-bold text-ink/50"
                 >
-                  通報の種類
+                  氏名・団体名
+                </label>
+                <input
+                  id="rh-report-claimant-name"
+                  type="text"
+                  value={claimantName}
+                  onChange={(event) => setClaimantName(event.target.value)}
+                  placeholder="権利者本人、または代理人の氏名・団体名"
+                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="rh-report-contact-email"
+                  className="text-xs font-bold text-ink/50"
+                >
+                  連絡先メールアドレス
+                </label>
+                <input
+                  id="rh-report-contact-email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="rh-report-right-type"
+                  className="text-xs font-bold text-ink/50"
+                >
+                  侵害されている権利
                 </label>
                 <div className="relative">
                   <select
-                    id="report-category"
-                    value={category}
+                    id="rh-report-right-type"
+                    value={rightType}
                     onChange={(event) =>
-                      setCategory(event.target.value as Category)
+                      setRightType(event.target.value as RightType)
                     }
                     className="w-full appearance-none rounded border-2 border-ink/20 px-3 py-2 pr-9 text-base outline-none focus:border-brand sm:text-sm"
                   >
-                    <option value="" disabled>
-                      選択してください
-                    </option>
-                    {CATEGORY_OPTIONS.map((option) => (
+                    {RIGHT_TYPE_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -191,20 +236,32 @@ export default function ReportForm({
 
               <div className="space-y-1">
                 <label
-                  htmlFor="report-reason"
+                  htmlFor="rh-report-reason"
                   className="text-xs font-bold text-ink/50"
                 >
-                  理由
+                  詳細
                 </label>
                 <textarea
-                  id="report-reason"
+                  id="rh-report-reason"
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                   rows={4}
-                  placeholder="問題の内容を具体的にご記入ください"
+                  placeholder="対象コンテンツとご自身の権利との関係を具体的にご記入ください"
                   className="w-full resize-none rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
+
+              <label className="flex items-start gap-2 text-xs text-ink/60">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(event) => setAgreed(event.target.checked)}
+                  className="mt-0.5 accent-brand"
+                />
+                <span>
+                  上記の内容が真実であり、自身が正当な権利者またはその代理人であることを表明します。
+                </span>
+              </label>
 
               <button
                 onClick={submit}
@@ -226,7 +283,7 @@ export default function ReportForm({
               aria-hidden={!submitted}
             >
               <p className="text-sm font-bold">
-                ご報告ありがとうございます。確認いたします。
+                ご申し立てありがとうございます。確認いたします。
               </p>
             </div>
           </div>

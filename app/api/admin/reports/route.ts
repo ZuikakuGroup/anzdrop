@@ -7,6 +7,11 @@ type ReportRow = {
   reason: string;
   created_at: string;
   resolved_at: string | null;
+  report_type: string;
+  claimant_name: string | null;
+  contact_email: string | null;
+  right_type: string | null;
+  category: string;
 };
 
 type ShareInfoRow = {
@@ -27,6 +32,11 @@ type AdminReport = {
   reason: string;
   createdAt: string;
   resolvedAt: string | null;
+  reportType: string;
+  claimantName: string | null;
+  contactEmail: string | null;
+  rightType: string | null;
+  category: string;
   share: ReportShareInfo;
 };
 
@@ -101,10 +111,11 @@ export async function GET(request: Request): Promise<Response> {
 
     const { results: reports } = await env.DB.prepare(
       `
-        SELECT id, share_id, reason, created_at, resolved_at
+        SELECT id, share_id, reason, created_at, resolved_at,
+               report_type, claimant_name, contact_email, right_type, category
         FROM reports
         ${whereClauseFor(status)}
-        ORDER BY created_at DESC
+        ORDER BY (category = 'csam') DESC, created_at DESC
       `
     ).all<ReportRow>();
 
@@ -123,6 +134,11 @@ export async function GET(request: Request): Promise<Response> {
         reason: report.reason,
         createdAt: report.created_at,
         resolvedAt: report.resolved_at,
+        reportType: report.report_type,
+        claimantName: report.claimant_name,
+        contactEmail: report.contact_email,
+        rightType: report.right_type,
+        category: report.category,
         share: shareInfo
           ? {
               exists: true,

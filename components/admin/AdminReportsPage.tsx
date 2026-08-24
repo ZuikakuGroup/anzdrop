@@ -19,6 +19,11 @@ type AdminReport = {
   reason: string;
   createdAt: string;
   resolvedAt: string | null;
+  reportType: string;
+  claimantName: string | null;
+  contactEmail: string | null;
+  rightType: string | null;
+  category: string;
   share: ShareInfo;
 };
 
@@ -48,6 +53,34 @@ function formatDateTime(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+const RIGHT_TYPE_LABELS: Record<string, string> = {
+  copyright: "著作権",
+  trademark: "商標権",
+  portrait: "肖像権・パブリシティ権",
+  other: "その他",
+};
+
+function rightTypeLabel(rightType: string | null): string {
+  if (!rightType) {
+    return "";
+  }
+
+  return RIGHT_TYPE_LABELS[rightType] ?? rightType;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  csam: "児童ポルノ等の違法コンテンツ",
+  malware: "マルウェア・危険なファイル",
+  privacy: "個人情報の無断掲載・晒し",
+  spam: "スパム・迷惑行為",
+  other: "その他",
+  rights_infringement: "権利侵害の申し立て",
+};
+
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
 }
 
 function shareStatusLabel(share: ShareInfo): string {
@@ -267,7 +300,11 @@ export default function AdminReportsPage() {
               {reports.map((report) => (
                 <li
                   key={report.id}
-                  className="space-y-3 rounded-lg border border-ink/10 bg-paper p-5"
+                  className={`space-y-3 rounded-lg border bg-paper p-5 ${
+                    report.category === "csam"
+                      ? "border-2 border-red-600"
+                      : "border-ink/10"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="space-y-0.5">
@@ -283,16 +320,49 @@ export default function AdminReportsPage() {
                         </p>
                       )}
                     </div>
-                    <span
-                      className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-bold ${
-                        report.share.exists
-                          ? "bg-ink/10 text-ink/70"
-                          : "bg-ink/5 text-ink/40"
-                      }`}
-                    >
-                      {shareStatusLabel(report.share)}
-                    </span>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {report.category === "csam" && (
+                        <span className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                          緊急対応
+                        </span>
+                      )}
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+                          report.category === "csam"
+                            ? "bg-red-600/10 text-red-700"
+                            : "bg-brand/10 text-brand"
+                        }`}
+                      >
+                        {categoryLabel(report.category)}
+                      </span>
+                      <span
+                        className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+                          report.share.exists
+                            ? "bg-ink/10 text-ink/70"
+                            : "bg-ink/5 text-ink/40"
+                        }`}
+                      >
+                        {shareStatusLabel(report.share)}
+                      </span>
+                    </div>
                   </div>
+
+                  {report.reportType === "rights_holder" && (
+                    <div className="space-y-0.5 rounded border border-brand/20 bg-brand/5 p-3 text-xs text-ink/70">
+                      <p>
+                        <span className="font-bold">申立者:</span>{" "}
+                        {report.claimantName}
+                      </p>
+                      <p>
+                        <span className="font-bold">連絡先:</span>{" "}
+                        {report.contactEmail}
+                      </p>
+                      <p>
+                        <span className="font-bold">権利の種類:</span>{" "}
+                        {rightTypeLabel(report.rightType)}
+                      </p>
+                    </div>
+                  )}
 
                   <p className="whitespace-pre-wrap text-sm text-ink/80">
                     {report.reason}

@@ -417,7 +417,7 @@ export default function DownloadPage({
                     }
                   }}
                   placeholder="パスワード"
-                  className="w-full rounded border-2 border-ink/20 px-4 py-3.5 text-sm outline-none focus:border-brand"
+                  className="w-full rounded border-2 border-ink/20 px-4 py-3.5 text-base outline-none focus:border-brand sm:text-sm"
                 />
                 <p className="min-h-[17px] text-sm font-bold text-brand">
                   {passwordError}

@@ -863,7 +863,7 @@ export default function UploadForm() {
                               setPassword(event.target.value)
                             }
                             placeholder="パスワード"
-                            className="mt-1.5 w-full rounded border-2 border-ink/20 px-3 py-2 text-sm outline-none focus:border-brand"
+                            className="mt-1.5 w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                           />
                         </div>
                       </div>
