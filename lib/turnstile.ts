@@ -12,21 +12,20 @@ type SiteverifyResponse = {
 
 export async function verifyTurnstileToken(
   token: string | undefined | null,
-  secretKey: string,
-  remoteIp?: string
+  secretKey: string
 ): Promise<TurnstileVerifyResult> {
   if (!token) {
     return { success: false, errorCodes: ["missing-input-response"] };
   }
 
+  // `remoteip` はsiteverify APIの任意パラメータ(発行時IPとの照合によるリプレイ
+  // 対策の補助情報)。ウィジェット自体はブラウザがCloudflareのエッジと直接通信して
+  // 完結するため、渡さなくても検証は正常に機能する。訪問者のIPアドレスを
+  // このアプリのサーバーから外部に転送したくないため、意図的に送っていない。
   const body = new URLSearchParams({
     secret: secretKey,
     response: token,
   });
-
-  if (remoteIp) {
-    body.set("remoteip", remoteIp);
-  }
 
   let response: Response;
 

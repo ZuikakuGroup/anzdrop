@@ -65,22 +65,6 @@ describe("verifyTurnstileToken", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("includes remoteip in the request body when provided", async () => {
-    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = init.body as URLSearchParams;
-      expect(body.get("remoteip")).toBe("203.0.113.5");
-
-      return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-      });
-    });
-    vi.stubGlobal("fetch", fetchSpy);
-
-    await verifyTurnstileToken("valid-token", SECRET, "203.0.113.5");
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("propagates Cloudflare's error-codes when the token is rejected", async () => {
     vi.stubGlobal(
       "fetch",

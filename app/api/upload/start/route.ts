@@ -129,8 +129,7 @@ export async function POST(
       // uploadTokenの所持自体が既に正当性の証明になっているため再検証しない。
       const verification = await verifyTurnstileToken(
         requestBody.turnstileToken,
-        env.TURNSTILE_SECRET_KEY,
-        request.headers.get("CF-Connecting-IP") ?? undefined
+        env.TURNSTILE_SECRET_KEY
       );
 
       if (!verification.success) {
