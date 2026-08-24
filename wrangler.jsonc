@@ -9,7 +9,7 @@
 
   "vars": {
     "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",
-    "CF_ACCESS_AUD": "fec50a6e02744c407c8338a6696ef63c5786ed4fe976c2462948908c02103853"
+    "CF_ACCESS_AUD": "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88"
   },
 
   "triggers": {
