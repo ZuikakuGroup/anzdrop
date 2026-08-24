@@ -4,6 +4,8 @@ type Share = {
   id: string;
   created_at: string;
   expires_at: string;
+  wrapped_key: string | null;
+  key_salt: string | null;
 };
 
 type FileRecord = {
@@ -29,6 +31,8 @@ type DownloadResponseFile = {
 type DownloadResponseShare = {
   id: string;
   expires_at: string;
+  wrappedKey: string | null;
+  keySalt: string | null;
 };
 
 export async function GET(
@@ -41,7 +45,7 @@ export async function GET(
     const { shareId } = await context.params;
     const share = await env.DB.prepare(
       `
-        SELECT id, created_at, expires_at
+        SELECT id, created_at, expires_at, wrapped_key, key_salt
         FROM shares
         WHERE id = ?
       `
@@ -81,6 +85,7 @@ export async function GET(
           size
         FROM files
         WHERE share_id = ?
+          AND (max_downloads IS NULL OR download_count < max_downloads)
       `
     )
       .bind(shareId)
@@ -89,6 +94,8 @@ export async function GET(
     const responseShare: DownloadResponseShare = {
       id: share.id,
       expires_at: share.expires_at,
+      wrappedKey: share.wrapped_key,
+      keySalt: share.key_salt,
     };
 
     const responseFiles: DownloadResponseFile[] = files.map((file) => ({
@@ -97,11 +104,18 @@ export async function GET(
       size: file.size,
     }));
 
-    return Response.json({
-      success: true,
-      share: responseShare,
-      files: responseFiles,
-    });
+    return Response.json(
+      {
+        success: true,
+        share: responseShare,
+        files: responseFiles,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     return Response.json(
       {

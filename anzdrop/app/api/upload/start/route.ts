@@ -1,10 +1,24 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
+import { verifyTurnstileToken } from "@/lib/turnstile";
+import {
+  calculateExpiresAt,
+  isRetention,
+  maxDownloadsForRetention,
+  type Retention,
+} from "@/lib/retention";
+import { verifyShareOwnership } from "@/lib/share-auth";
+import { generateShareId } from "@/lib/id";
 
 type UploadStartRequest = {
   encryptedFileName: string;
   shareId?: string;
   uploadToken?: string;
   fileSize?: number;
+  retention?: Retention;
+  wrappedKey?: string;
+  keySalt?: string;
+  turnstileToken?: string;
 };
 
 type UploadStartResponse =
@@ -30,13 +44,49 @@ export async function POST(
     const requestBody =
       (await request.json()) as UploadStartRequest;
 
-    const { encryptedFileName, fileSize } = requestBody;
+    const { encryptedFileName, fileSize, retention } = requestBody;
 
     if (!encryptedFileName) {
       return Response.json(
         {
           success: false,
           error: "Missing encryptedFileName",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!retention || !isRetention(retention)) {
+      return Response.json(
+        {
+          success: false,
+          error: "Invalid retention",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (!fileSize || fileSize <= 0) {
+      return Response.json(
+        {
+          success: false,
+          error: "Missing fileSize",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (fileSize > MAX_FILE_SIZE_BYTES) {
+      return Response.json(
+        {
+          success: false,
+          error: "File exceeds the maximum allowed size",
         },
         {
           status: 400,
@@ -55,68 +105,47 @@ export async function POST(
 
     if (shareId) {
       // 既存の共有に相乗り(複数ファイル対応)。
-      // shareIdはURLパスに含まれ第三者に露出しうる公開識別子のため、
-      // 所有権の証明にはサーバー生成のuploadToken(URLに含まれず、
-      // アップロード完了までクライアントのメモリ上にのみ存在する)の一致を必須とする。
-      const providedToken = requestBody.uploadToken;
+      const ownership = await verifyShareOwnership(
+        env.DB,
+        shareId,
+        requestBody.uploadToken
+      );
 
-      if (!providedToken) {
+      if (!ownership.ok) {
         return Response.json(
           {
             success: false,
-            error: "Missing uploadToken",
+            error: ownership.error,
           },
-          { status: 400 }
+          { status: ownership.status }
         );
       }
 
-      const existingShare = await env.DB.prepare(`
-        SELECT expires_at, upload_token FROM shares WHERE id = ?
-      `)
-        .bind(shareId)
-        .first<{ expires_at: string; upload_token: string | null }>();
+      uploadToken = requestBody.uploadToken as string;
+      expiresAt = ownership.share.expiresAt;
+    } else {
+      // 新規共有の作成(=Bot悪用の主な標的)のみTurnstile検証を要求する。
+      // 同一共有への追加ファイルは、この最初の検証を突破した際に発行された
+      // uploadTokenの所持自体が既に正当性の証明になっているため再検証しない。
+      const verification = await verifyTurnstileToken(
+        requestBody.turnstileToken,
+        env.TURNSTILE_SECRET_KEY,
+        request.headers.get("CF-Connecting-IP") ?? undefined
+      );
 
-      if (!existingShare) {
+      if (!verification.success) {
         return Response.json(
           {
             success: false,
-            error: "Share not found",
-          },
-          { status: 404 }
-        );
-      }
-
-      if (
-        !existingShare.upload_token ||
-        existingShare.upload_token !== providedToken
-      ) {
-        return Response.json(
-          {
-            success: false,
-            error: "Invalid uploadToken",
+            error: "Turnstile verification failed",
           },
           { status: 403 }
         );
       }
 
-      if (new Date(existingShare.expires_at) <= new Date()) {
-        return Response.json(
-          {
-            success: false,
-            error: "Share has expired",
-          },
-          { status: 410 }
-        );
-      }
-
-      uploadToken = providedToken;
-      expiresAt = existingShare.expires_at;
-    } else {
-      shareId = crypto.randomUUID();
+      shareId = generateShareId();
       uploadToken = crypto.randomUUID();
-      expiresAt = new Date(
-        Date.now() + 7 * 24 * 60 * 60 * 1000
-      ).toISOString();
+      expiresAt = calculateExpiresAt(new Date(createdAt), retention);
 
       // Share作成
       await env.DB.prepare(`
@@ -124,18 +153,24 @@ export async function POST(
           id,
           created_at,
           expires_at,
-          upload_token
+          upload_token,
+          wrapped_key,
+          key_salt
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `)
         .bind(
           shareId,
           createdAt,
           expiresAt,
-          uploadToken
+          uploadToken,
+          requestBody.wrappedKey ?? null,
+          requestBody.keySalt ?? null
         )
         .run();
     }
+
+    const maxDownloads = maxDownloadsForRetention(retention);
 
     // Multipart Upload開始
     const multipart =
@@ -152,9 +187,10 @@ export async function POST(
         upload_id,
         encrypted_file_name,
         file_size,
+        max_downloads,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
       .bind(
         uploadSessionId,
@@ -163,6 +199,7 @@ export async function POST(
         multipart.uploadId,
         encryptedFileName,
         fileSize ?? null,
+        maxDownloads,
         createdAt
       )
       .run();

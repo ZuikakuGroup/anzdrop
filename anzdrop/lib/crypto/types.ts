@@ -4,6 +4,10 @@ export const AES_KEY_LENGTH = 256;
 
 export const IV_LENGTH = 12;
 
+export const PBKDF2_SALT_LENGTH = 16;
+
+export const PBKDF2_ITERATIONS = 600_000;
+
 export const GCM_TAG_LENGTH = 16;
 
 // IV + 暗号文(平文と同サイズ) + GCMタグ、を1パケットとしたときの最大サイズ

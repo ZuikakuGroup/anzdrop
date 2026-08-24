@@ -35,14 +35,18 @@ export async function* iterateEncryptedChunks(
 }
 
 // バイトストリームからパケット境界(最終パケットを除き固定長PACKED_CHUNK_SIZE)を切り出し、
-// 復号済みチャンクを順番に取り出す
+// 復号済みチャンクを順番に取り出す。
+// expectedTotalBytesを渡すと、末尾パケットが丸ごと欠落したまま(GCM認証エラーを
+// 経由せずに)ストリームが終了するケース(切断・改ざんによる無音の切り詰め)を検出する。
 export async function* iterateDecryptedChunks(
   stream: ReadableStream<Uint8Array>,
-  key: CryptoKey
+  key: CryptoKey,
+  expectedTotalBytes?: number
 ): AsyncGenerator<Uint8Array> {
   const reader = stream.getReader();
   const pending: Uint8Array[] = [];
   let pendingLength = 0;
+  let decryptedTotal = 0;
 
   const takePacket = async (size: number): Promise<Uint8Array> => {
     const packet = new Uint8Array(size);
@@ -79,15 +83,28 @@ export async function* iterateDecryptedChunks(
       pendingLength += value.byteLength;
 
       while (pendingLength >= PACKED_CHUNK_SIZE) {
-        yield await takePacket(PACKED_CHUNK_SIZE);
+        const chunk = await takePacket(PACKED_CHUNK_SIZE);
+        decryptedTotal += chunk.byteLength;
+        yield chunk;
       }
     }
 
     if (done) {
       if (pendingLength > 0) {
-        yield await takePacket(pendingLength);
+        const chunk = await takePacket(pendingLength);
+        decryptedTotal += chunk.byteLength;
+        yield chunk;
       }
       break;
     }
+  }
+
+  if (
+    expectedTotalBytes !== undefined &&
+    decryptedTotal !== expectedTotalBytes
+  ) {
+    throw new Error(
+      `ダウンロードが途中で切断されました(受信 ${decryptedTotal} / 期待 ${expectedTotalBytes} バイト)。`
+    );
   }
 }

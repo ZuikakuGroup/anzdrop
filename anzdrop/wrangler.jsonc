@@ -1,11 +1,20 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "anzdrop",
-  "main": ".open-next/worker.js",
+  "main": "./custom-worker.ts",
   "compatibility_date": "2026-05-03",
   "account_id": "2a1ab8b6a9b36f7f0c4292dce044e0c4",
 
   "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",
+    "CF_ACCESS_AUD": "fec50a6e02744c407c8338a6696ef63c5786ed4fe976c2462948908c02103853"
+  },
+
+  "triggers": {
+    "crons": ["0 0 * * *"]
+  },
 
   "assets": {
     "directory": ".open-next/assets"

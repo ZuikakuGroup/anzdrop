@@ -21,6 +21,8 @@ next-env.d.ts
 
 # wrangler local state
 .wrangler/
+.dev.vars
+.dev.vars.*
 
 # production builds
 build/
@@ -50,3 +52,4 @@ pnpm-debug.log*
 .vercel/
 
 test.txt
+tmp/

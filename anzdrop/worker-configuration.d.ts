@@ -5,6 +5,9 @@ declare namespace Cloudflare {
 	interface Env {
 		FILES_BUCKET: R2Bucket;
 		DB: D1Database;
+		TURNSTILE_SECRET_KEY: string;
+		CF_ACCESS_TEAM_DOMAIN: string;
+		CF_ACCESS_AUD: string;
 	}
 }
 interface CloudflareEnv extends Cloudflare.Env {}

@@ -1,15 +1,28 @@
 "use client";
 import { useEffect, useState } from "react";
+import { zip } from "fflate";
 import {
   importKey,
   decodeBase64Url,
   unpackChunk,
   decryptChunk,
   iterateDecryptedChunks,
+  deriveKeyFromPassword,
 } from "@/lib/crypto";
+import { formatBytes } from "@/lib/format";
+import SiteHeader from "@/components/brand/SiteHeader";
+import SiteFooter from "@/components/brand/SiteFooter";
+import Spinner from "@/components/brand/Spinner";
+import { XIcon } from "@/components/brand/ShareIcons";
 
 type DownloadPageProps = {
   shareId: string;
+};
+
+type RawFile = {
+  id: string;
+  name: string;
+  size: number;
 };
 
 type DownloadResponse = {
@@ -17,12 +30,10 @@ type DownloadResponse = {
   share: {
     id: string;
     expires_at: string;
+    wrappedKey: string | null;
+    keySalt: string | null;
   };
-  files: {
-    id: string;
-    name: string;
-    size: number;
-  }[];
+  files: RawFile[];
   error?: string;
 };
 
@@ -31,6 +42,26 @@ type DecryptedFile = {
   name: string;
   size: number;
 };
+
+// ユーザーに表示してよい文言だけを持つエラー。それ以外の技術的なエラーは
+// 汎用メッセージに丸めて表示する(壊れた鍵フラグメントなどでブラウザの
+// 生の例外文言がそのまま出てしまうのを防ぐため)。
+class FriendlyError extends Error { }
+
+// ダウンロード対象のファイルがサーバー側で既に消費/削除済み(「1回」設定など)だったことを示す。
+// 通常のダウンロード失敗と違い、再試行を促さず一覧からも取り除く。
+class FileGoneError extends FriendlyError { }
+
+const GENERIC_LOAD_ERROR =
+  "ファイルの取得に失敗しました。URLが正しいかご確認のうえ、もう一度お試しください。";
+const GENERIC_DOWNLOAD_ERROR =
+  "ダウンロードに失敗しました。もう一度お試しください。";
+const FILE_GONE_ERROR =
+  "このファイルはすでにダウンロード済みか、削除されています。";
+
+function toFriendlyMessage(err: unknown, fallback: string): string {
+  return err instanceof FriendlyError ? err.message : fallback;
+}
 
 async function decryptFileName(
   encryptedName: string,
@@ -41,6 +72,57 @@ async function decryptFileName(
   const decrypted = await decryptChunk(ciphertext, iv, key);
 
   return new TextDecoder().decode(decrypted);
+}
+
+async function decryptFileList(
+  rawFiles: RawFile[],
+  key: CryptoKey
+): Promise<DecryptedFile[]> {
+  return Promise.all(
+    rawFiles.map(async (file) => ({
+      id: file.id,
+      name: await decryptFileName(file.name, key),
+      size: file.size,
+    }))
+  );
+}
+
+async function unwrapKeyWithPassword(
+  wrappedKey: string,
+  keySalt: string,
+  password: string
+): Promise<CryptoKey> {
+  const salt = new Uint8Array(decodeBase64Url(keySalt));
+  const kek = await deriveKeyFromPassword(password, salt);
+  const packed = new Uint8Array(decodeBase64Url(wrappedKey));
+  const { iv, ciphertext } = unpackChunk(packed);
+  const rawKey = await decryptChunk(ciphertext, iv, kek);
+
+  return importKey(rawKey);
+}
+
+function withDuplicateSuffix(name: string, count: number): string {
+  if (count === 0) {
+    return name;
+  }
+
+  const dotIndex = name.lastIndexOf(".");
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const ext = dotIndex > 0 ? name.slice(dotIndex) : "";
+
+  return `${base} (${count})${ext}`;
+}
+
+function triggerBlobDownload(bytes: Uint8Array, filename: string) {
+  const blob = new Blob([bytes as BlobPart]);
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+
+  URL.revokeObjectURL(url);
 }
 
 export default function DownloadPage({
@@ -57,23 +139,21 @@ export default function DownloadPage({
 
   const [downloadingId, setDownloadingId] = useState("");
 
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false);
+
+  const [passwordProtection, setPasswordProtection] = useState<{
+    wrappedKey: string;
+    keySalt: string;
+    rawFiles: RawFile[];
+  } | null>(null);
+
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [isUnlocking, setIsUnlocking] = useState(false);
+
   useEffect(() => {
     const load = async () => {
       try {
-        const fragment = window.location.hash.slice(1);
-
-        if (!fragment) {
-          throw new Error(
-            "このリンクには復号鍵が含まれていません。"
-          );
-        }
-
-        const decryptionKey = await importKey(
-          decodeBase64Url(fragment)
-        );
-
-        setKey(decryptionKey);
-
         const response = await fetch(
           `/api/download/${shareId}`
         );
@@ -82,29 +162,57 @@ export default function DownloadPage({
           await response.json();
 
         if (!response.ok) {
-          throw new Error(
-            result.error ?? "Download failed"
+          if (response.status === 404) {
+            throw new FriendlyError("このリンクは無効です。");
+          }
+
+          if (response.status === 410) {
+            throw new FriendlyError(
+              "このリンクの有効期限が切れています。"
+            );
+          }
+
+          throw new Error(result.error ?? "Download failed");
+        }
+
+        if (result.share.wrappedKey && result.share.keySalt) {
+          setPasswordProtection({
+            wrappedKey: result.share.wrappedKey,
+            keySalt: result.share.keySalt,
+            rawFiles: result.files,
+          });
+          return;
+        }
+
+        const fragment = window.location.hash.slice(1);
+
+        if (!fragment) {
+          throw new FriendlyError(
+            "このリンクには復号鍵が含まれていません。"
           );
         }
 
-        const decryptedFiles = await Promise.all(
-          result.files.map(async (file) => ({
-            id: file.id,
-            name: await decryptFileName(
-              file.name,
-              decryptionKey
-            ),
-            size: file.size,
-          }))
-        );
+        let decryptionKey: CryptoKey;
 
-        setFiles(decryptedFiles);
+        try {
+          decryptionKey = await importKey(decodeBase64Url(fragment));
+        } catch {
+          throw new FriendlyError(
+            "このリンクの復号鍵が正しくありません。URLが省略されていないかご確認ください。"
+          );
+        }
+
+        try {
+          setFiles(await decryptFileList(result.files, decryptionKey));
+        } catch {
+          throw new FriendlyError(
+            "このリンクの復号鍵が正しくありません。URLが省略されていないかご確認ください。"
+          );
+        }
+
+        setKey(decryptionKey);
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Unknown error"
-        );
+        setError(toFriendlyMessage(err, GENERIC_LOAD_ERROR));
       } finally {
         setIsLoading(false);
       }
@@ -113,8 +221,82 @@ export default function DownloadPage({
     load();
   }, [shareId]);
 
+  const unlockWithPassword = async () => {
+    if (!passwordProtection || isUnlocking) {
+      return;
+    }
+
+    if (!passwordInput) {
+      setPasswordError("パスワードを入力してください。");
+      return;
+    }
+
+    setPasswordError("");
+    setIsUnlocking(true);
+
+    try {
+      const decryptionKey = await unwrapKeyWithPassword(
+        passwordProtection.wrappedKey,
+        passwordProtection.keySalt,
+        passwordInput
+      );
+
+      const decryptedFiles = await decryptFileList(
+        passwordProtection.rawFiles,
+        decryptionKey
+      );
+
+      setKey(decryptionKey);
+      setFiles(decryptedFiles);
+      setPasswordProtection(null);
+    } catch {
+      setPasswordError("パスワードが違います。");
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
+
+  const fetchAndDecrypt = async (
+    file: DecryptedFile,
+    key: CryptoKey
+  ): Promise<Uint8Array> => {
+    const response = await fetch(`/api/file/${file.id}`);
+
+    if (response.status === 404) {
+      throw new FileGoneError(FILE_GONE_ERROR);
+    }
+
+    if (!response.ok || !response.body) {
+      throw new FriendlyError("ダウンロードに失敗しました。");
+    }
+
+    const chunks: Uint8Array[] = [];
+
+    for await (const decrypted of iterateDecryptedChunks(
+      response.body,
+      key,
+      file.size
+    )) {
+      chunks.push(decrypted);
+    }
+
+    const totalLength = chunks.reduce(
+      (sum, chunk) => sum + chunk.byteLength,
+      0
+    );
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    return combined;
+  };
+
   const downloadFile = async (file: DecryptedFile) => {
-    if (!key || downloadingId) {
+    if (!key || downloadingId || isDownloadingAll) {
       return;
     }
 
@@ -122,77 +304,193 @@ export default function DownloadPage({
     setError("");
 
     try {
-      const response = await fetch(`/api/file/${file.id}`);
-
-      if (!response.ok || !response.body) {
-        throw new Error("ダウンロードに失敗しました。");
-      }
-
-      const chunks: Uint8Array[] = [];
-
-      for await (const decrypted of iterateDecryptedChunks(
-        response.body,
-        key
-      )) {
-        chunks.push(decrypted);
-      }
-
-      const blob = new Blob(chunks as BlobPart[]);
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      a.click();
-
-      URL.revokeObjectURL(url);
+      const bytes = await fetchAndDecrypt(file, key);
+      triggerBlobDownload(bytes, file.name);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unknown error"
-      );
+      if (err instanceof FileGoneError) {
+        setFiles((prev) => prev.filter((f) => f.id !== file.id));
+      }
+
+      setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
     } finally {
       setDownloadingId("");
     }
   };
 
+  const downloadAll = async () => {
+    if (!key || downloadingId || isDownloadingAll || files.length === 0) {
+      return;
+    }
+
+    setIsDownloadingAll(true);
+    setError("");
+
+    try {
+      const usedNames = new Map<string, number>();
+      const zipInput: Record<string, Uint8Array> = {};
+      const goneIds: string[] = [];
+
+      for (const file of files) {
+        setDownloadingId(file.id);
+
+        try {
+          const bytes = await fetchAndDecrypt(file, key);
+          const count = usedNames.get(file.name) ?? 0;
+          usedNames.set(file.name, count + 1);
+
+          zipInput[withDuplicateSuffix(file.name, count)] = bytes;
+        } catch (err) {
+          if (!(err instanceof FileGoneError)) {
+            throw err;
+          }
+
+          goneIds.push(file.id);
+        }
+      }
+
+      if (goneIds.length > 0) {
+        setFiles((prev) => prev.filter((f) => !goneIds.includes(f.id)));
+      }
+
+      if (Object.keys(zipInput).length === 0) {
+        throw new FriendlyError(FILE_GONE_ERROR);
+      }
+
+      const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+        zip(zipInput, (err, data) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(data);
+          }
+        });
+      });
+
+      triggerBlobDownload(zipped, "anzdrop.zip");
+    } catch (err) {
+      setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
+    } finally {
+      setDownloadingId("");
+      setIsDownloadingAll(false);
+    }
+  };
+
   return (
-    <div className="max-w-2xl mx-auto p-8">
-      <h1 className="text-3xl font-bold">
-        Download
-      </h1>
+    <div className="flex min-h-screen flex-col">
+      <SiteHeader />
 
-      {isLoading ? (
-        <p className="mt-6">
-          読み込み中...
-        </p>
-      ) : error ? (
-        <p className="mt-6 text-red-600">
-          {error}
-        </p>
-      ) : (
-        <ul className="mt-6 list-disc ml-6">
-          {files.map((file) => (
-            <li
-              key={file.id}
-              className="flex items-center justify-between"
+      <main className="flex flex-1 items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black tracking-normal">
+              ダウンロード
+            </h1>
+            <p className="text-xs text-ink/50">
+              ナウでヤングな暗号化ファイル共有サービス
+            </p>
+          </div>
+
+          <div className="border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
+            どんなファイルも簡単に共有できます。<br/>プライバシーにこだわっており、いい感じに暗号化されます。
+          </div>
+
+          <div className="space-y-5">
+            {isLoading ? (
+              <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
+                <Spinner className="mb-1 h-6 w-6 text-brand" />
+                <span className="text-xs font-bold text-ink/50">
+                  読み込み中...
+                </span>
+              </div>
+            ) : passwordProtection ? (
+              <div className="anz-scroll flex h-40 flex-col justify-center gap-2 overflow-y-auto rounded border-2 border-ink p-6">
+                <span className="text-sm font-bold text-ink/50">
+                  パスワードで保護されています
+                </span>
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={(event) => setPasswordInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      unlockWithPassword();
+                    }
+                  }}
+                  placeholder="パスワード"
+                  className="w-full rounded border-2 border-ink/20 px-4 py-3.5 text-sm outline-none focus:border-brand"
+                />
+                <p className="min-h-[17px] text-sm font-bold text-brand">
+                  {passwordError}
+                </p>
+              </div>
+            ) : error ? (
+              <div className="relative flex h-40 flex-col items-center justify-center gap-2 rounded border-2 border-brand p-6 text-center">
+                <button
+                  onClick={() => setError("")}
+                  aria-label="閉じる"
+                  title="閉じる"
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+                >
+                  <XIcon className="h-3.5 w-3.5" />
+                </button>
+                <p className="text-sm font-bold text-brand">{error}</p>
+              </div>
+            ) : (
+              <ul className="anz-scroll h-40 divide-y divide-ink/10 overflow-y-auto rounded border-2 border-ink p-2 text-[13px]">
+                {files.map((file) => (
+                  <li key={file.id}>
+                    <button
+                      onClick={() => downloadFile(file)}
+                      disabled={
+                        downloadingId === file.id || isDownloadingAll
+                      }
+                      className="flex w-full items-center justify-between gap-4 px-2 py-2 text-left transition-colors hover:bg-ink/[0.03] disabled:opacity-50"
+                    >
+                      <span className="min-w-0 flex-1 truncate">
+                        {file.name}
+                      </span>
+                      {downloadingId === file.id ? (
+                        <Spinner className="h-4 w-4 shrink-0 text-brand" />
+                      ) : (
+                        <span className="shrink-0 font-bold text-ink/40">
+                          {formatBytes(file.size)}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <button
+              onClick={passwordProtection ? unlockWithPassword : downloadAll}
+              disabled={
+                passwordProtection
+                  ? isUnlocking
+                  : isLoading ||
+                  !!error ||
+                  files.length === 0 ||
+                  isDownloadingAll ||
+                  !!downloadingId
+              }
+              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
-              <span>{file.name}</span>
-
-              <button
-                onClick={() => downloadFile(file)}
-                disabled={downloadingId === file.id}
-                className="rounded bg-blue-600 px-3 py-1 text-white disabled:bg-gray-400"
-              >
-                {downloadingId === file.id
+              {(passwordProtection ? isUnlocking : isDownloadingAll) && (
+                <Spinner className="h-4 w-4 text-paper" />
+              )}
+              {passwordProtection
+                ? isUnlocking
+                  ? "確認中..."
+                  : "開く"
+                : isDownloadingAll
                   ? "ダウンロード中..."
-                  : "ダウンロード"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+                  : "全てダウンロード"}
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <SiteFooter reportShareId={shareId} />
     </div>
   );
 }

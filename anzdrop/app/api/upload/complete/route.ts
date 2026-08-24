@@ -21,6 +21,7 @@ type UploadRecord = {
   upload_id: string;
   encrypted_file_name: string;
   file_size: number | null;
+  max_downloads: number | null;
 };
 
 type UploadPartRecord = {
@@ -54,7 +55,8 @@ export async function POST(
         storage_key,
         upload_id,
         encrypted_file_name,
-        file_size
+        file_size,
+        max_downloads
       FROM uploads
       WHERE id = ?
     `)
@@ -113,9 +115,10 @@ export async function POST(
         storage_key,
         encrypted_file_name,
         size,
+        max_downloads,
         created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
       .bind(
         fileId,
@@ -123,6 +126,7 @@ export async function POST(
         upload.storage_key,
         upload.encrypted_file_name,
         size,
+        upload.max_downloads,
         createdAt
       )
       .run();

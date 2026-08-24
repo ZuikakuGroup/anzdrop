@@ -7,6 +7,22 @@ type FileRecord = {
   encrypted_file_name: string;
 };
 
+type DownloadCountResult = {
+  download_count: number;
+  max_downloads: number | null;
+};
+
+async function deleteOneTimeFile(
+  env: CloudflareEnv,
+  fileId: string,
+  storageKey: string
+): Promise<void> {
+  await env.FILES_BUCKET.delete(storageKey);
+  await env.DB.prepare(`DELETE FROM files WHERE id = ?`)
+    .bind(fileId)
+    .run();
+}
+
 type RouteContext = {
   params: Promise<{
     fileId: string;
@@ -24,7 +40,7 @@ export async function GET(
   context: RouteContext
 ) {
   try {
-    const { env } = getCloudflareContext();
+    const { env, ctx } = getCloudflareContext();
 
     const { fileId } = await context.params;
 
@@ -82,6 +98,30 @@ export async function GET(
       );
     }
 
+    // ダウンロード回数の上限チェックと加算を1つのUPDATEで原子的に行う。
+    // 条件を満たさない(上限に達している)場合は行が返らない。
+    const downloadCount = await env.DB.prepare(
+      `
+      UPDATE files
+      SET download_count = download_count + 1
+      WHERE id = ?
+        AND (max_downloads IS NULL OR download_count < max_downloads)
+      RETURNING download_count, max_downloads
+      `
+    )
+      .bind(fileId)
+      .first<DownloadCountResult>();
+
+    if (!downloadCount) {
+      return Response.json(
+        {
+          success: false,
+          error: "File not found",
+        },
+        { status: 404 }
+      );
+    }
+
     const object = await env.FILES_BUCKET.get(file.storage_key);
 
     if (!object) {
@@ -94,10 +134,22 @@ export async function GET(
       );
     }
 
+    if (
+      downloadCount.max_downloads !== null &&
+      downloadCount.download_count >= downloadCount.max_downloads
+    ) {
+      // 許可された最後の1回のダウンロードだったので、レスポンスは遅延させずに
+      // 裏でR2オブジェクトとDBレコードを削除する。
+      ctx.waitUntil(
+        deleteOneTimeFile(env, fileId, file.storage_key)
+      );
+    }
+
     return new Response(object.body, {
       headers: {
         "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
         "Content-Disposition": `attachment; filename="${file.encrypted_file_name}"`,
+        "Cache-Control": "no-store",
       },
     });
 
