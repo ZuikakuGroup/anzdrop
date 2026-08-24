@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
+import { stripUrlFragments } from "@/lib/sanitize";
 
 type RightsHolderReportFormProps = {
   initialShareId: string;
@@ -81,7 +82,7 @@ export default function RightsHolderReportForm({
           claimantName,
           contactEmail,
           rightType,
-          reason,
+          reason: stripUrlFragments(reason),
         }),
       });
 
