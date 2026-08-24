@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
-import { stripUrlFragments } from "@/lib/sanitize";
+import { sanitizeReportText } from "@/lib/sanitize";
 
 type ReportFormProps = {
   initialShareId: string;
@@ -68,7 +68,7 @@ export default function ReportForm({
           reportType: "general",
           shareId,
           category,
-          reason: stripUrlFragments(reason),
+          reason: sanitizeReportText(reason),
         }),
       });
 

@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { stripUrlFragments } from "@/lib/sanitize";
+import { sanitizeReportText } from "@/lib/sanitize";
 
 const MAX_REASON_LENGTH = 1000;
 const MAX_NAME_LENGTH = 200;
@@ -88,7 +88,7 @@ export async function POST(
 
     const reportType = parseReportType(requestBody.reportType) ?? "general";
     const shareId = extractShareId(requestBody.shareId ?? "");
-    const reason = stripUrlFragments((requestBody.reason ?? "").trim());
+    const reason = sanitizeReportText((requestBody.reason ?? "").trim());
 
     if (!shareId || !reason) {
       return Response.json(
