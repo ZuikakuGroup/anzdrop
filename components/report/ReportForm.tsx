@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 
 type ReportFormProps = {
   initialShareId: string;
@@ -44,6 +46,8 @@ export default function ReportForm({
     getOriginSnapshot,
     getOriginServerSnapshot
   );
+  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+    useTurnstile();
 
   const submit = async () => {
     if (isSubmitting || submitted) {
@@ -59,6 +63,8 @@ export default function ReportForm({
     setIsSubmitting(true);
 
     try {
+      const turnstileToken = await getTurnstileToken();
+
       const response = await fetch("/api/report", {
         method: "POST",
         headers: {
@@ -69,6 +75,7 @@ export default function ReportForm({
           shareId,
           category,
           reason: sanitizeReportText(reason),
+          turnstileToken,
         }),
       });
 
@@ -207,6 +214,8 @@ export default function ReportForm({
                 />
               </div>
 
+              <div ref={turnstileContainerRef} className="flex justify-center" />
+
               <button
                 onClick={submit}
                 disabled={isSubmitting}
@@ -235,6 +244,13 @@ export default function ReportForm({
       </main>
 
       <SiteFooter />
+
+      {TURNSTILE_SITE_KEY && (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      )}
     </div>
   );
 }

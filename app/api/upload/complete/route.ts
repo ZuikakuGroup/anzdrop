@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 
 type UploadCompleteRequest = {
   uploadSessionId: string;
@@ -20,7 +21,6 @@ type UploadRecord = {
   storage_key: string;
   upload_id: string;
   encrypted_file_name: string;
-  file_size: number | null;
   max_downloads: number | null;
 };
 
@@ -55,7 +55,6 @@ export async function POST(
         storage_key,
         upload_id,
         encrypted_file_name,
-        file_size,
         max_downloads
       FROM uploads
       WHERE id = ?
@@ -104,9 +103,38 @@ export async function POST(
       }))
     );
 
+    // クライアント申告のfileSizeは/api/upload/startでの事前チェック用に過ぎず、
+    // 実際にアップロードされたバイト数の検証には使えない(申告値を小さく偽って
+    // 上限チェックを回避し、実際には無制限にチャンクを送りつけられるため)。
+    // 実サイズが確定するここで、R2が報告する実際のオブジェクトサイズを
+    // 正として上限を再検証する。
+    if (object.size > MAX_FILE_SIZE_BYTES) {
+      await env.FILES_BUCKET.delete(upload.storage_key);
+
+      await env.DB.prepare(`
+        DELETE FROM upload_parts WHERE upload_session_id = ?
+      `)
+        .bind(uploadSessionId)
+        .run();
+
+      await env.DB.prepare(`
+        DELETE FROM uploads WHERE id = ?
+      `)
+        .bind(uploadSessionId)
+        .run();
+
+      return Response.json(
+        {
+          success: false,
+          error: "File exceeds the maximum allowed size",
+        },
+        { status: 413 }
+      );
+    }
+
     const fileId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const size = upload.file_size ?? object.size;
+    const size = object.size;
 
     await env.DB.prepare(`
       INSERT INTO files (

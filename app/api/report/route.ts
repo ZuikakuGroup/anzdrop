@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { sanitizeReportText } from "@/lib/sanitize";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const MAX_REASON_LENGTH = 1000;
 const MAX_NAME_LENGTH = 200;
@@ -36,6 +37,7 @@ type ReportRequest = {
   claimantName?: string;
   contactEmail?: string;
   rightType?: string;
+  turnstileToken?: string;
 };
 
 type ReportResponse =
@@ -85,6 +87,21 @@ export async function POST(
     const { env } = getCloudflareContext();
 
     const requestBody = (await request.json()) as ReportRequest;
+
+    const verification = await verifyTurnstileToken(
+      requestBody.turnstileToken,
+      env.TURNSTILE_SECRET_KEY
+    );
+
+    if (!verification.success) {
+      return Response.json(
+        {
+          success: false,
+          error: "Turnstile verification failed",
+        },
+        { status: 403 }
+      );
+    }
 
     const reportType = parseReportType(requestBody.reportType) ?? "general";
     const shareId = extractShareId(requestBody.shareId ?? "");

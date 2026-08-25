@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 
 type RightsHolderReportFormProps = {
   initialShareId: string;
@@ -46,6 +48,8 @@ export default function RightsHolderReportForm({
     getOriginSnapshot,
     getOriginServerSnapshot
   );
+  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+    useTurnstile();
 
   const submit = async () => {
     if (isSubmitting || submitted) {
@@ -71,6 +75,8 @@ export default function RightsHolderReportForm({
     setIsSubmitting(true);
 
     try {
+      const turnstileToken = await getTurnstileToken();
+
       const response = await fetch("/api/report", {
         method: "POST",
         headers: {
@@ -83,6 +89,7 @@ export default function RightsHolderReportForm({
           contactEmail,
           rightType,
           reason: sanitizeReportText(reason),
+          turnstileToken,
         }),
       });
 
@@ -264,6 +271,8 @@ export default function RightsHolderReportForm({
                 </span>
               </label>
 
+              <div ref={turnstileContainerRef} className="flex justify-center" />
+
               <button
                 onClick={submit}
                 disabled={isSubmitting}
@@ -292,6 +301,13 @@ export default function RightsHolderReportForm({
       </main>
 
       <SiteFooter />
+
+      {TURNSTILE_SITE_KEY && (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      )}
     </div>
   );
 }

@@ -55,9 +55,9 @@
 
 ### `POST /api/report`
 
-共有の通報を受け付ける。認証不要(誰でも通報可能)。
+共有の通報を受け付ける。認証不要(誰でも通報可能)だが、ボットによる大量送信を防ぐため `turnstileToken` によるTurnstile検証が必須(`/api/upload/start`の新規共有作成時と同様)。
 
-- リクエスト(共通): `{ shareId, reason, reportType?: "general"|"rights_holder" }`(`reportType`省略時は`"general"`)
+- リクエスト(共通): `{ shareId, reason, reportType?: "general"|"rights_holder", turnstileToken }`(`reportType`省略時は`"general"`)
 - `reportType: "general"` の場合は `category` が必須(`"csam"|"malware"|"privacy"|"spam"|"other"`のいずれか、不正/未指定は400)。
 - `reportType: "rights_holder"` の場合は `claimantName`・`contactEmail`(要メール形式)・`rightType`(`"copyright"|"trademark"|"portrait"|"other"`)が必須。このとき `category` はサーバー側で自動的に `"rights_infringement"` に固定され、クライアントからの指定は無視される。
 - `shareId` はURL全体(`https://.../d/xxxxxxxx`)を渡しても内部で正規化される(`extractShareId`)。
