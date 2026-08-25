@@ -1,5 +1,4 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 import {
   calculateExpiresAt,
@@ -9,6 +8,12 @@ import {
 } from "@/lib/retention";
 import { verifyShareOwnership } from "@/lib/share-auth";
 import { generateShareId } from "@/lib/id";
+import { verifySession } from "@/lib/account/session";
+import {
+  getAccountPlanInfo,
+  getMaxFileSizeBytes,
+  isRetentionAllowedForPlan,
+} from "@/lib/plan";
 
 type UploadStartRequest = {
   encryptedFileName: string;
@@ -82,7 +87,14 @@ export async function POST(
       );
     }
 
-    if (fileSize > MAX_FILE_SIZE_BYTES) {
+    // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
+    const session = await verifySession(request, env);
+    const { plan } = await getAccountPlanInfo(
+      session?.accountId ?? null,
+      env
+    );
+
+    if (fileSize > getMaxFileSizeBytes(plan)) {
       return Response.json(
         {
           success: false,
@@ -90,6 +102,18 @@ export async function POST(
         },
         {
           status: 400,
+        }
+      );
+    }
+
+    if (!isRetentionAllowedForPlan(retention, plan)) {
+      return Response.json(
+        {
+          success: false,
+          error: "This retention period requires a paid plan",
+        },
+        {
+          status: 403,
         }
       );
     }

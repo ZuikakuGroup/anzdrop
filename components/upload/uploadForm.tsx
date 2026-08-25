@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Script from "next/script";
 import {
   generateKey,
@@ -14,7 +14,11 @@ import {
 } from "@/lib/crypto";
 import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { bufferAhead } from "@/lib/asyncBuffer";
-import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
+import {
+  getMaxFileSizeBytes,
+  isRetentionAllowedForPlan,
+  type Plan,
+} from "@/lib/plan";
 import type { Retention } from "@/lib/retention";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -31,12 +35,18 @@ import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
+// "30d"は有料プラン限定。実際に選択肢として出すかどうかはisRetentionAllowedForPlanで絞る。
 const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "once", label: "1回" },
   { value: "1d", label: "1日" },
   { value: "3d", label: "3日" },
   { value: "7d", label: "7日" },
+  { value: "30d", label: "30日" },
 ];
+
+type MeResponse =
+  | { success: true; plan: Plan }
+  | { success: false; error: string };
 
 type UploadStartResponse = {
   success: boolean;
@@ -257,9 +267,25 @@ export default function UploadForm() {
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [plan, setPlan] = useState<Plan>("free");
   const dragCounterRef = useRef(0);
   const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
     useTurnstile();
+
+  // 未ログインなら常にfree(既存の匿名アップロードの挙動を維持)。ログイン
+  // していれば有料プランの上限緩和・保存期間延長を反映する。
+  useEffect(() => {
+    fetch("/api/account/me")
+      .then((response) => response.json() as Promise<MeResponse>)
+      .then((data) => {
+        if (data.success) {
+          setPlan(data.plan);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const maxFileSizeBytes = getMaxFileSizeBytes(plan);
 
   // 共有全体で1本の鍵を使い回す。ファイル追加時点で(Promiseとして)確定させ、
   // 以降の暗号化・パスワードラップは全てこの同じ鍵を待って使う。
@@ -303,13 +329,13 @@ export default function UploadForm() {
     }
 
     const oversizedFile = newFiles.find(
-      (pendingFile) => pendingFile.file.size > MAX_FILE_SIZE_BYTES
+      (pendingFile) => pendingFile.file.size > maxFileSizeBytes
     );
 
     if (oversizedFile) {
       setError(
         `${oversizedFile.path} はサイズが大きすぎます(1ファイル${formatBytes(
-          MAX_FILE_SIZE_BYTES
+          maxFileSizeBytes
         )}まで)。`
       );
       return;
@@ -744,7 +770,9 @@ export default function UploadForm() {
                         保存期間
                       </span>
                       <div className="mt-1.5 flex gap-2">
-                        {RETENTION_OPTIONS.map((option) => (
+                        {RETENTION_OPTIONS.filter((option) =>
+                          isRetentionAllowedForPlan(option.value, plan)
+                        ).map((option) => (
                           <button
                             key={option.value}
                             type="button"

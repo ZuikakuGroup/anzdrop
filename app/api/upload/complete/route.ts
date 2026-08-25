@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
+import { verifySession } from "@/lib/account/session";
+import { getAccountPlanInfo, getMaxFileSizeBytes } from "@/lib/plan";
 
 type UploadCompleteRequest = {
   uploadSessionId: string;
@@ -108,7 +109,14 @@ export async function POST(
     // 上限チェックを回避し、実際には無制限にチャンクを送りつけられるため)。
     // 実サイズが確定するここで、R2が報告する実際のオブジェクトサイズを
     // 正として上限を再検証する。
-    if (object.size > MAX_FILE_SIZE_BYTES) {
+    // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
+    const session = await verifySession(request, env);
+    const { plan } = await getAccountPlanInfo(
+      session?.accountId ?? null,
+      env
+    );
+
+    if (object.size > getMaxFileSizeBytes(plan)) {
       await env.FILES_BUCKET.delete(upload.storage_key);
 
       await env.DB.prepare(`
