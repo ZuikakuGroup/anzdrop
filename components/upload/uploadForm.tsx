@@ -13,6 +13,7 @@ import {
   deriveKeyFromPassword,
 } from "@/lib/crypto";
 import { CHUNK_SIZE } from "@/lib/crypto/types";
+import { bufferAhead } from "@/lib/asyncBuffer";
 import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 import type { Retention } from "@/lib/retention";
 import SiteHeader from "@/components/brand/SiteHeader";
@@ -26,30 +27,9 @@ import {
   ChevronIcon,
 } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
-
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
-
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (
-        container: HTMLElement,
-        options: {
-          sitekey: string;
-          appearance?: "always" | "execute" | "interaction-only";
-          execution?: "render" | "execute";
-          callback?: (token: string) => void;
-          "error-callback"?: (errorCode: string) => void;
-          "expired-callback"?: () => void;
-        }
-      ) => string;
-      execute: (widgetId: string) => void;
-      reset: (widgetId: string) => void;
-    };
-  }
-}
 
 const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "once", label: "1回" },
@@ -84,29 +64,48 @@ async function encryptFileName(
   return encodeBase64Url(packed);
 }
 
-const CHUNK_UPLOAD_CONCURRENCY = 4;
+const CHUNK_UPLOAD_CONCURRENCY = 8;
+
+// 暗号化1チャンクあたり最大この件数まで、アップロード側の消費を待たずに先読みしておく
+// (8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロードを始めるのではなく、
+// 暗号化とアップロードを重ねて進めるためのバッファ上限で、メモリ使用量をここで頭打ちにする。
+const ENCRYPT_PREFETCH_CHUNKS = 8;
 
 // パート番号はR2のマルチパートアップロード上で順不同に受け付けられるため、
 // チャンクを並列アップロードして1ラウンドトリップあたりの待ち時間を隠す。
-async function uploadChunksConcurrently(
-  chunks: Uint8Array[],
+// chunksは非同期ジェネレータ(暗号化が終わったチャンクから順に届く)で、
+// 呼び出し中の.next()はソース側で発行順に処理されるため、複数ワーカーが
+// 同時にnext()を呼んでも受け取る順序は暗号化された順序と一致する。
+async function uploadChunksFromStream(
+  chunks: AsyncGenerator<Uint8Array>,
   uploadSessionId: string,
   path: string,
   onChunkUploaded: () => void
 ): Promise<void> {
-  let nextIndex = 0;
+  let nextPartNumber = 1;
   let firstError: Error | null = null;
 
   const worker = async (): Promise<void> => {
     while (firstError === null) {
-      const index = nextIndex++;
+      let value: Uint8Array | undefined;
+      let done: boolean | undefined;
 
-      if (index >= chunks.length) {
+      try {
+        ({ value, done } = await chunks.next());
+      } catch (unknownErr) {
+        firstError =
+          unknownErr instanceof Error
+            ? unknownErr
+            : new Error("Unknown error");
         return;
       }
 
-      const chunk = chunks[index];
-      const partNumber = index + 1;
+      if (done || !value) {
+        return;
+      }
+
+      const chunk = value;
+      const partNumber = nextPartNumber++;
       const body = chunk.buffer.slice(
         chunk.byteOffset,
         chunk.byteOffset + chunk.byteLength
@@ -139,9 +138,8 @@ async function uploadChunksConcurrently(
     }
   };
 
-  const workerCount = Math.min(CHUNK_UPLOAD_CONCURRENCY, chunks.length);
   await Promise.all(
-    Array.from({ length: workerCount }, () => worker())
+    Array.from({ length: CHUNK_UPLOAD_CONCURRENCY }, () => worker())
   );
 
   if (firstError) {
@@ -171,16 +169,17 @@ type PendingFile = {
   path: string;
 };
 
-// 暗号化済みのチャンク群。ファイル追加と同時にバックグラウンドで暗号化しておき、
-// 「アップロードする」が押された時点では暗号化を待たずに送信だけを行えるようにする。
-type EncryptedFile = {
-  encryptedFileName: string;
-  chunks: Uint8Array[];
+// ファイル追加と同時にバックグラウンドで暗号化を始めるストリーム。
+// chunksは先読みバッファ付きの非同期ジェネレータで、ファイル全体を暗号化し終える
+// 前から(バッファが埋まった分だけ)アップロード側が消費を始められる。
+type EncryptedFileStream = {
+  encryptedFileName: Promise<string>;
+  chunks: AsyncGenerator<Uint8Array>;
 };
 
 type QueuedFile = {
   pendingFile: PendingFile;
-  ready: Promise<EncryptedFile>;
+  encrypted: EncryptedFileStream;
   uploaded: boolean;
 };
 
@@ -259,10 +258,8 @@ export default function UploadForm() {
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const dragCounterRef = useRef(0);
-  const turnstileContainerRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetIdRef = useRef<string | null>(null);
-  const turnstileResolveRef = useRef<((token: string) => void) | null>(null);
-  const turnstileRejectRef = useRef<((error: Error) => void) | null>(null);
+  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+    useTurnstile();
 
   // 共有全体で1本の鍵を使い回す。ファイル追加時点で(Promiseとして)確定させ、
   // 以降の暗号化・パスワードラップは全てこの同じ鍵を待って使う。
@@ -279,97 +276,25 @@ export default function UploadForm() {
     return keyPromiseRef.current;
   };
 
-  // appearance: "interaction-only" は、Cloudflareが実際にチャレンジ表示が
-  // 必要と判断した場合のみウィジェットを表示する(正規ユーザーには通常何も見えない)。
-  const ensureTurnstileWidget = (): string | null => {
-    if (!window.turnstile || !turnstileContainerRef.current) {
-      return null;
-    }
-
-    if (turnstileWidgetIdRef.current) {
-      return turnstileWidgetIdRef.current;
-    }
-
-    const widgetId = window.turnstile.render(turnstileContainerRef.current, {
-      sitekey: TURNSTILE_SITE_KEY,
-      appearance: "interaction-only",
-      execution: "execute",
-      callback: (token) => {
-        const resolve = turnstileResolveRef.current;
-        turnstileResolveRef.current = null;
-        turnstileRejectRef.current = null;
-        resolve?.(token);
-      },
-      "error-callback": (errorCode) => {
-        const reject = turnstileRejectRef.current;
-        turnstileResolveRef.current = null;
-        turnstileRejectRef.current = null;
-        reject?.(
-          new Error(`Bot対策の検証に失敗しました(${errorCode})。`)
-        );
-      },
-      "expired-callback": () => {
-        const reject = turnstileRejectRef.current;
-        turnstileResolveRef.current = null;
-        turnstileRejectRef.current = null;
-        reject?.(
-          new Error(
-            "Bot対策の検証がタイムアウトしました。もう一度お試しください。"
-          )
-        );
-      },
-    });
-
-    turnstileWidgetIdRef.current = widgetId;
-    return widgetId;
-  };
-
-  const getTurnstileToken = (): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      if (!TURNSTILE_SITE_KEY) {
-        reject(new Error("Bot対策が設定されていません。"));
-        return;
-      }
-
-      const widgetId = ensureTurnstileWidget();
-
-      if (!widgetId || !window.turnstile) {
-        reject(
-          new Error(
-            "Bot対策の読み込みに失敗しました。ページを再読み込みしてください。"
-          )
-        );
-        return;
-      }
-
-      turnstileResolveRef.current = resolve;
-      turnstileRejectRef.current = reject;
-      window.turnstile.execute(widgetId);
-    });
-  };
-
   // ファイルが追加された瞬間に暗号化だけを始める(ネットワーク送信はまだしない)。
   // 保存期間・パスワードの入力を待つ間の待ち時間を暗号化で埋めるのが狙い。
-  const startEncrypting = (
-    pendingFile: PendingFile
-  ): Promise<EncryptedFile> => {
-    return (async () => {
+  // chunksはENCRYPT_PREFETCH_CHUNKS件を上限に先読みするだけで、ファイル全体を
+  // メモリに保持しない(「アップロードする」を押した時点でアップロード側が
+  // 消費を始めれば、そこから先は暗号化とアップロードが並行して進む)。
+  const startEncrypting = (pendingFile: PendingFile): EncryptedFileStream => {
+    const encryptedFileName = getKey().then((key) =>
+      encryptFileName(pendingFile.path, key)
+    );
+
+    async function* encryptedChunks(): AsyncGenerator<Uint8Array> {
       const key = await getKey();
-      const encryptedFileName = await encryptFileName(
-        pendingFile.path,
-        key
-      );
-      const chunks: Uint8Array[] = [];
+      yield* iterateEncryptedChunks(pendingFile.file, key);
+    }
 
-      for await (const chunk of iterateEncryptedChunks(
-        pendingFile.file,
-        key
-      )) {
-        chunks.push(chunk);
-      }
-
-      return { encryptedFileName, chunks };
-    })();
+    return {
+      encryptedFileName,
+      chunks: bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS),
+    };
   };
 
   const addFiles = (newFiles: PendingFile[]) => {
@@ -393,11 +318,11 @@ export default function UploadForm() {
     setFiles((prev) => [...prev, ...newFiles]);
 
     for (const pendingFile of newFiles) {
-      const ready = startEncrypting(pendingFile);
+      const encrypted = startEncrypting(pendingFile);
       // ここでの例外は実際のアップロード時(upload内でのawait)に処理するので、
       // unhandled rejectionの警告だけを避ける。
-      ready.catch(() => {});
-      queueRef.current.push({ pendingFile, ready, uploaded: false });
+      encrypted.encryptedFileName.catch(() => {});
+      queueRef.current.push({ pendingFile, encrypted, uploaded: false });
     }
   };
 
@@ -488,8 +413,9 @@ export default function UploadForm() {
 
       for (const item of pending) {
         const { path } = item.pendingFile;
-        // 通常はここで既に暗号化が終わっている(クリック前から進めていたため)
-        const { encryptedFileName, chunks } = await item.ready;
+        // ファイル名の暗号化はすぐ終わるので待つが、本体チャンクの暗号化は
+        // 待たない(アップロード中も並行して進み続ける)。
+        const encryptedFileName = await item.encrypted.encryptedFileName;
 
         const startResponse = await fetch("/api/upload/start", {
           method: "POST",
@@ -520,8 +446,8 @@ export default function UploadForm() {
         shareIdRef.current = startResult.shareId;
         uploadTokenRef.current = startResult.uploadToken;
 
-        await uploadChunksConcurrently(
-          chunks,
+        await uploadChunksFromStream(
+          item.encrypted.chunks,
           startResult.uploadSessionId,
           path,
           () => {

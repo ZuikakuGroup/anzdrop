@@ -8,15 +8,15 @@ export async function encryptChunk(
 ): Promise<EncryptionResult> {
   const iv = generateIV();
 
-  const data = Uint8Array.from(plaintext);
-
+  // plaintextはSharedArrayBufferを裏付けに持つことがない(このプロジェクトでは
+  // 常に通常のArrayBuffer由来)ため、BufferSourceとして安全に渡せる。
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
       iv,
     },
     key,
-    data
+    plaintext as BufferSource
   );
 
   return {
