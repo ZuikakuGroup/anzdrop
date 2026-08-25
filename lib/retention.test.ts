@@ -14,7 +14,7 @@ describe("isRetention", () => {
   });
 
   it("rejects unknown strings, non-strings, and empty values", () => {
-    expect(isRetention("30d")).toBe(false);
+    expect(isRetention("99d")).toBe(false);
     expect(isRetention("")).toBe(false);
     expect(isRetention(undefined)).toBe(false);
     expect(isRetention(null)).toBe(false);
@@ -35,6 +35,9 @@ describe("calculateExpiresAt", () => {
     );
     expect(calculateExpiresAt(createdAt, "7d")).toBe(
       "2026-01-08T00:00:00.000Z"
+    );
+    expect(calculateExpiresAt(createdAt, "30d")).toBe(
+      "2026-01-31T00:00:00.000Z"
     );
   });
 
@@ -64,5 +67,6 @@ describe("maxDownloadsForRetention", () => {
     expect(maxDownloadsForRetention("1d")).toBeNull();
     expect(maxDownloadsForRetention("3d")).toBeNull();
     expect(maxDownloadsForRetention("7d")).toBeNull();
+    expect(maxDownloadsForRetention("30d")).toBeNull();
   });
 });

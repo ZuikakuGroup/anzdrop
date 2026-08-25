@@ -77,6 +77,49 @@
 | `right_type` | TEXT (nullable) | 権利者申し立て時の権利種別: `"copyright"|"trademark"|"portrait"|"other"`(migration 0006) |
 | `category` | TEXT NOT NULL DEFAULT `'other'` | 通報カテゴリ: `"csam"|"malware"|"privacy"|"spam"|"other"|"rights_infringement"`(migration 0007)。詳細は [`moderation.md`](./moderation.md) |
 
+### `accounts`
+
+有料プラン(アカウント制サブスクリプション)。メールアドレスは保存しない。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `id` | TEXT PK | システム生成のアカウントID([`lib/account/id.ts`](../lib/account/id.ts)、`nanoid(16)`) |
+| `password_hash` | TEXT | パスワードのPBKDF2ハッシュ([`lib/account/password.ts`](../lib/account/password.ts)) |
+| `recovery_code_hash` | TEXT | リカバリーコードのハッシュ。パスワード忘れ時の再設定にのみ使う(サインアップ時に1回だけ平文を表示し、以後は保持しない) |
+| `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` または `"paid"` |
+| `plan_expires_at` | TEXT (nullable) | 有料プランの有効期限(ISO8601)。Bitcoin決済は自動更新されないため、この期限が切れるとfreeに戻る |
+| `stripe_customer_id` | TEXT (nullable) | Stripe Customer ID |
+| `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
+| `created_at` | TEXT | 作成日時 |
+
+migration 0009。
+
+### `btc_payments`
+
+Bitcoin(OpenNode)決済の履歴。カード決済と異なり自動更新できないため、支払い1回ごとに「期間チャージ」として記録する。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `id` | TEXT PK | 支払いID |
+| `account_id` | TEXT | `accounts.id`への参照(`ON DELETE CASCADE`) |
+| `opennode_charge_id` | TEXT | OpenNode側のcharge ID |
+| `status` | TEXT NOT NULL DEFAULT `'pending'` | `"pending"|"paid"|"expired"` |
+| `extends_plan_until` | TEXT (nullable) | この支払いが確定した場合に`accounts.plan_expires_at`へ反映する日時 |
+| `created_at` | TEXT | 作成日時 |
+
+migration 0009。
+
+### `stripe_events`
+
+処理済みStripe WebhookイベントIDの記録のみ(二重処理防止)。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `id` | TEXT PK | StripeのイベントID |
+| `processed_at` | TEXT | 処理日時 |
+
+migration 0009。
+
 ## マイグレーション一覧
 
 | ファイル | 内容 |
@@ -89,5 +132,6 @@
 | `0006_add_rights_holder_reports.sql` | 権利者向け申し立てフォーム対応(`report_type`/`claimant_name`/`contact_email`/`right_type`) |
 | `0007_add_report_category.sql` | 通報カテゴリ(`category`)追加 |
 | `0008_add_share_suspension.sql` | `shares.suspended_at` 追加(管理画面からの共有一時停止) |
+| `0009_add_accounts.sql` | 有料プラン用の`accounts`/`btc_payments`/`stripe_events`テーブル新設 |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

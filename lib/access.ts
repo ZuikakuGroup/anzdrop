@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { extractCookie } from "@/lib/cookie";
 
 export type AccessIdentity = {
   email: string;
@@ -24,29 +25,6 @@ function getJwks(teamDomain: string): ReturnType<typeof createRemoteJWKSet> {
   cachedTeamDomain = teamDomain;
 
   return cachedJwks;
-}
-
-function extractCookie(cookieHeader: string | null, name: string): string | null {
-  if (!cookieHeader) {
-    return null;
-  }
-
-  for (const part of cookieHeader.split(";")) {
-    const separatorIndex = part.indexOf("=");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = part.slice(0, separatorIndex).trim();
-    const value = part.slice(separatorIndex + 1).trim();
-
-    if (key === name) {
-      return value;
-    }
-  }
-
-  return null;
 }
 
 // Cloudflare Accessは/admin*向けのリクエストをエッジで既に認証済みだが、
