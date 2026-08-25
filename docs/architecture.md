@@ -22,10 +22,12 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 
 | バインディング | 種類 | 用途 |
 | --- | --- | --- |
-| `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` テーブル |
+| `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` / `accounts` / `btc_payments` / `stripe_events` テーブル |
 | `FILES_BUCKET` | R2 Bucket | 暗号化済みファイル本体(マルチパートアップロード) |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 環境変数 | 管理画面(`/admin`, `/api/admin/*`)のCloudflare Access JWT検証用 |
-| `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始時のTurnstile検証用 |
+| `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
+| `SESSION_SECRET` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` | シークレット | アカウントセッション・有料プラン決済([`accounts.md`](./accounts.md)参照) |
+| `STRIPE_PRICE_ID` / `OPENNODE_BTC_CHARGE_AMOUNT_USD` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定 |
 
 ## 主要な画面とAPI
 
@@ -36,6 +38,8 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
 | `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
+| `/signup`・`/login`・`/account/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
+| `/billing`(`app/billing/page.tsx`) | プラン確認・Stripe/Bitcoin決済導線 |
 
 API側の詳細は [`api.md`](./api.md) を参照。
 

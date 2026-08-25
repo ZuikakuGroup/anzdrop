@@ -1,0 +1,143 @@
+"use client";
+
+import { useState } from "react";
+import Script from "next/script";
+import SiteHeader from "@/components/brand/SiteHeader";
+import SiteFooter from "@/components/brand/SiteFooter";
+import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+
+type LoginResponse = { success: true } | { success: false; error: string };
+
+export default function LoginPage() {
+  const [accountId, setAccountId] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+    useTurnstile();
+
+  const submit = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    if (!accountId.trim() || !password) {
+      setError("アカウントIDとパスワードを入力してください。");
+      return;
+    }
+
+    setError("");
+    setIsSubmitting(true);
+
+    try {
+      const turnstileToken = await getTurnstileToken();
+
+      const response = await fetch("/api/account/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: accountId.trim(),
+          password,
+          turnstileToken,
+        }),
+      });
+
+      const data = (await response.json()) as LoginResponse;
+
+      if (!response.ok || !data.success) {
+        throw new Error(!data.success ? data.error : "ログインに失敗しました。");
+      }
+
+      window.location.href = "/billing";
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+
+      setError(err.message);
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <SiteHeader />
+
+      <main className="flex flex-1 items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black leading-snug tracking-normal">
+              ログイン
+            </h1>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label
+                htmlFor="login-account-id"
+                className="text-xs font-bold text-ink/50"
+              >
+                アカウントID
+              </label>
+              <input
+                id="login-account-id"
+                type="text"
+                value={accountId}
+                onChange={(event) => setAccountId(event.target.value)}
+                className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label
+                htmlFor="login-password"
+                className="text-xs font-bold text-ink/50"
+              >
+                パスワード
+              </label>
+              <input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+              />
+            </div>
+
+            <div ref={turnstileContainerRef} className="flex justify-center" />
+
+            <button
+              onClick={submit}
+              disabled={isSubmitting}
+              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+            >
+              {isSubmitting ? "ログイン中..." : "ログインする"}
+            </button>
+
+            <p className="min-h-[20px] text-sm font-bold text-brand">{error}</p>
+
+            <div className="flex justify-between text-xs text-ink/50">
+              <a href="/signup" className="font-bold text-brand hover:underline">
+                アカウント作成
+              </a>
+              <a
+                href="/account/recover"
+                className="font-bold text-brand hover:underline"
+              >
+                パスワードを忘れた
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <SiteFooter />
+
+      {TURNSTILE_SITE_KEY && (
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+          strategy="afterInteractive"
+        />
+      )}
+    </div>
+  );
+}

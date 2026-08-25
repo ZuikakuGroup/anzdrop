@@ -65,6 +65,59 @@
 
 詳細な通報カテゴリ・モデレーション運用は [`moderation.md`](./moderation.md) を参照。
 
+## アカウント・有料プラン
+
+詳細な設計は [`accounts.md`](./accounts.md) を参照。メールアドレスは収集しない。
+
+### `POST /api/account/signup`
+
+アカウントを新規作成する。ボット対策として `turnstileToken` が必須。
+
+- リクエスト: `{ password, turnstileToken }`(パスワードは8〜200文字)
+- レスポンス: `{ success: true, accountId, recoveryCode }`。`recoveryCode` はこの応答でのみ表示され、以後サーバーは平文を保持しない。
+
+### `POST /api/account/login`
+
+- リクエスト: `{ accountId, password, turnstileToken }`
+- 成功時、セッションCookie(`anzdrop_session`)を発行する。レスポンス: `{ success: true }`
+
+### `POST /api/account/logout`
+
+セッションCookieを失効させる。リクエストボディ不要。
+
+### `POST /api/account/recover`
+
+アカウントID・リカバリーコードでパスワードを再設定する。メールでの再設定手段はない。
+
+- リクエスト: `{ accountId, recoveryCode, newPassword, turnstileToken }`
+- レスポンス: `{ success: true, recoveryCode }`。パスワードと同時にリカバリーコードも再発行される(使い捨て)。
+
+### `GET /api/account/me`
+
+ログイン中アカウントのプラン・有効期限を返す(要セッションCookie)。
+
+- レスポンス: `{ success: true, accountId, plan: "free"|"paid", planExpiresAt: string|null }`
+
+### `POST /api/billing/stripe/checkout`
+
+ログイン必須。Stripe Checkout Session(`mode: "subscription"`)を作成する。
+
+- レスポンス: `{ success: true, url }`。クライアントはこのURLへリダイレクトするだけでよい(Stripe.js不要)。
+
+### `POST /api/billing/stripe/webhook`
+
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名検証する。人間が直接叩くエンドポイントではない。
+
+### `POST /api/billing/btc/charge`
+
+ログイン必須。OpenNodeでBitcoin決済のchargeを作成する(「期間チャージ」方式、自動更新なし)。
+
+- レスポンス: `{ success: true, hostedCheckoutUrl }`
+
+### `POST /api/billing/btc/webhook`
+
+OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`hashed_order`(HMAC-SHA256、鍵はAPIキー自体)で署名検証する。人間が直接叩くエンドポイントではない。
+
 ## 管理画面API(要Cloudflare Access認証)
 
 以下は [`lib/access.ts`](../lib/access.ts) の `verifyAccessJwt()` によるCloudflare Access JWT検証を通過しないと `403 Unauthorized` を返す。主たる認証はCloudflare Access自体(エッジ側のZero Trust設定)であり、これはオリジン側の多層防御。
