@@ -3,6 +3,7 @@ import {
   PLAN_LIMITS,
   getMaxFileSizeBytes,
   isRetentionAllowedForPlan,
+  isPreviewAllowedForPlan,
   effectivePlan,
   extendPaidPeriod,
 } from "./plan";
@@ -41,6 +42,21 @@ describe("PLAN_LIMITS", () => {
     expect(PLAN_LIMITS.free.allowedRetentions.sort()).toEqual(
       ["once", "1d", "3d", "7d"].sort()
     );
+  });
+
+  it("only the paid plan enables preview", () => {
+    expect(PLAN_LIMITS.free.previewEnabled).toBe(false);
+    expect(PLAN_LIMITS.paid.previewEnabled).toBe(true);
+  });
+});
+
+describe("isPreviewAllowedForPlan", () => {
+  it("does not allow preview on the free plan", () => {
+    expect(isPreviewAllowedForPlan("free")).toBe(false);
+  });
+
+  it("allows preview on the paid plan", () => {
+    expect(isPreviewAllowedForPlan("paid")).toBe(true);
   });
 });
 

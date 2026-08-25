@@ -7,6 +7,7 @@ type Share = {
   wrapped_key: string | null;
   key_salt: string | null;
   suspended_at: string | null;
+  preview_allowed: number;
 };
 
 type FileRecord = {
@@ -15,6 +16,7 @@ type FileRecord = {
   storage_key: string;
   encrypted_file_name: string;
   size: number;
+  max_downloads: number | null;
 };
 
 type RouteContext = {
@@ -27,6 +29,7 @@ type DownloadResponseFile = {
   id: string;
   name: string;
   size: number;
+  isOneTime: boolean;
 };
 
 type DownloadResponseShare = {
@@ -34,6 +37,7 @@ type DownloadResponseShare = {
   expires_at: string;
   wrappedKey: string | null;
   keySalt: string | null;
+  previewAllowed: boolean;
 };
 
 export async function GET(
@@ -46,7 +50,7 @@ export async function GET(
     const { shareId } = await context.params;
     const share = await env.DB.prepare(
       `
-        SELECT id, created_at, expires_at, wrapped_key, key_salt, suspended_at
+        SELECT id, created_at, expires_at, wrapped_key, key_salt, suspended_at, preview_allowed
         FROM shares
         WHERE id = ?
       `
@@ -93,7 +97,8 @@ export async function GET(
           share_id,
           storage_key,
           encrypted_file_name,
-          size
+          size,
+          max_downloads
         FROM files
         WHERE share_id = ?
           AND (max_downloads IS NULL OR download_count < max_downloads)
@@ -107,12 +112,14 @@ export async function GET(
       expires_at: share.expires_at,
       wrappedKey: share.wrapped_key,
       keySalt: share.key_salt,
+      previewAllowed: share.preview_allowed === 1,
     };
 
     const responseFiles: DownloadResponseFile[] = files.map((file) => ({
       id: file.id,
       name: file.encrypted_file_name,
       size: file.size,
+      isOneTime: file.max_downloads !== null,
     }));
 
     return Response.json(

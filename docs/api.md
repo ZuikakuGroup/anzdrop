@@ -37,8 +37,10 @@
 共有のメタデータとファイル一覧を返す。
 
 - 共有が存在しない/期限切れ/一時停止中の場合はそれぞれ404/410/403。
-- レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt }, files: [{ id, name, size }] }`
+- レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt, previewAllowed }, files: [{ id, name, size, isOneTime }] }`
   - `files` の `name` は暗号化済みファイル名(クライアント側で復号が必要)。
+  - `previewAllowed` は共有作成時のアップローダーの実効プランから一度だけ決まる(有料プランのみ`true`)。`true`の場合、対応拡張子(MP4/MP3/JPEG/PNG)のファイルはクライアント側で`/api/file/[fileId]`を使ってブラウザ内プレビューできる([`lib/preview.ts`](../lib/preview.ts))。
+  - `isOneTime`が`true`のファイル(保存期間「1回」)は、プレビューが`/api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、`previewAllowed`が`true`でもクライアント側でプレビューを非表示にする。
   - ダウンロード回数上限(保存期間「1回」)に達したファイルは一覧から自動的に除外される。
 - `Cache-Control: no-store`。
 

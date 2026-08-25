@@ -50,6 +50,32 @@ export function InstagramIcon({ className = "" }: IconProps) {
   );
 }
 
+export function EyeIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle
+        cx={12}
+        cy={12}
+        r={2.6}
+        stroke="currentColor"
+        strokeWidth={2}
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ className = "" }: IconProps) {
   return (
     <svg

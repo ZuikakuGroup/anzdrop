@@ -7,15 +7,21 @@ export type Plan = "free" | "paid";
 // ここを変更するだけでアップロードフロー全体に反映される。
 export const PLAN_LIMITS: Record<
   Plan,
-  { maxFileSizeBytes: number; allowedRetentions: Retention[] }
+  {
+    maxFileSizeBytes: number;
+    allowedRetentions: Retention[];
+    previewEnabled: boolean;
+  }
 > = {
   free: {
     maxFileSizeBytes: MAX_FILE_SIZE_BYTES,
     allowedRetentions: ["once", "1d", "3d", "7d"],
+    previewEnabled: false,
   },
   paid: {
     maxFileSizeBytes: 50 * 1024 * 1024 * 1024, // 50GB(暫定)
     allowedRetentions: ["once", "1d", "3d", "7d", "30d"],
+    previewEnabled: true,
   },
 };
 
@@ -28,6 +34,12 @@ export function isRetentionAllowedForPlan(
   plan: Plan
 ): boolean {
   return PLAN_LIMITS[plan].allowedRetentions.includes(retention);
+}
+
+// ブラウザ内プレビュー(lib/preview.ts)を利用できるプランか。共有作成時に
+// 一度だけ判定しshares.preview_allowedへ焼き込む(expires_atと同じ方式)。
+export function isPreviewAllowedForPlan(plan: Plan): boolean {
+  return PLAN_LIMITS[plan].previewEnabled;
 }
 
 // アカウントの有料期限(plan_expires_at)を見て、実効プランを判定する。

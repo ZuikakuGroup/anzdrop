@@ -16,8 +16,11 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 | --- | --- | --- |
 | 1ファイルの上限サイズ | `lib/limits.ts`の`MAX_FILE_SIZE_BYTES`(既定5GB) | `lib/plan.ts`の`PLAN_LIMITS.paid.maxFileSizeBytes`(暫定50GB) |
 | 選べる保存期間 | 1回・1日・3日・7日 | 左記に加えて30日 |
+| ブラウザ内プレビュー | 不可 | 可(MP4/MP3/JPEG/PNGのみ。保存期間「1回」のファイルは対象外) |
 
 具体的な容量・金額は暫定値。正式なプラン内容が決まったら`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`OPENNODE_BTC_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
+
+ブラウザ内プレビューの可否(`shares.preview_allowed`)も、保存期間の上限と同じく共有作成時のアップローダーの実効プランから一度だけ判定して共有に焼き込む(`lib/preview.ts`)。以後アカウントの状態が変わっても、既に作成済みの共有の値は変わらない。ダウンロード側は完全に匿名なので、この判定は「プレビューする人」ではなく「共有を作ったアップローダー」のプランに基づく。保存期間「1回」のファイルは、プレビューが`GET /api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、共有がプレビュー可であっても無条件でプレビューを非表示にする。
 
 `accounts.plan`と`accounts.plan_expires_at`から実効プランを判定するのが`getAccountPlanInfo()`/`effectivePlan()`で、`plan_expires_at`が過去なら(DB上`plan='paid'`のままでも)自動的にfree扱いになる。これはBitcoin決済が自動更新されないための「失効」判定を兼ねている。
 

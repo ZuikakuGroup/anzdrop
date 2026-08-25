@@ -17,6 +17,7 @@
 | `wrapped_key` | TEXT (nullable) | パスワード保護時、パスワード由来鍵でラップされた暗号化鍵(migration 0004) |
 | `key_salt` | TEXT (nullable) | 上記のラップに使ったPBKDF2ソルト(migration 0004) |
 | `suspended_at` | TEXT (nullable) | 管理画面からの一時停止日時。設定されている間はダウンロード・追加アップロードとも拒否される(migration 0008) |
+| `preview_allowed` | INTEGER NOT NULL DEFAULT 0 | 共有作成時点のアップローダーの実効プランから決まるブラウザ内プレビュー可否(1=可)。`expires_at`と同様、作成時に一度だけ確定し以後変更しない(migration 0011) |
 
 ### `uploads`
 
@@ -135,5 +136,6 @@ migration 0009。
 | `0008_add_share_suspension.sql` | `shares.suspended_at` 追加(管理画面からの共有一時停止) |
 | `0009_add_accounts.sql` | 有料プラン用の`accounts`/`btc_payments`/`stripe_events`テーブル新設 |
 | `0010_add_session_version.sql` | `accounts.session_version` 追加(パスワード再設定時の既存セッション失効) |
+| `0011_add_preview_allowed.sql` | `shares.preview_allowed` 追加(有料プラン限定のブラウザ内プレビュー機能。MP4/MP3/JPEG/PNG) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

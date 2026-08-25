@@ -12,6 +12,7 @@ import { verifySession } from "@/lib/account/session";
 import {
   getAccountPlanInfo,
   getMaxFileSizeBytes,
+  isPreviewAllowedForPlan,
   isRetentionAllowedForPlan,
 } from "@/lib/plan";
 
@@ -178,9 +179,10 @@ export async function POST(
           expires_at,
           upload_token,
           wrapped_key,
-          key_salt
+          key_salt,
+          preview_allowed
         )
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
         .bind(
           shareId,
@@ -188,7 +190,8 @@ export async function POST(
           expiresAt,
           uploadToken,
           requestBody.wrappedKey ?? null,
-          requestBody.keySalt ?? null
+          requestBody.keySalt ?? null,
+          isPreviewAllowedForPlan(plan) ? 1 : 0
         )
         .run();
     }

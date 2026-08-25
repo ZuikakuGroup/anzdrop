@@ -10,10 +10,16 @@ import {
   deriveKeyFromPassword,
 } from "@/lib/crypto";
 import { formatBytes } from "@/lib/format";
+import {
+  guessPreviewMimeType,
+  getPreviewKind,
+  canPreviewFile,
+  type PreviewKind,
+} from "@/lib/preview";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
-import { XIcon } from "@/components/brand/ShareIcons";
+import { XIcon, EyeIcon } from "@/components/brand/ShareIcons";
 
 type DownloadPageProps = {
   shareId: string;
@@ -33,6 +39,7 @@ type RawFile = {
   id: string;
   name: string;
   size: number;
+  isOneTime: boolean;
 };
 
 type DownloadResponse = {
@@ -42,6 +49,7 @@ type DownloadResponse = {
     expires_at: string;
     wrappedKey: string | null;
     keySalt: string | null;
+    previewAllowed: boolean;
   };
   files: RawFile[];
   error?: string;
@@ -51,6 +59,13 @@ type DecryptedFile = {
   id: string;
   name: string;
   size: number;
+  isOneTime: boolean;
+};
+
+type PreviewState = {
+  file: DecryptedFile;
+  url: string;
+  kind: PreviewKind;
 };
 
 // ユーザーに表示してよい文言だけを持つエラー。それ以外の技術的なエラーは
@@ -93,6 +108,7 @@ async function decryptFileList(
       id: file.id,
       name: await decryptFileName(file.name, key),
       size: file.size,
+      isOneTime: file.isOneTime,
     }))
   );
 }
@@ -151,6 +167,12 @@ export default function DownloadPage({
 
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
+  const [previewAllowed, setPreviewAllowed] = useState(false);
+
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+
+  const [previewLoadingId, setPreviewLoadingId] = useState("");
+
   const [passwordProtection, setPasswordProtection] = useState<{
     wrappedKey: string;
     keySalt: string;
@@ -188,6 +210,8 @@ export default function DownloadPage({
 
           throw new Error(result.error ?? "Download failed");
         }
+
+        setPreviewAllowed(result.share.previewAllowed);
 
         if (result.share.wrappedKey && result.share.keySalt) {
           setPasswordProtection({
@@ -234,6 +258,17 @@ export default function DownloadPage({
 
     load();
   }, [shareId]);
+
+  // プレビュー中のBlob URLを、閉じる/差し替え/アンマウント時に確実に解放する。
+  useEffect(() => {
+    if (!preview) {
+      return;
+    }
+
+    return () => {
+      URL.revokeObjectURL(preview.url);
+    };
+  }, [preview]);
 
   const unlockWithPassword = async () => {
     if (!passwordProtection || isUnlocking) {
@@ -310,7 +345,7 @@ export default function DownloadPage({
   };
 
   const downloadFile = async (file: DecryptedFile) => {
-    if (!key || downloadingId || isDownloadingAll) {
+    if (!key || downloadingId || isDownloadingAll || previewLoadingId) {
       return;
     }
 
@@ -331,8 +366,62 @@ export default function DownloadPage({
     }
   };
 
+  const openPreview = async (file: DecryptedFile) => {
+    if (!key || downloadingId || isDownloadingAll || previewLoadingId) {
+      return;
+    }
+
+    // ボタンの表示条件と同じチェックをここでも行う(念のための二重防御)。
+    // 保存期間「1回」のファイルは、/api/file/[fileId]の1回限りの
+    // ダウンロード枠を誤って消費してしまわないよう、呼び出し経路が
+    // 将来増えても必ずここで止まるようにする。
+    if (
+      !canPreviewFile({
+        shareAllowsPreview: previewAllowed,
+        isOneTimeFile: file.isOneTime,
+        filename: file.name,
+      })
+    ) {
+      return;
+    }
+
+    const mimeType = guessPreviewMimeType(file.name);
+    const kind = mimeType ? getPreviewKind(mimeType) : null;
+
+    if (!mimeType || !kind) {
+      return;
+    }
+
+    setPreviewLoadingId(file.id);
+    setError("");
+
+    try {
+      const bytes = await fetchAndDecrypt(file, key);
+      const blob = new Blob([bytes as BlobPart], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+
+      setPreview({ file, url, kind });
+    } catch (err) {
+      if (err instanceof FileGoneError) {
+        setFiles((prev) => prev.filter((f) => f.id !== file.id));
+      }
+
+      setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
+    } finally {
+      setPreviewLoadingId("");
+    }
+  };
+
+  const closePreview = () => setPreview(null);
+
   const downloadAll = async () => {
-    if (!key || downloadingId || isDownloadingAll || files.length === 0) {
+    if (
+      !key ||
+      downloadingId ||
+      isDownloadingAll ||
+      previewLoadingId ||
+      files.length === 0
+    ) {
       return;
     }
 
@@ -454,13 +543,15 @@ export default function DownloadPage({
             ) : (
               <ul className="anz-scroll h-40 divide-y divide-ink/10 overflow-y-auto rounded border-2 border-ink p-2 text-[13px]">
                 {files.map((file) => (
-                  <li key={file.id}>
+                  <li key={file.id} className="flex items-center gap-1">
                     <button
                       onClick={() => downloadFile(file)}
                       disabled={
-                        downloadingId === file.id || isDownloadingAll
+                        downloadingId === file.id ||
+                        isDownloadingAll ||
+                        !!previewLoadingId
                       }
-                      className="flex w-full items-center justify-between gap-4 px-2 py-2 text-left transition-colors hover:bg-ink/[0.03] disabled:opacity-50"
+                      className="flex min-w-0 flex-1 items-center justify-between gap-4 px-2 py-2 text-left transition-colors hover:bg-ink/[0.03] disabled:opacity-50"
                     >
                       <span className="min-w-0 flex-1 truncate">
                         {file.name}
@@ -473,6 +564,30 @@ export default function DownloadPage({
                         </span>
                       )}
                     </button>
+
+                    {canPreviewFile({
+                      shareAllowsPreview: previewAllowed,
+                      isOneTimeFile: file.isOneTime,
+                      filename: file.name,
+                    }) && (
+                      <button
+                        onClick={() => openPreview(file)}
+                        disabled={
+                          downloadingId === file.id ||
+                          isDownloadingAll ||
+                          !!previewLoadingId
+                        }
+                        aria-label="プレビュー"
+                        title="プレビュー"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-30"
+                      >
+                        {previewLoadingId === file.id ? (
+                          <Spinner className="h-4 w-4 text-brand" />
+                        ) : (
+                          <EyeIcon className="h-4 w-4" />
+                        )}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -507,6 +622,45 @@ export default function DownloadPage({
       </main>
 
       <SiteFooter reportShareId={shareId} />
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4">
+          <div className="relative max-h-[90vh] w-full max-w-2xl rounded-lg bg-paper p-4">
+            <button
+              onClick={closePreview}
+              aria-label="閉じる"
+              title="閉じる"
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+
+            <p className="mb-3 truncate pr-10 text-sm font-bold">
+              {preview.file.name}
+            </p>
+
+            {preview.kind === "video" && (
+              <video
+                src={preview.url}
+                controls
+                autoPlay
+                className="max-h-[70vh] w-full rounded"
+              />
+            )}
+            {preview.kind === "audio" && (
+              <audio src={preview.url} controls autoPlay className="w-full" />
+            )}
+            {preview.kind === "image" && (
+              // eslint-disable-next-line @next/next/no-img-element -- blob: URLの表示なのでnext/imageの最適化対象外
+              <img
+                src={preview.url}
+                alt={preview.file.name}
+                className="max-h-[70vh] w-full rounded object-contain"
+              />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
