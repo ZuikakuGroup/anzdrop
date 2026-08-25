@@ -9,7 +9,14 @@
 
   "vars": {
     "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",
-    "CF_ACCESS_AUD": "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88"
+    "CF_ACCESS_AUD": "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88",
+    // Stripeダッシュボードで作成する月額サブスクリプション用Priceのid。
+    // 実際の金額・課金サイクルはStripe側のPrice設定で決める(要ユーザー設定)。
+    "STRIPE_PRICE_ID": "price_REPLACE_ME",
+    // Bitcoin(OpenNode)の「期間チャージ」1回分の金額(USD)と、それが延長する日数。
+    // Bitcoinは自動更新できないため、都度この金額を支払うと有効期限がこの日数分延びる。
+    "OPENNODE_BTC_CHARGE_AMOUNT_USD": 5,
+    "OPENNODE_BTC_DAYS_PER_CHARGE": 30
   },
 
   "triggers": {
