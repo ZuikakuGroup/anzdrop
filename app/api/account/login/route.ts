@@ -47,10 +47,10 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const account = await env.DB.prepare(
-      `SELECT password_hash FROM accounts WHERE id = ? LIMIT 1`
+      `SELECT password_hash, session_version FROM accounts WHERE id = ? LIMIT 1`
     )
       .bind(accountId)
-      .first<{ password_hash: string }>();
+      .first<{ password_hash: string; session_version: number }>();
 
     const passwordMatches = await verifyPassword(
       password,
@@ -64,7 +64,11 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const setCookie = await createSessionCookie(accountId, env);
+    const setCookie = await createSessionCookie(
+      accountId,
+      account.session_version,
+      env
+    );
     const responseBody: LoginResponse = { success: true };
 
     return Response.json(responseBody, {

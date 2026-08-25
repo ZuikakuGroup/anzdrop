@@ -91,8 +91,9 @@
 | `stripe_customer_id` | TEXT (nullable) | Stripe Customer ID |
 | `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
 | `created_at` | TEXT | 作成日時 |
+| `session_version` | INTEGER NOT NULL DEFAULT 0 | セッションCookie(JWT)に埋め込まれる世代番号。パスワード再設定([`recover`](../app/api/account/recover/route.ts))のたびにインクリメントされ、それより前に発行済みのセッションを全て失効させる(migration 0010) |
 
-migration 0009。
+migration 0009(`session_version`のみ0010)。
 
 ### `btc_payments`
 
@@ -133,5 +134,6 @@ migration 0009。
 | `0007_add_report_category.sql` | 通報カテゴリ(`category`)追加 |
 | `0008_add_share_suspension.sql` | `shares.suspended_at` 追加(管理画面からの共有一時停止) |
 | `0009_add_accounts.sql` | 有料プラン用の`accounts`/`btc_payments`/`stripe_events`テーブル新設 |
+| `0010_add_session_version.sql` | `accounts.session_version` 追加(パスワード再設定時の既存セッション失効) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

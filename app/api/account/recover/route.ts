@@ -80,8 +80,16 @@ export async function POST(request: Request): Promise<Response> {
       hashPassword(newRecoveryCode),
     ]);
 
+    // session_versionをインクリメントし、この時点までに発行済みの
+    // セッションCookie(盗まれている可能性がある)を全て無効化する。
     await env.DB.prepare(
-      `UPDATE accounts SET password_hash = ?, recovery_code_hash = ? WHERE id = ?`
+      `
+      UPDATE accounts
+      SET password_hash = ?,
+          recovery_code_hash = ?,
+          session_version = session_version + 1
+      WHERE id = ?
+    `
     )
       .bind(newPasswordHash, newRecoveryCodeHash, accountId)
       .run();
