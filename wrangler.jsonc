@@ -15,7 +15,8 @@
     "STRIPE_PRICE_ID": "price_REPLACE_ME",
     // Bitcoin(OpenNode)の「期間チャージ」1回分の金額(USD)と、それが延長する日数。
     // Bitcoinは自動更新できないため、都度この金額を支払うと有効期限がこの日数分延びる。
-    "OPENNODE_BTC_CHARGE_AMOUNT_USD": 5,
+    // 月額¥500(非営利・コスト回収想定)に概ね合わせたUSD換算。
+    "OPENNODE_BTC_CHARGE_AMOUNT_USD": 3,
     "OPENNODE_BTC_DAYS_PER_CHARGE": 30
   },
 
