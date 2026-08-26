@@ -17,9 +17,14 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
-vi.mock("@/lib/access", () => ({
-  verifyAccessJwt: vi.fn(),
-}));
+vi.mock("@/lib/access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/access")>();
+
+  return {
+    ...actual,
+    verifyAccessJwt: vi.fn(),
+  };
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -40,12 +45,16 @@ function authorize() {
   vi.mocked(verifyAccessJwt).mockResolvedValue({ email: "admin@example.com" });
 }
 
-async function deleteShareRoute(shareId: string): Promise<Response> {
+async function deleteShareRoute(
+  shareId: string,
+  headers: Record<string, string> = {}
+): Promise<Response> {
   const { DELETE } = await import("@/app/api/admin/shares/[shareId]/route");
 
   return DELETE(
     new Request(`http://localhost/api/admin/shares/${shareId}`, {
       method: "DELETE",
+      headers,
     }),
     { params: Promise.resolve({ shareId }) }
   );
@@ -174,6 +183,18 @@ describe("DELETE /api/admin/shares/[shareId]", () => {
     expect(await shareExists(otherShareId)).toBe(true);
     expect(await filesCountFor(otherShareId)).toBe(1);
     expect((await env.FILES_BUCKET.get(otherStorageKey)) !== null).toBe(true);
+  });
+
+  it("returns 403 and does not delete when the Origin header is a different site (CSRF)", async () => {
+    authorize();
+    await insertShare("share-1");
+
+    const response = await deleteShareRoute("share-1", {
+      Origin: "https://evil.example",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await shareExists("share-1")).toBe(true);
   });
 
   it("is idempotent: deleting a non-existent shareId still returns success", async () => {

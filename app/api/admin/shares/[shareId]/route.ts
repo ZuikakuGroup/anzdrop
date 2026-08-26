@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyAccessJwt } from "@/lib/access";
+import { verifyAccessJwt, verifySameOrigin } from "@/lib/access";
 import { deleteShare } from "@/lib/cleanup";
 
 type RouteContext = {
@@ -24,6 +24,13 @@ export async function DELETE(
       );
     }
 
+    if (!verifySameOrigin(request)) {
+      return Response.json(
+        { success: false, error: "Invalid origin" },
+        { status: 403 }
+      );
+    }
+
     const { shareId } = await context.params;
 
     // 既に(期限切れcronや二重クリックで)削除済みの共有に対しても、
@@ -32,8 +39,10 @@ export async function DELETE(
 
     return Response.json({ success: true });
   } catch (error) {
+    console.error("DELETE /api/admin/shares/[shareId] failed:", error);
+
     return Response.json(
-      { success: false, error: String(error) },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

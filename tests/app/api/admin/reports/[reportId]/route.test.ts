@@ -17,9 +17,14 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
-vi.mock("@/lib/access", () => ({
-  verifyAccessJwt: vi.fn(),
-}));
+vi.mock("@/lib/access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/access")>();
+
+  return {
+    ...actual,
+    verifyAccessJwt: vi.fn(),
+  };
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -40,12 +45,16 @@ function authorize() {
   vi.mocked(verifyAccessJwt).mockResolvedValue({ email: "admin@example.com" });
 }
 
-async function deleteReport(reportId: string): Promise<Response> {
+async function deleteReport(
+  reportId: string,
+  headers: Record<string, string> = {}
+): Promise<Response> {
   const { DELETE } = await import("@/app/api/admin/reports/[reportId]/route");
 
   return DELETE(
     new Request(`http://localhost/api/admin/reports/${reportId}`, {
       method: "DELETE",
+      headers,
     }),
     { params: Promise.resolve({ reportId }) }
   );
@@ -91,6 +100,18 @@ describe("DELETE /api/admin/reports/[reportId]", () => {
     expect(await reportExists("report-1")).toBe(false);
     // DELETEがWHERE句なしで全件消えるような回帰があればここで検出できる。
     expect(await reportExists("report-2")).toBe(true);
+  });
+
+  it("returns 403 and does not delete when the Origin header is a different site (CSRF)", async () => {
+    authorize();
+    await insertReport("report-1");
+
+    const response = await deleteReport("report-1", {
+      Origin: "https://evil.example",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await reportExists("report-1")).toBe(true);
   });
 
   it("is idempotent: deleting a non-existent/already-deleted reportId still returns success", async () => {

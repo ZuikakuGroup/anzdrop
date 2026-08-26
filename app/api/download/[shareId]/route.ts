@@ -135,10 +135,12 @@ export async function GET(
       }
     );
   } catch (error) {
+    console.error("GET /api/download/[shareId] failed:", error);
+
     return Response.json(
       {
         success: false,
-        error: String(error),
+        error: "Internal server error",
       },
       { status: 500 }
     );

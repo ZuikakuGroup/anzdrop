@@ -189,10 +189,11 @@ export async function POST(
     return Response.json(responseBody);
 
   } catch (error) {
+    console.error("POST /api/upload/complete failed:", error);
 
     const responseBody: UploadCompleteResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, {

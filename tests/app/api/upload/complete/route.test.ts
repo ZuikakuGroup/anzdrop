@@ -61,7 +61,7 @@ async function startUpload(
   retention: Retention = "7d",
   encryptedFileName = "file.enc",
   fileSize = 2048
-): Promise<{ uploadSessionId: string; shareId: string }> {
+): Promise<{ uploadSessionId: string; shareId: string; uploadToken: string }> {
   stubTurnstileSuccess();
   const { POST } = await import("@/app/api/upload/start/route");
   const response = await POST(
@@ -76,11 +76,16 @@ async function startUpload(
     })
   );
 
-  return readJson<{ uploadSessionId: string; shareId: string }>(response);
+  return readJson<{
+    uploadSessionId: string;
+    shareId: string;
+    uploadToken: string;
+  }>(response);
 }
 
 async function uploadPart(
   uploadSessionId: string,
+  uploadToken: string,
   partNumber: number,
   bytes: BodyInit
 ) {
@@ -92,6 +97,7 @@ async function uploadPart(
       headers: {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": String(partNumber),
+        "Anzdrop-Upload-Token": uploadToken,
       },
       body: bytes,
     })
@@ -139,7 +145,7 @@ describe("POST /api/upload/complete", () => {
   });
 
   it("creates the files row and cleans up the upload session on success", async () => {
-    const { uploadSessionId, shareId } = await startUpload(
+    const { uploadSessionId, shareId, uploadToken } = await startUpload(
       "7d",
       "my-secret-file.enc",
       2048
@@ -147,7 +153,7 @@ describe("POST /api/upload/complete", () => {
     const content = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     const key = await generateKey();
     const packed = packChunk(await encryptChunk(content, key));
-    await uploadPart(uploadSessionId, 1, packed.slice());
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
 
@@ -188,10 +194,14 @@ describe("POST /api/upload/complete", () => {
   });
 
   it("sets max_downloads=1 on the files row for 'once' retention", async () => {
-    const { uploadSessionId } = await startUpload("once", "one-time.enc", 1024);
+    const { uploadSessionId, uploadToken } = await startUpload(
+      "once",
+      "one-time.enc",
+      1024
+    );
     const key = await generateKey();
     const packed = packChunk(await encryptChunk(new Uint8Array([42]), key));
-    await uploadPart(uploadSessionId, 1, packed.slice());
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
     expect(response.status).toBe(200);
@@ -218,7 +228,7 @@ describe("POST /api/upload/complete", () => {
     const partA = packed.slice(0, FIVE_MIB);
     const partB = packed.slice(FIVE_MIB);
 
-    const { uploadSessionId } = await startUpload(
+    const { uploadSessionId, uploadToken } = await startUpload(
       "7d",
       "multi-part.enc",
       plaintext.byteLength
@@ -226,8 +236,8 @@ describe("POST /api/upload/complete", () => {
 
     // わざと逆順(part 2を先に、part 1を後に)アップロードし、
     // /api/upload/completeがpart_number順に正しく並べ直すことを検証する。
-    await uploadPart(uploadSessionId, 2, partB);
-    await uploadPart(uploadSessionId, 1, partA);
+    await uploadPart(uploadSessionId, uploadToken, 2, partB);
+    await uploadPart(uploadSessionId, uploadToken, 1, partA);
 
     const response = await postComplete({ uploadSessionId });
     expect(response.status).toBe(200);

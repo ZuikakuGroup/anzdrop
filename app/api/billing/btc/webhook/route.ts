@@ -96,8 +96,10 @@ export async function POST(request: Request): Promise<Response> {
 
     return Response.json({ success: true });
   } catch (error) {
+    console.error("POST /api/billing/btc/webhook failed:", error);
+
     return Response.json(
-      { success: false, error: String(error) },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

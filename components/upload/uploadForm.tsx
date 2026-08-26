@@ -91,6 +91,7 @@ const ENCRYPT_PREFETCH_CHUNKS = 8;
 async function uploadChunksFromStream(
   chunks: AsyncGenerator<Uint8Array>,
   uploadSessionId: string,
+  uploadToken: string,
   path: string,
   onChunkUploaded: () => void
 ): Promise<void> {
@@ -129,6 +130,7 @@ async function uploadChunksFromStream(
           headers: {
             "Anzdrop-Upload-Session": uploadSessionId,
             "Anzdrop-Part-Number": String(partNumber),
+            "Anzdrop-Upload-Token": uploadToken,
           },
           body,
         });
@@ -466,7 +468,11 @@ export default function UploadForm() {
         const startResult =
           (await startResponse.json()) as UploadStartResponse;
 
-        if (!startResponse.ok || !startResult.uploadSessionId) {
+        if (
+          !startResponse.ok ||
+          !startResult.uploadSessionId ||
+          !startResult.uploadToken
+        ) {
           throw new Error(
             startResult.error ?? `${path} の開始に失敗しました`
           );
@@ -478,6 +484,7 @@ export default function UploadForm() {
         await uploadChunksFromStream(
           item.encrypted.chunks,
           startResult.uploadSessionId,
+          startResult.uploadToken,
           path,
           () => {
             completedChunks++;

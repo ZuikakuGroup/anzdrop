@@ -241,10 +241,11 @@ export async function POST(
     return Response.json(responseBody);
 
   } catch (error) {
+    console.error("POST /api/upload/start failed:", error);
 
     const responseBody: UploadStartResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, {

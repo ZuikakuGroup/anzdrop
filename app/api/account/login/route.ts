@@ -14,7 +14,6 @@ type LoginResponse =
   | { success: false; error: string };
 
 const INVALID_CREDENTIALS_ERROR = "Invalid account ID or password";
-const ACCOUNT_LOCKED_ERROR = "Too many failed attempts. Please try again later.";
 
 // アカウントIDを本人が自由に設定できるようになった結果、IDの予測不可能性に
 // 頼れなくなったため、失敗回数によるロックアウトで総当たりを防ぐ。
@@ -95,9 +94,19 @@ export async function POST(request: Request): Promise<Response> {
         locked_until: string | null;
       }>();
 
+    // ロック中かどうかをそのままメッセージに出すと、失敗回数によるロックは
+    // 実在するアカウントにしか発生しないため、応答メッセージの違いだけで
+    // アカウントIDの実在を判別できてしまう(user enumeration)。そのため
+    // ロック中も通常の認証失敗と同じメッセージ・ステータスで応答する。
+    // メッセージだけでなく、ここで即座に返すと通常の認証失敗(Argon2id照合を
+    // 伴う数十ms)より高速に応答してしまい、応答時間の差から同じことが
+    // 推測できてしまう。そのため、ここでも(結果を使わない)ダミーの照合を
+    // 行って応答時間を揃える。
     if (account?.locked_until && new Date(account.locked_until) > new Date()) {
+      await verifyPassword(password, DUMMY_PASSWORD_HASH);
+
       return Response.json(
-        { success: false, error: ACCOUNT_LOCKED_ERROR },
+        { success: false, error: INVALID_CREDENTIALS_ERROR },
         { status: 403 }
       );
     }
@@ -114,7 +123,7 @@ export async function POST(request: Request): Promise<Response> {
       await lockAccount(env, accountId);
 
       return Response.json(
-        { success: false, error: ACCOUNT_LOCKED_ERROR },
+        { success: false, error: INVALID_CREDENTIALS_ERROR },
         { status: 403 }
       );
     }

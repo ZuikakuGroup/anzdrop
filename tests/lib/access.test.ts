@@ -8,7 +8,7 @@ vi.mock("jose", () => ({
   createRemoteJWKSet,
 }));
 
-const { verifyAccessJwt } = await import("@/lib/access");
+const { verifyAccessJwt, verifySameOrigin } = await import("@/lib/access");
 
 const ENV = {
   CF_ACCESS_TEAM_DOMAIN: "example-team.cloudflareaccess.com",
@@ -104,5 +104,33 @@ describe("verifyAccessJwt", () => {
     const result = await verifyAccessJwt(request, ENV);
 
     expect(result).toBeNull();
+  });
+});
+
+describe("verifySameOrigin", () => {
+  it("allows a request with no Origin header (e.g. non-browser clients)", () => {
+    const request = new Request("https://example.com/api/admin/reports/1/resolve", {
+      method: "POST",
+    });
+
+    expect(verifySameOrigin(request)).toBe(true);
+  });
+
+  it("allows a request whose Origin header matches the request's own origin", () => {
+    const request = new Request("https://example.com/api/admin/reports/1/resolve", {
+      method: "POST",
+      headers: { Origin: "https://example.com" },
+    });
+
+    expect(verifySameOrigin(request)).toBe(true);
+  });
+
+  it("rejects a request whose Origin header is a different site (CSRF)", () => {
+    const request = new Request("https://example.com/api/admin/reports/1/resolve", {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+
+    expect(verifySameOrigin(request)).toBe(false);
   });
 });

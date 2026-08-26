@@ -37,9 +37,11 @@ export async function GET(request: Request): Promise<Response> {
 
     return Response.json(responseBody);
   } catch (error) {
+    console.error("GET /api/account/me failed:", error);
+
     const responseBody: MeResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });

@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "@/lib/timingSafeEqual";
+
 type ShareRow = {
   created_at: string;
   expires_at: string;
@@ -39,7 +41,14 @@ export async function verifyShareOwnership(
     return { ok: false, status: 404, error: "Share not found" };
   }
 
-  if (!share.upload_token || share.upload_token !== uploadToken) {
+  const tokenMatches =
+    !!share.upload_token &&
+    timingSafeEqual(
+      new TextEncoder().encode(share.upload_token),
+      new TextEncoder().encode(uploadToken)
+    );
+
+  if (!tokenMatches) {
     return { ok: false, status: 403, error: "Invalid uploadToken" };
   }
 

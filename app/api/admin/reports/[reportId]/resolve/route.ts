@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyAccessJwt } from "@/lib/access";
+import { verifyAccessJwt, verifySameOrigin } from "@/lib/access";
 
 type ReportRow = {
   id: string;
@@ -28,6 +28,13 @@ export async function POST(
       );
     }
 
+    if (!verifySameOrigin(request)) {
+      return Response.json(
+        { success: false, error: "Invalid origin" },
+        { status: 403 }
+      );
+    }
+
     const { reportId } = await context.params;
 
     const report = await env.DB.prepare(
@@ -51,8 +58,13 @@ export async function POST(
 
     return Response.json({ success: true });
   } catch (error) {
+    console.error(
+      "POST /api/admin/reports/[reportId]/resolve failed:",
+      error
+    );
+
     return Response.json(
-      { success: false, error: String(error) },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

@@ -65,9 +65,11 @@ export async function POST(request: Request): Promise<Response> {
 
     return Response.json(responseBody);
   } catch (error) {
+    console.error("POST /api/billing/stripe/checkout failed:", error);
+
     const responseBody: CheckoutResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });

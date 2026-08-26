@@ -22,8 +22,16 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
+let forceContextError = false;
+
 vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
+  getCloudflareContext: () => {
+    if (forceContextError) {
+      throw new Error("boom: unexpected internal failure");
+    }
+
+    return { env };
+  },
 }));
 
 beforeAll(async () => {
@@ -211,5 +219,27 @@ describe("POST /api/account/recover", () => {
       })
     );
     expect(loginResponse.status).toBe(200);
+  });
+
+  it("returns a generic 500 (without leaking internal error details) on unexpected failure", async () => {
+    forceContextError = true;
+
+    try {
+      const response = await postRecover({
+        accountId: "x",
+        recoveryCode: "y",
+        newPassword: "a-valid-password",
+        turnstileToken: "tok",
+      });
+
+      expect(response.status).toBe(500);
+      const body = await readJson<{ success: boolean; error: string }>(
+        response
+      );
+      expect(body.success).toBe(false);
+      expect(body.error).toBe("Internal server error");
+    } finally {
+      forceContextError = false;
+    }
   });
 });

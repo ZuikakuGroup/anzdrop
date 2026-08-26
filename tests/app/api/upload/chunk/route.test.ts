@@ -43,9 +43,12 @@ afterEach(() => {
 // 実際にapp/api/upload/startを叩き、本物のR2マルチパートアップロードIDを持つ
 // アップロードセッションを用意する(R2のマルチパートIDは手書きモックでは
 // 現実的に再現できないため)。
-async function startUpload(): Promise<{
+async function startUpload(
+  fileSize = 2048
+): Promise<{
   uploadSessionId: string;
   shareId: string;
+  uploadToken: string;
 }> {
   stubTurnstileSuccess();
   const { POST } = await import("@/app/api/upload/start/route");
@@ -54,7 +57,7 @@ async function startUpload(): Promise<{
       method: "POST",
       body: JSON.stringify({
         encryptedFileName: "file.enc",
-        fileSize: 2048,
+        fileSize,
         retention: "7d",
         turnstileToken: "tok",
       }),
@@ -99,12 +102,13 @@ describe("POST /api/upload/chunk", () => {
   );
 
   it("returns 400 for an empty body", async () => {
-    const { uploadSessionId } = await startUpload();
+    const { uploadSessionId, uploadToken } = await startUpload();
 
     const response = await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
       },
       new Uint8Array(0)
     );
@@ -117,6 +121,7 @@ describe("POST /api/upload/chunk", () => {
       {
         "Anzdrop-Upload-Session": "no-such-session",
         "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": "some-token",
       },
       new Uint8Array([1, 2, 3])
     );
@@ -124,13 +129,61 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(404);
   });
 
-  it("stores the uploaded part with its part number and etag", async () => {
+  it("returns 403 when the uploadToken does not match the share", async () => {
     const { uploadSessionId } = await startUpload();
 
     const response = await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": "wrong-token",
+      },
+      new Uint8Array([1, 2, 3])
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects a part number beyond what the declared fileSize can account for", async () => {
+    // fileSize=2048は8MiBのCHUNK_SIZE未満なので、有効なパートは1つだけ。
+    const { uploadSessionId, uploadToken } = await startUpload(2048);
+
+    const response = await postChunk(
+      {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "2",
+        "Anzdrop-Upload-Token": uploadToken,
+      },
+      new Uint8Array([1, 2, 3])
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a single chunk larger than the packed chunk size", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload();
+
+    const oversized = new Uint8Array(8 * 1024 * 1024 + 12 + 16 + 1);
+    const response = await postChunk(
+      {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
+      },
+      oversized
+    );
+
+    expect(response.status).toBe(413);
+  });
+
+  it("stores the uploaded part with its part number and etag", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload();
+
+    const response = await postChunk(
+      {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
       },
       new Uint8Array([1, 2, 3, 4])
     );
@@ -151,12 +204,13 @@ describe("POST /api/upload/chunk", () => {
   });
 
   it("replaces rather than duplicates the row when the same part number is uploaded twice", async () => {
-    const { uploadSessionId } = await startUpload();
+    const { uploadSessionId, uploadToken } = await startUpload();
 
     await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
       },
       new Uint8Array([1, 2, 3])
     );
@@ -170,6 +224,7 @@ describe("POST /api/upload/chunk", () => {
       {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
       },
       new Uint8Array([9, 9, 9, 9, 9])
     );

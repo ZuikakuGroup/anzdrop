@@ -17,9 +17,14 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
-vi.mock("@/lib/access", () => ({
-  verifyAccessJwt: vi.fn(),
-}));
+vi.mock("@/lib/access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/access")>();
+
+  return {
+    ...actual,
+    verifyAccessJwt: vi.fn(),
+  };
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -40,12 +45,16 @@ function authorize() {
   vi.mocked(verifyAccessJwt).mockResolvedValue({ email: "admin@example.com" });
 }
 
-async function resolveReport(reportId: string): Promise<Response> {
+async function resolveReport(
+  reportId: string,
+  headers: Record<string, string> = {}
+): Promise<Response> {
   const { POST } = await import("@/app/api/admin/reports/[reportId]/resolve/route");
 
   return POST(
     new Request(`http://localhost/api/admin/reports/${reportId}/resolve`, {
       method: "POST",
+      headers,
     }),
     { params: Promise.resolve({ reportId }) }
   );
@@ -103,6 +112,18 @@ describe("POST /api/admin/reports/[reportId]/resolve", () => {
     const resolvedAtMs = new Date(resolvedAt!).getTime();
     expect(resolvedAtMs).toBeGreaterThanOrEqual(before);
     expect(resolvedAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it("returns 403 and does not resolve when the Origin header is a different site (CSRF)", async () => {
+    authorize();
+    await insertReport("report-1");
+
+    const response = await resolveReport("report-1", {
+      Origin: "https://evil.example",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await getResolvedAt("report-1")).toBeNull();
   });
 
   it("does not overwrite the original resolved_at when resolved a second time", async () => {

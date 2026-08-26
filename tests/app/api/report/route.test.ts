@@ -278,4 +278,26 @@ describe("POST /api/report", () => {
     expect(reports).toHaveLength(1);
     expect(reports[0].reason).not.toContain(fakeKey);
   });
+
+  it("applies sanitizeReportText to claimantName as well, in case a key was pasted there by mistake", async () => {
+    stubTurnstileSuccess();
+    // 43文字のbase64url風の鍵っぽい文字列(サニタイズ対象)を氏名欄に誤って貼り付けたケース。
+    const fakeKey = "B".repeat(43);
+
+    const response = await postReport({
+      reportType: "rights_holder",
+      shareId: "abc12345",
+      reason: "this infringes my copyright",
+      claimantName: `Jane Doe ${fakeKey}`,
+      contactEmail: "jane@example.com",
+      rightType: "copyright",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(200);
+
+    const reports = await allReports();
+    expect(reports).toHaveLength(1);
+    expect(reports[0].claimant_name).not.toContain(fakeKey);
+  });
 });

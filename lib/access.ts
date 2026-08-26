@@ -68,3 +68,18 @@ export async function verifyAccessJwt(
     return null;
   }
 }
+
+// 管理画面のPOST/DELETEエンドポイントは、preflightなしで送れる単純リクエストに
+// よるCSRFに対する多層防御として、Originヘッダーがこのオリジン自身と一致する
+// ことを確認する。主たる認証はCloudflare Access(verifyAccessJwt)であり、これは
+// あくまで補助(Originヘッダーを送らないツール等からの正当な呼び出しを妨げない
+// よう、ヘッダー自体が無い場合は許可する)。
+export function verifySameOrigin(request: Request): boolean {
+  const origin = request.headers.get("Origin");
+
+  if (!origin) {
+    return true;
+  }
+
+  return origin === new URL(request.url).origin;
+}

@@ -20,8 +20,16 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
+let forceContextError = false;
+
 vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
+  getCloudflareContext: () => {
+    if (forceContextError) {
+      throw new Error("boom: unexpected internal failure");
+    }
+
+    return { env };
+  },
 }));
 
 beforeAll(async () => {
@@ -154,5 +162,25 @@ describe("POST /api/billing/btc/charge", () => {
       `SELECT * FROM btc_payments`
     ).all();
     expect(results).toHaveLength(0);
+  });
+
+  it("returns a generic 500 (without leaking internal error details) on unexpected failure", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    forceContextError = true;
+
+    try {
+      const response = await postCharge(cookie);
+
+      expect(response.status).toBe(500);
+      const body = await readJson<{ success: boolean; error: string }>(
+        response
+      );
+      expect(body.success).toBe(false);
+      expect(body.error).toBe("Internal server error");
+    } finally {
+      forceContextError = false;
+    }
   });
 });

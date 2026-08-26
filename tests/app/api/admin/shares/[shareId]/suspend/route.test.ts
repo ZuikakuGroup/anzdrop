@@ -17,9 +17,14 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
-vi.mock("@/lib/access", () => ({
-  verifyAccessJwt: vi.fn(),
-}));
+vi.mock("@/lib/access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/access")>();
+
+  return {
+    ...actual,
+    verifyAccessJwt: vi.fn(),
+  };
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -40,12 +45,16 @@ function authorize() {
   vi.mocked(verifyAccessJwt).mockResolvedValue({ email: "admin@example.com" });
 }
 
-async function suspendShare(shareId: string): Promise<Response> {
+async function suspendShare(
+  shareId: string,
+  headers: Record<string, string> = {}
+): Promise<Response> {
   const { POST } = await import("@/app/api/admin/shares/[shareId]/suspend/route");
 
   return POST(
     new Request(`http://localhost/api/admin/shares/${shareId}/suspend`, {
       method: "POST",
+      headers,
     }),
     { params: Promise.resolve({ shareId }) }
   );
@@ -111,6 +120,18 @@ describe("POST /api/admin/shares/[shareId]/suspend", () => {
 
     expect(response.status).toBe(200);
     expect(await getSuspendedAt("share-1")).toBe(originalSuspendedAt);
+  });
+
+  it("returns 403 and does not suspend when the Origin header is a different site (CSRF)", async () => {
+    authorize();
+    await insertShare("share-1");
+
+    const response = await suspendShare("share-1", {
+      Origin: "https://evil.example",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await getSuspendedAt("share-1")).toBeNull();
   });
 
   it("is a harmless no-op for a non-existent shareId", async () => {

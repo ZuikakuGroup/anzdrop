@@ -158,8 +158,10 @@ export async function GET(request: Request): Promise<Response> {
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
+    console.error("GET /api/admin/reports failed:", error);
+
     return Response.json(
-      { success: false, error: String(error) },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }

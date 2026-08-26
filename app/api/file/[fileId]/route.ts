@@ -165,10 +165,12 @@ export async function GET(
     });
 
   } catch (error) {
+    console.error("GET /api/file/[fileId] failed:", error);
+
     return Response.json(
       {
         success: false,
-        error: String(error),
+        error: "Internal server error",
       },
       { status: 500 }
     );

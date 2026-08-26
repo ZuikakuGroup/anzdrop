@@ -126,13 +126,21 @@ describe("POST /api/billing/stripe/checkout", () => {
     expect(body.success).toBe(false);
   });
 
-  it("returns 500 when the Stripe API call throws", async () => {
+  it("returns a generic 500 (without leaking internal error details) when the Stripe API call throws", async () => {
     const { accountId } = await insertTestAccount(env);
     const cookie = await sessionCookieHeader(env, accountId);
-    mockSessionsCreate.mockRejectedValue(new Error("stripe unreachable"));
+    mockSessionsCreate.mockRejectedValue(
+      new Error("stripe unreachable: secret internal detail")
+    );
 
     const response = await postCheckout(cookie);
 
     expect(response.status).toBe(500);
+    const body = await readJson<{ success: boolean; error: string }>(
+      response
+    );
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("Internal server error");
+    expect(body.error).not.toContain("stripe unreachable");
   });
 });

@@ -105,9 +105,11 @@ export async function POST(request: Request): Promise<Response> {
 
     return Response.json(responseBody);
   } catch (error) {
+    console.error("POST /api/account/recover failed:", error);
+
     const responseBody: RecoverResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });

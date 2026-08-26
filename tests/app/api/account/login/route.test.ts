@@ -256,10 +256,20 @@ describe("POST /api/account/login", () => {
     });
     expect(responseWithCorrectPassword.status).toBe(403);
 
+    // ロック中の応答は、通常の認証失敗と同じメッセージ・ステータスにする。
+    // 失敗回数によるロックは実在するアカウントにしか発生しないため、
+    // 専用のメッセージを返すとアカウントIDの実在を判別できてしまう
+    // (user enumeration)ため。
     const bodyWithCorrectPassword = await readJson<{ error: string }>(
       responseWithCorrectPassword
     );
-    expect(bodyWithCorrectPassword.error).toMatch(/too many/i);
+    const unknownAccount = await postLogin({
+      accountId: "no-such-account-id",
+      password: "whatever",
+      turnstileToken: "tok",
+    });
+    const unknownBody = await readJson<{ error: string }>(unknownAccount);
+    expect(bodyWithCorrectPassword.error).toBe(unknownBody.error);
   });
 
   it("allows login again once the lockout window has passed", async () => {

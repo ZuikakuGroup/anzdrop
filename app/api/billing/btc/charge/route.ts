@@ -63,9 +63,11 @@ export async function POST(request: Request): Promise<Response> {
 
     return Response.json(responseBody);
   } catch (error) {
+    console.error("POST /api/billing/btc/charge failed:", error);
+
     const responseBody: ChargeResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });

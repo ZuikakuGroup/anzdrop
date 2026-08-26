@@ -123,8 +123,8 @@ export async function POST(
     let category: ReportCategory;
 
     if (reportType === "rights_holder") {
-      claimantName = (requestBody.claimantName ?? "").trim();
-      contactEmail = (requestBody.contactEmail ?? "").trim();
+      claimantName = sanitizeReportText((requestBody.claimantName ?? "").trim());
+      contactEmail = sanitizeReportText((requestBody.contactEmail ?? "").trim());
       const parsedRightType = parseRightType(requestBody.rightType);
 
       if (!claimantName || !contactEmail || !parsedRightType) {
@@ -199,9 +199,11 @@ export async function POST(
 
     return Response.json(responseBody);
   } catch (error) {
+    console.error("POST /api/report failed:", error);
+
     const responseBody: ReportResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });
