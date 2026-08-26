@@ -26,12 +26,14 @@ import DropMark from "@/components/brand/DropMark";
 import Spinner from "@/components/brand/Spinner";
 import {
   XIcon,
-  InstagramIcon,
   LineIcon,
   ChevronIcon,
+  QrCodeIcon,
 } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import PasswordInput from "@/components/brand/PasswordInput";
+import QrCodeModal from "@/components/brand/QrCodeModal";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
@@ -268,6 +270,7 @@ export default function UploadForm() {
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [plan, setPlan] = useState<Plan>("free");
+  const [isQrOpen, setIsQrOpen] = useState(false);
   const dragCounterRef = useRef(0);
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
@@ -558,31 +561,11 @@ export default function UploadForm() {
     uploadTokenRef.current = undefined;
   };
 
-  const shareToX = () => {
-    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-      SHARE_MESSAGE
-    )}&url=${encodeURIComponent(shareUrl)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
-  };
-
   const shareToLine = () => {
     const url = `https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(
       shareUrl
     )}&text=${encodeURIComponent(SHARE_MESSAGE)}`;
     window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const shareToInstagram = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-    } catch {
-      // クリップボードに失敗しても Instagram は開く
-    }
-    window.open(
-      "https://www.instagram.com/",
-      "_blank",
-      "noopener,noreferrer"
-    );
   };
 
   return (
@@ -635,22 +618,6 @@ export default function UploadForm() {
 
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={shareToX}
-                    aria-label="Xで共有"
-                    title="Xで共有"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
-                  >
-                    <XIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={shareToInstagram}
-                    aria-label="Instagramで共有"
-                    title="Instagramで共有"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
-                  >
-                    <InstagramIcon className="h-4 w-4" />
-                  </button>
-                  <button
                     onClick={shareToLine}
                     aria-label="LINEで共有"
                     title="LINEで共有"
@@ -658,7 +625,21 @@ export default function UploadForm() {
                   >
                     <LineIcon className="h-4 w-4" />
                   </button>
+                  <button
+                    onClick={() => setIsQrOpen(true)}
+                    aria-label="QRコードを表示"
+                    title="QRコードを表示"
+                    className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
+                  >
+                    <QrCodeIcon className="h-4 w-4" />
+                  </button>
                 </div>
+
+                <QrCodeModal
+                  url={shareUrl}
+                  isOpen={isQrOpen}
+                  onClose={() => setIsQrOpen(false)}
+                />
 
                 <button
                   onClick={handleCopy}
@@ -810,14 +791,12 @@ export default function UploadForm() {
                           className="overflow-hidden"
                           inert={!usePassword}
                         >
-                          <input
-                            type="password"
+                          <PasswordInput
                             value={password}
-                            onChange={(event) =>
-                              setPassword(event.target.value)
-                            }
+                            onChange={setPassword}
                             placeholder="パスワード"
-                            className="mt-1.5 w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                            autoComplete="new-password"
+                            className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                           />
                         </div>
                       </div>

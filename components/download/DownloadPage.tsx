@@ -20,6 +20,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
 import { XIcon, EyeIcon } from "@/components/brand/ShareIcons";
+import PasswordInput from "@/components/brand/PasswordInput";
 
 type DownloadPageProps = {
   shareId: string;
@@ -510,17 +511,17 @@ export default function DownloadPage({
                 <span className="text-sm font-bold text-ink/50">
                   パスワードで保護されています
                 </span>
-                <input
-                  type="password"
+                <PasswordInput
                   value={passwordInput}
-                  onChange={(event) => setPasswordInput(event.target.value)}
+                  onChange={setPasswordInput}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       unlockWithPassword();
                     }
                   }}
                   placeholder="パスワード"
-                  className="w-full rounded border-2 border-ink/20 px-4 py-3.5 text-base outline-none focus:border-brand sm:text-sm"
+                  autoComplete="current-password"
+                  className="w-full rounded border-2 border-ink/20 py-3.5 pl-4 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
                 <p className="min-h-[17px] text-sm font-bold text-brand">
                   {passwordError}

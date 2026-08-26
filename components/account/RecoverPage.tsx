@@ -5,6 +5,7 @@ import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import PasswordInput from "@/components/brand/PasswordInput";
 
 type RecoverResponse =
   | { success: true; recoveryCode: string }
@@ -144,12 +145,12 @@ export default function RecoverPage() {
                 >
                   新しいパスワード
                 </label>
-                <input
+                <PasswordInput
                   id="recover-new-password"
-                  type="password"
                   value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                  onChange={setNewPassword}
+                  autoComplete="new-password"
+                  className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
 

@@ -76,6 +76,55 @@ export function EyeIcon({ className = "" }: IconProps) {
   );
 }
 
+export function EyeOffIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M3.5 3.5l17 17M6.4 6.6C4.3 8 2.7 10 2 12c0 0 3.6 6.5 10 6.5 2.1 0 3.9-.6 5.4-1.5M10.3 5.7c.7-.1 1.4-.2 2.2-.2 6.4 0 10 6.5 10 6.5-.5 1-1.3 2.3-2.4 3.5"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <path
+        d="M9.9 10c-.3.5-.4 1-.4 1.6 0 1.5 1.2 2.7 2.7 2.7.5 0 1-.1 1.4-.4"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
+export function QrCodeIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x={3} y={3} width={7} height={7} rx={1} stroke="currentColor" strokeWidth={2} fill="none" />
+      <rect x={14} y={3} width={7} height={7} rx={1} stroke="currentColor" strokeWidth={2} fill="none" />
+      <rect x={3} y={14} width={7} height={7} rx={1} stroke="currentColor" strokeWidth={2} fill="none" />
+      <rect x={5.5} y={5.5} width={2} height={2} fill="currentColor" />
+      <rect x={16.5} y={5.5} width={2} height={2} fill="currentColor" />
+      <rect x={5.5} y={16.5} width={2} height={2} fill="currentColor" />
+      <rect x={14} y={14} width={3} height={3} fill="currentColor" />
+      <rect x={19} y={14} width={2} height={2} fill="currentColor" />
+      <rect x={14} y={19} width={2} height={2} fill="currentColor" />
+      <rect x={19} y={19} width={2} height={2} fill="currentColor" />
+      <rect x={17} y={17} width={2} height={2} fill="currentColor" />
+    </svg>
+  );
+}
+
 export function ChevronIcon({ className = "" }: IconProps) {
   return (
     <svg
