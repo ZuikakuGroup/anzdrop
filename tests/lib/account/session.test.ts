@@ -82,6 +82,15 @@ describe("createSessionCookie / verifySession", () => {
     expect(result).toBeNull();
   });
 
+  it("createSessionCookie throws a clear error (not a raw WebCrypto error) when SESSION_SECRET is not configured", async () => {
+    // 本番でSESSION_SECRETが未設定のまま運用され、joseが空のキーで
+    // HMACをインポートしようとして生のWebCryptoエラー("Imported HMAC
+    // key length (0)...")を投げていた。原因が分かるよう明示的にthrowする。
+    await expect(
+      createSessionCookie("acct_123", 0, {} as unknown as CloudflareEnv)
+    ).rejects.toThrow("SESSION_SECRET is not configured");
+  });
+
   it("returns null for a token signed with a different secret", async () => {
     const otherEnv = {
       ...envWithSessionVersion(0),

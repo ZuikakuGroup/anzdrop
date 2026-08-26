@@ -152,9 +152,11 @@ export async function POST(request: Request): Promise<Response> {
       headers: { "Set-Cookie": setCookie },
     });
   } catch (error) {
+    console.error("POST /api/account/login failed:", error);
+
     const responseBody: LoginResponse = {
       success: false,
-      error: String(error),
+      error: "Internal server error",
     };
 
     return Response.json(responseBody, { status: 500 });

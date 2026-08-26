@@ -147,6 +147,35 @@ describe("POST /api/account/login", () => {
     expect(meBody.accountId).toBe(accountId);
   });
 
+  it("returns a generic 500 (without leaking internal error details) when SESSION_SECRET is not configured", async () => {
+    // 本番でSESSION_SECRETがCloudflare Workersのシークレットとして未設定の
+    // まま運用されていたことがあり、ログイン成功後のセッションCookie発行
+    // (createSessionCookie)がWebCryptoの生のエラー("Imported HMAC key
+    // length (0)...")を投げ、それがそのままレスポンスに漏れていた。
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env);
+
+    const originalSecret = env.SESSION_SECRET;
+    env.SESSION_SECRET = "";
+
+    try {
+      const response = await postLogin({
+        accountId,
+        password,
+        turnstileToken: "tok",
+      });
+
+      expect(response.status).toBe(500);
+      const body = await readJson<{ success: boolean; error: string }>(
+        response
+      );
+      expect(body.success).toBe(false);
+      expect(body.error).toBe("Internal server error");
+    } finally {
+      env.SESSION_SECRET = originalSecret;
+    }
+  });
+
   it("increments failed_login_attempts on a wrong password and resets it on a subsequent success", async () => {
     stubTurnstileSuccess();
     const { accountId, password } = await insertTestAccount(env, {

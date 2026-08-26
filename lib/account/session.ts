@@ -17,6 +17,14 @@ export async function createSessionCookie(
   sessionVersion: number,
   env: CloudflareEnv
 ): Promise<string> {
+  if (!env.SESSION_SECRET) {
+    // SESSION_SECRET未設定のままここに来ると、jose内部でHMACキーの
+    // インポートに失敗し、生のWebCryptoエラー("Imported HMAC key length
+    // (0)...")がそのまま例外として伝播してしまう。原因を明確にするため
+    // ここで検出して分かりやすいメッセージにする。
+    throw new Error("SESSION_SECRET is not configured");
+  }
+
   const token = await new SignJWT({ accountId, sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
