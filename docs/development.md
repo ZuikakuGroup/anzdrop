@@ -60,7 +60,7 @@ npm run test:watch    # ウォッチモード
 npm run test:coverage # カバレッジ付き
 ```
 
-テストは主に `lib/**/*.test.ts` に置かれており、暗号化(`lib/crypto/*.test.ts`)・アクセス制御(`lib/access.test.ts`)・掃除処理(`lib/cleanup.test.ts`)・保存期間計算(`lib/retention.test.ts`)などをカバーしている。
+テストは `tests/` 以下に、`lib/`・`app/` のソースと同じディレクトリ構成でまとめて置かれている(例: `lib/account/password.ts` のテストは `tests/lib/account/password.test.ts`)。暗号化(`tests/lib/crypto/*.test.ts`)・アクセス制御(`tests/lib/access.test.ts`)・掃除処理(`tests/lib/cleanup.test.ts`)・保存期間計算(`tests/lib/retention.test.ts`)・各APIルート(`tests/app/api/**/route.test.ts`)などをカバーしている。共有のテストヘルパー(`createTestEnv`など)は `test/env.ts`(単数形、`tests/`とは別)にある。
 
 ## Lint・型チェック
 
@@ -74,4 +74,4 @@ GitHub Actions(`.github/workflows/deploy.yml`)でも `main` へのpush時に同�
 ## 動作確認のコツ
 
 - ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。
-- `/admin` はCloudflare Access配下のため、ローカルでは `lib/access.ts` の `verifyAccessJwt()` が(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`が本物のAccess設定を指していない限り)常に401/403相当を返す。管理画面のロジック単体を確認したい場合は `lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
+- `/admin` はCloudflare Access配下のため、ローカルでは `lib/access.ts` の `verifyAccessJwt()` が(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`が本物のAccess設定を指していない限り)常に401/403相当を返す。管理画面のロジック単体を確認したい場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
