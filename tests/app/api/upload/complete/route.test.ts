@@ -122,6 +122,12 @@ describe("POST /api/upload/complete", () => {
     expect(response.status).toBe(400);
   });
 
+  it("returns 400 when uploadSessionId is an empty string", async () => {
+    const response = await postComplete({ uploadSessionId: "" });
+
+    expect(response.status).toBe(400);
+  });
+
   it("returns 404 for an unknown uploadSessionId", async () => {
     const response = await postComplete({ uploadSessionId: "no-such-session" });
 

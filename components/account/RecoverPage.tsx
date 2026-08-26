@@ -6,10 +6,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
-
-type RecoverResponse =
-  | { success: true; recoveryCode: string }
-  | { success: false; error: string };
+import type { RecoverResponse } from "@/app/api/account/recover/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { verifyShareOwnership } from "@/lib/share-auth";
+import { checkShareAccessible, verifyShareOwnership } from "@/lib/share-auth";
 
 type ShareRow = {
   created_at: string;
@@ -138,5 +138,42 @@ describe("verifyShareOwnership", () => {
       },
     });
     expect(bind).toHaveBeenCalledWith("share-1");
+  });
+});
+
+describe("checkShareAccessible", () => {
+  it("returns ok:true for a non-expired, non-suspended share", () => {
+    const result = checkShareAccessible({
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      suspendedAt: null,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("returns 410 for an expired share, checked before the suspended state", () => {
+    const result = checkShareAccessible({
+      expiresAt: "2020-01-02T00:00:00.000Z",
+      suspendedAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      status: 410,
+      error: "Share has expired",
+    });
+  });
+
+  it("returns 403 for a suspended, non-expired share", () => {
+    const result = checkShareAccessible({
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      suspendedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      status: 403,
+      error: "Share is suspended",
+    });
   });
 });

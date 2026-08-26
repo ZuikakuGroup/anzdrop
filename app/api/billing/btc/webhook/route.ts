@@ -1,13 +1,15 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyOpenNodeSignature } from "@/lib/opennode";
 import { extendPaidPeriod } from "@/lib/plan";
+import { withApiHandler } from "@/lib/api/handler";
 
 type BtcPaymentRecord = {
   account_id: string;
 };
 
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/billing/btc/webhook",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
     // OpenNodeのWebhookはform-urlencodedで届く(JSONではない)。
@@ -95,12 +97,5 @@ export async function POST(request: Request): Promise<Response> {
       .run();
 
     return Response.json({ success: true });
-  } catch (error) {
-    console.error("POST /api/billing/btc/webhook failed:", error);
-
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
-}
+);

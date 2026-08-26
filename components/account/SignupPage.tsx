@@ -11,10 +11,7 @@ import {
   MIN_ACCOUNT_ID_LENGTH,
   MAX_ACCOUNT_ID_LENGTH,
 } from "@/lib/account/id";
-
-type SignupResponse =
-  | { success: true; accountId: string; recoveryCode: string }
-  | { success: false; error: string };
+import type { SignupResponse } from "@/app/api/account/signup/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 

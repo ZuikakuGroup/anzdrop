@@ -1,34 +1,21 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyAccessJwt, verifySameOrigin } from "@/lib/access";
+import { requireAdmin } from "@/lib/api/adminAuth";
+import { withApiHandler } from "@/lib/api/handler";
+import type { RouteContext } from "@/lib/api/types";
 import { deleteShare } from "@/lib/cleanup";
 
-type RouteContext = {
-  params: Promise<{
-    shareId: string;
-  }>;
-};
-
-export async function DELETE(
-  request: Request,
-  context: RouteContext
-): Promise<Response> {
-  try {
+export const DELETE = withApiHandler(
+  "DELETE /api/admin/shares/[shareId]",
+  async (
+    request: Request,
+    context: RouteContext<{ shareId: string }>
+  ): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const identity = await verifyAccessJwt(request, env);
+    const auth = await requireAdmin(request, env);
 
-    if (!identity) {
-      return Response.json(
-        { success: false, error: "Unauthorized" },
-        { status: 403 }
-      );
-    }
-
-    if (!verifySameOrigin(request)) {
-      return Response.json(
-        { success: false, error: "Invalid origin" },
-        { status: 403 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const { shareId } = await context.params;
@@ -38,12 +25,5 @@ export async function DELETE(
     await deleteShare(env, shareId);
 
     return Response.json({ success: true });
-  } catch (error) {
-    console.error("DELETE /api/admin/shares/[shareId] failed:", error);
-
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
-}
+);

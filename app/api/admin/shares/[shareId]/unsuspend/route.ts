@@ -1,53 +1,28 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyAccessJwt, verifySameOrigin } from "@/lib/access";
+import { requireAdmin } from "@/lib/api/adminAuth";
+import { withApiHandler } from "@/lib/api/handler";
+import type { RouteContext } from "@/lib/api/types";
 
-type RouteContext = {
-  params: Promise<{
-    shareId: string;
-  }>;
-};
-
-export async function POST(
-  request: Request,
-  context: RouteContext
-): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/admin/shares/[shareId]/unsuspend",
+  async (
+    request: Request,
+    context: RouteContext<{ shareId: string }>
+  ): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const identity = await verifyAccessJwt(request, env);
+    const auth = await requireAdmin(request, env);
 
-    if (!identity) {
-      return Response.json(
-        { success: false, error: "Unauthorized" },
-        { status: 403 }
-      );
-    }
-
-    if (!verifySameOrigin(request)) {
-      return Response.json(
-        { success: false, error: "Invalid origin" },
-        { status: 403 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const { shareId } = await context.params;
 
-    await env.DB.prepare(
-      `UPDATE shares SET suspended_at = NULL WHERE id = ?`
-    )
+    await env.DB.prepare(`UPDATE shares SET suspended_at = NULL WHERE id = ?`)
       .bind(shareId)
       .run();
 
     return Response.json({ success: true });
-  } catch (error) {
-    console.error(
-      "POST /api/admin/shares/[shareId]/unsuspend failed:",
-      error
-    );
-
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
-}
+);

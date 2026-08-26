@@ -6,8 +6,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
-
-type LoginResponse = { success: true } | { success: false; error: string };
+import type { LoginResponse } from "@/app/api/account/login/schema";
 
 export default function LoginPage() {
   const [accountId, setAccountId] = useState("");

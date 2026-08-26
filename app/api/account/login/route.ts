@@ -1,17 +1,13 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyPassword, DUMMY_PASSWORD_HASH } from "@/lib/account/password";
 import { createSessionCookie } from "@/lib/account/session";
-import { verifyTurnstileToken } from "@/lib/turnstile";
-
-type LoginRequest = {
-  accountId: string;
-  password: string;
-  turnstileToken?: string;
-};
-
-type LoginResponse =
-  | { success: true }
-  | { success: false; error: string };
+import { requireTurnstile } from "@/lib/turnstile";
+import { withApiHandler } from "@/lib/api/handler";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  LoginRequestSchema,
+  type LoginResponse,
+} from "@/app/api/account/login/schema";
 
 const INVALID_CREDENTIALS_ERROR = "Invalid account ID or password";
 
@@ -58,30 +54,26 @@ async function lockAccount(env: CloudflareEnv, accountId: string): Promise<void>
     .run();
 }
 
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/account/login",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const requestBody = (await request.json()) as LoginRequest;
-    const { accountId, password } = requestBody;
+    const parsed = await parseJsonBody(request, LoginRequestSchema);
 
-    if (typeof accountId !== "string" || typeof password !== "string") {
-      return Response.json(
-        { success: false, error: "Missing accountId or password" },
-        { status: 400 }
-      );
+    if (!parsed.ok) {
+      return parsed.response;
     }
 
-    const verification = await verifyTurnstileToken(
-      requestBody.turnstileToken,
+    const { accountId, password } = parsed.data;
+
+    const turnstile = await requireTurnstile(
+      parsed.data.turnstileToken,
       env.TURNSTILE_SECRET_KEY
     );
 
-    if (!verification.success) {
-      return Response.json(
-        { success: false, error: "Turnstile verification failed" },
-        { status: 403 }
-      );
+    if (!turnstile.ok) {
+      return turnstile.response;
     }
 
     const account = await env.DB.prepare(
@@ -160,14 +152,5 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(responseBody, {
       headers: { "Set-Cookie": setCookie },
     });
-  } catch (error) {
-    console.error("POST /api/account/login failed:", error);
-
-    const responseBody: LoginResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

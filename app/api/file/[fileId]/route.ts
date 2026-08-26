@@ -1,4 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { checkShareAccessible } from "@/lib/share-auth";
+import { withApiHandler } from "@/lib/api/handler";
+import type { RouteContext } from "@/lib/api/types";
 
 type FileRecord = {
   id: string;
@@ -12,6 +15,13 @@ type DownloadCountResult = {
   max_downloads: number | null;
 };
 
+type Share = {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  suspended_at: string | null;
+};
+
 async function deleteOneTimeFile(
   env: CloudflareEnv,
   fileId: string,
@@ -23,24 +33,12 @@ async function deleteOneTimeFile(
     .run();
 }
 
-type RouteContext = {
-  params: Promise<{
-    fileId: string;
-  }>;
-};
-
-type Share = {
-  id: string;
-  created_at: string;
-  expires_at: string;
-  suspended_at: string | null;
-};
-
-export async function GET(
-  request: Request,
-  context: RouteContext
-) {
-  try {
+export const GET = withApiHandler(
+  "GET /api/file/[fileId]",
+  async (
+    request: Request,
+    context: RouteContext<{ fileId: string }>
+  ): Promise<Response> => {
     const { env, ctx } = getCloudflareContext();
 
     const { fileId } = await context.params;
@@ -89,23 +87,15 @@ export async function GET(
       );
     }
 
-    if (new Date(share.expires_at) <= new Date()) {
-      return Response.json(
-        {
-          success: false,
-          error: "Share has expired",
-        },
-        { status: 410 }
-      );
-    }
+    const access = checkShareAccessible({
+      expiresAt: share.expires_at,
+      suspendedAt: share.suspended_at,
+    });
 
-    if (share.suspended_at) {
+    if (!access.ok) {
       return Response.json(
-        {
-          success: false,
-          error: "Share is suspended",
-        },
-        { status: 403 }
+        { success: false, error: access.error },
+        { status: access.status }
       );
     }
 
@@ -151,28 +141,16 @@ export async function GET(
     ) {
       // 許可された最後の1回のダウンロードだったので、レスポンスは遅延させずに
       // 裏でR2オブジェクトとDBレコードを削除する。
-      ctx.waitUntil(
-        deleteOneTimeFile(env, fileId, file.storage_key)
-      );
+      ctx.waitUntil(deleteOneTimeFile(env, fileId, file.storage_key));
     }
 
     return new Response(object.body, {
       headers: {
-        "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream",
+        "Content-Type":
+          object.httpMetadata?.contentType ?? "application/octet-stream",
         "Content-Disposition": `attachment; filename="${file.encrypted_file_name}"`,
         "Cache-Control": "no-store",
       },
     });
-
-  } catch (error) {
-    console.error("GET /api/file/[fileId] failed:", error);
-
-    return Response.json(
-      {
-        success: false,
-        error: "Internal server error",
-      },
-      { status: 500 }
-    );
   }
-}
+);

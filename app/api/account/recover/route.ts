@@ -5,54 +5,36 @@ import {
   verifyPassword,
   DUMMY_PASSWORD_HASH,
 } from "@/lib/account/password";
-import { verifyTurnstileToken } from "@/lib/turnstile";
-
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 200;
-
-type RecoverRequest = {
-  accountId: string;
-  recoveryCode: string;
-  newPassword: string;
-  turnstileToken?: string;
-};
-
-type RecoverResponse =
-  | { success: true; recoveryCode: string }
-  | { success: false; error: string };
+import { requireTurnstile } from "@/lib/turnstile";
+import { withApiHandler } from "@/lib/api/handler";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  RecoverRequestSchema,
+  type RecoverResponse,
+} from "@/app/api/account/recover/schema";
 
 const INVALID_RECOVERY_ERROR = "Invalid account ID or recovery code";
 
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/account/recover",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const requestBody = (await request.json()) as RecoverRequest;
-    const { accountId, recoveryCode, newPassword } = requestBody;
+    const parsed = await parseJsonBody(request, RecoverRequestSchema);
 
-    if (
-      typeof accountId !== "string" ||
-      typeof recoveryCode !== "string" ||
-      typeof newPassword !== "string" ||
-      newPassword.length < MIN_PASSWORD_LENGTH ||
-      newPassword.length > MAX_PASSWORD_LENGTH
-    ) {
-      return Response.json(
-        { success: false, error: "Invalid request" },
-        { status: 400 }
-      );
+    if (!parsed.ok) {
+      return parsed.response;
     }
 
-    const verification = await verifyTurnstileToken(
-      requestBody.turnstileToken,
+    const { accountId, recoveryCode, newPassword } = parsed.data;
+
+    const turnstile = await requireTurnstile(
+      parsed.data.turnstileToken,
       env.TURNSTILE_SECRET_KEY
     );
 
-    if (!verification.success) {
-      return Response.json(
-        { success: false, error: "Turnstile verification failed" },
-        { status: 403 }
-      );
+    if (!turnstile.ok) {
+      return turnstile.response;
     }
 
     const account = await env.DB.prepare(
@@ -104,14 +86,5 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     return Response.json(responseBody);
-  } catch (error) {
-    console.error("POST /api/account/recover failed:", error);
-
-    const responseBody: RecoverResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

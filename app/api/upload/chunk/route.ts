@@ -1,6 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
+import { withApiHandler } from "@/lib/api/handler";
+import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
 
 // R2のマルチパートアップロードは、最終パートを除きパートサイズが最小5MiB
 // 以上でなければならない制約がある。クライアントは通常CHUNK_SIZE(8MiB)を
@@ -8,20 +10,9 @@ import { timingSafeEqual } from "@/lib/timingSafeEqual";
 // 考慮し、declaredFileSizeから許容するパート数の上限をこの最小粒度で見積もる。
 const R2_MULTIPART_MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
-type ChunkUploadResponse =
-  | {
-    success: true;
-    partNumber: number;
-  }
-  | {
-    success: false;
-    error: string;
-  };
-
-export async function POST(
-  request: Request
-): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/upload/chunk",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
     // Header取得
@@ -190,18 +181,5 @@ export async function POST(
     };
 
     return Response.json(response);
-
-  } catch (error) {
-    console.error("POST /api/upload/chunk failed:", error);
-
-    const response: ChunkUploadResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(response, {
-      status: 500,
-    });
-
   }
-}
+);

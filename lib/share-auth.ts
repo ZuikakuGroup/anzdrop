@@ -65,3 +65,26 @@ export async function verifyShareOwnership(
     share: { createdAt: share.created_at, expiresAt: share.expires_at },
   };
 }
+
+export type ShareAccessResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string };
+
+// app/api/download/[shareId]とapp/api/file/[fileId]がそれぞれ個別実装して
+// いた「共有の有効期限切れ・停止判定」を共通化する。閲覧者は所有権(uploadToken)
+// を持たないため、こちらは有効期限・停止状態のみを見るverifyShareOwnershipとは
+// 別の軽量なチェックとして分離している。
+export function checkShareAccessible(share: {
+  expiresAt: string;
+  suspendedAt: string | null;
+}): ShareAccessResult {
+  if (new Date(share.expiresAt) <= new Date()) {
+    return { ok: false, status: 410, error: "Share has expired" };
+  }
+
+  if (share.suspendedAt) {
+    return { ok: false, status: 403, error: "Share is suspended" };
+  }
+
+  return { ok: true };
+}

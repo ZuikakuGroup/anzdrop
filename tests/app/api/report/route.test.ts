@@ -86,6 +86,18 @@ describe("POST /api/report", () => {
     expect(await allReports()).toHaveLength(0);
   });
 
+  it("returns 403 (not 400) when Turnstile fails even if shareId/reason are also missing (Turnstile is checked first)", async () => {
+    stubTurnstileFailure();
+
+    const response = await postReport({
+      category: "spam",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await allReports()).toHaveLength(0);
+  });
+
   it("returns 400 when shareId is missing", async () => {
     stubTurnstileSuccess();
 

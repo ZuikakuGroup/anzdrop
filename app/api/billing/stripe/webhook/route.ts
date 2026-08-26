@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
+import { withApiHandler } from "@/lib/api/handler";
 
 function unixSecondsToIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString();
@@ -124,8 +125,9 @@ async function applyEvent(
   }
 }
 
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/billing/stripe/webhook",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
     const signature = request.headers.get("stripe-signature");
@@ -180,12 +182,5 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     return Response.json({ success: true });
-  } catch (error) {
-    console.error("POST /api/billing/stripe/webhook failed:", error);
-
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
-}
+);

@@ -2,20 +2,12 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
 import { getAccountPlanInfo, getMaxFileSizeBytes } from "@/lib/plan";
 import { getPlaintextSizeFromCiphertextSize } from "@/lib/crypto";
-
-type UploadCompleteRequest = {
-  uploadSessionId: string;
-};
-
-type UploadCompleteResponse =
-  | {
-      success: true;
-      fileId: string;
-    }
-  | {
-      success: false;
-      error: string;
-    };
+import { withApiHandler } from "@/lib/api/handler";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  UploadCompleteRequestSchema,
+  type UploadCompleteResponse,
+} from "@/app/api/upload/complete/schema";
 
 type UploadRecord = {
   id: string;
@@ -31,24 +23,18 @@ type UploadPartRecord = {
   etag: string;
 };
 
-export async function POST(
-  request: Request
-): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/upload/complete",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const { uploadSessionId } =
-      (await request.json()) as UploadCompleteRequest;
+    const parsed = await parseJsonBody(request, UploadCompleteRequestSchema);
 
-    if (!uploadSessionId) {
-      return Response.json(
-        {
-          success: false,
-          error: "Missing uploadSessionId",
-        },
-        { status: 400 }
-      );
+    if (!parsed.ok) {
+      return parsed.response;
     }
+
+    const { uploadSessionId } = parsed.data;
 
     const upload = await env.DB.prepare(`
       SELECT
@@ -187,17 +173,5 @@ export async function POST(
     };
 
     return Response.json(responseBody);
-
-  } catch (error) {
-    console.error("POST /api/upload/complete failed:", error);
-
-    const responseBody: UploadCompleteResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, {
-      status: 500,
-    });
   }
-}
+);

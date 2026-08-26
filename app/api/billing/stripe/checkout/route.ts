@@ -1,13 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
+import { withApiHandler } from "@/lib/api/handler";
+import type { CheckoutResponse } from "@/app/api/billing/stripe/checkout/schema";
 
-type CheckoutResponse =
-  | { success: true; url: string }
-  | { success: false; error: string };
-
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/billing/stripe/checkout",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
     const session = await verifySession(request, env);
 
@@ -64,14 +63,5 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     return Response.json(responseBody);
-  } catch (error) {
-    console.error("POST /api/billing/stripe/checkout failed:", error);
-
-    const responseBody: CheckoutResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { verifyTurnstileToken } from "@/lib/turnstile";
+import { requireTurnstile, verifyTurnstileToken } from "@/lib/turnstile";
 
 const SECRET = "test-secret-key";
 
@@ -149,6 +149,38 @@ describe("verifyTurnstileToken", () => {
     expect(result).toEqual({
       success: false,
       errorCodes: ["invalid-json-response"],
+    });
+  });
+});
+
+describe("requireTurnstile", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns ok:true when the token verifies successfully", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 }))
+    );
+
+    const result = await requireTurnstile("valid-token", SECRET);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("returns a 403 response with the standard error message when verification fails", async () => {
+    const result = await requireTurnstile(undefined, SECRET);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected ok:false");
+    }
+    expect(result.response.status).toBe(403);
+    const body = await result.response.json();
+    expect(body).toEqual({
+      success: false,
+      error: "Turnstile verification failed",
     });
   });
 });

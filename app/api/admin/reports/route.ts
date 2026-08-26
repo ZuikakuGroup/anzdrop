@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyAccessJwt } from "@/lib/access";
+import { requireAdmin } from "@/lib/api/adminAuth";
+import { withApiHandler } from "@/lib/api/handler";
 
 type ReportRow = {
   id: string;
@@ -96,17 +97,15 @@ async function fetchShareInfoByIds(
   return map;
 }
 
-export async function GET(request: Request): Promise<Response> {
-  try {
+export const GET = withApiHandler(
+  "GET /api/admin/reports",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const identity = await verifyAccessJwt(request, env);
+    const auth = await requireAdmin(request, env, { verifyOrigin: false });
 
-    if (!identity) {
-      return Response.json(
-        { success: false, error: "Unauthorized" },
-        { status: 403 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
     const url = new URL(request.url);
@@ -157,12 +156,5 @@ export async function GET(request: Request): Promise<Response> {
       { success: true, reports: responseReports },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch (error) {
-    console.error("GET /api/admin/reports failed:", error);
-
-    return Response.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
-}
+);

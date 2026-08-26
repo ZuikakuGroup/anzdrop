@@ -1,72 +1,36 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { generateRecoveryCode, isValidAccountId } from "@/lib/account/id";
+import { generateRecoveryCode } from "@/lib/account/id";
 import { hashPassword } from "@/lib/account/password";
-import { verifyTurnstileToken } from "@/lib/turnstile";
+import { requireTurnstile } from "@/lib/turnstile";
+import { withApiHandler } from "@/lib/api/handler";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  SignupRequestSchema,
+  type SignupResponse,
+} from "@/app/api/account/signup/schema";
 
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 200;
-
-type SignupRequest = {
-  accountId: string;
-  password: string;
-  turnstileToken?: string;
-};
-
-type SignupResponse =
-  | {
-      success: true;
-      accountId: string;
-      recoveryCode: string;
-    }
-  | {
-      success: false;
-      error: string;
-    };
-
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/account/signup",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const requestBody = (await request.json()) as SignupRequest;
-    const { accountId, password } = requestBody;
+    const parsed = await parseJsonBody(request, SignupRequestSchema);
 
-    if (typeof accountId !== "string" || !isValidAccountId(accountId)) {
-      return Response.json(
-        {
-          success: false,
-          error:
-            "Account ID must be 3-32 characters and contain only letters, numbers, hyphens, and underscores",
-        },
-        { status: 400 }
-      );
+    if (!parsed.ok) {
+      return parsed.response;
     }
 
-    if (
-      typeof password !== "string" ||
-      password.length < MIN_PASSWORD_LENGTH ||
-      password.length > MAX_PASSWORD_LENGTH
-    ) {
-      return Response.json(
-        {
-          success: false,
-          error: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters`,
-        },
-        { status: 400 }
-      );
-    }
+    const { accountId, password } = parsed.data;
 
     // アカウント作成はメールもレート制限もない中での主な悪用標的なので、
     // 新規共有作成(/api/upload/start)と同様にTurnstile検証を必須にする。
-    const verification = await verifyTurnstileToken(
-      requestBody.turnstileToken,
+    const turnstile = await requireTurnstile(
+      parsed.data.turnstileToken,
       env.TURNSTILE_SECRET_KEY
     );
 
-    if (!verification.success) {
-      return Response.json(
-        { success: false, error: "Turnstile verification failed" },
-        { status: 403 }
-      );
+    if (!turnstile.ok) {
+      return turnstile.response;
     }
 
     const recoveryCode = generateRecoveryCode();
@@ -108,14 +72,5 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     return Response.json(responseBody);
-  } catch (error) {
-    console.error("POST /api/account/signup failed:", error);
-
-    const responseBody: SignupResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

@@ -4,23 +4,9 @@ import { useEffect, useState } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
-
-type MeResponse =
-  | {
-      success: true;
-      accountId: string;
-      plan: "free" | "paid";
-      planExpiresAt: string | null;
-    }
-  | { success: false; error: string };
-
-type CheckoutResponse =
-  | { success: true; url: string }
-  | { success: false; error: string };
-
-type BtcChargeResponse =
-  | { success: true; hostedCheckoutUrl: string }
-  | { success: false; error: string };
+import type { MeResponse } from "@/app/api/account/me/schema";
+import type { CheckoutResponse } from "@/app/api/billing/stripe/checkout/schema";
+import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
 
 export default function BillingPage() {
   const [me, setMe] = useState<MeResponse | null>(null);

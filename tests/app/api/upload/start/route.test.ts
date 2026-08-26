@@ -90,6 +90,17 @@ describe("POST /api/upload/start", () => {
     expect(response.status).toBe(400);
   });
 
+  it("returns 400 when encryptedFileName is an empty string", async () => {
+    const response = await postStart({
+      encryptedFileName: "",
+      fileSize: 1024,
+      retention: "7d",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   it("returns 400 when retention is missing or invalid", async () => {
     const missing = await postStart({
       encryptedFileName: "file.enc",

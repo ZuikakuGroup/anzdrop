@@ -2,6 +2,14 @@
 
 すべてのAPIは `app/api/**/route.ts` に実装されたNext.js App RouterのRoute Handlerで、Cloudflare Workers上で動作します。特記のない限り認証不要です。
 
+各ルートの実装は以下の共通ヘルパーを利用し、定型的なエラーハンドリング・検証・認可チェックを重複させない構成になっています。
+
+- [`lib/api/handler.ts`](../lib/api/handler.ts) の `withApiHandler()`: try/catchと汎用500応答の共通化。
+- [`lib/api/validate.ts`](../lib/api/validate.ts) の `parseJsonBody()`: [zod](https://zod.dev/) スキーマ(各ルートに置かれた `schema.ts`)によるリクエストボディの検証と400応答の共通化。リクエストボディのレスポンス型・リクエスト型も同じ `schema.ts` からエクスポートし、対応するクライアントコンポーネントと共有する。
+- [`lib/api/adminAuth.ts`](../lib/api/adminAuth.ts) の `requireAdmin()`: 管理画面APIの認可チェック共通化(詳細は「管理画面API」の節を参照)。
+- [`lib/turnstile.ts`](../lib/turnstile.ts) の `requireTurnstile()`: Turnstile検証+403応答の共通化。
+- [`lib/share-auth.ts`](../lib/share-auth.ts) の `checkShareAccessible()`: 共有の有効期限切れ・一時停止判定の共通化(`GET /api/download/[shareId]` と `GET /api/file/[fileId]` で共用)。
+
 ## アップロード
 
 ### `POST /api/upload/start`
@@ -124,7 +132,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ## 管理画面API(要Cloudflare Access認証)
 
-以下は [`lib/access.ts`](../lib/access.ts) の `verifyAccessJwt()` によるCloudflare Access JWT検証を通過しないと `403 Unauthorized` を返す。主たる認証はCloudflare Access自体(エッジ側のZero Trust設定)であり、これはオリジン側の多層防御。
+以下は [`lib/api/adminAuth.ts`](../lib/api/adminAuth.ts) の `requireAdmin()` が内部で呼ぶ [`lib/access.ts`](../lib/access.ts) の `verifyAccessJwt()` によるCloudflare Access JWT検証を通過しないと `403 Unauthorized` を返す。主たる認証はCloudflare Access自体(エッジ側のZero Trust設定)であり、これはオリジン側の多層防御。状態を変更するPOST/DELETEルートは、`verifyAccessJwt()` に加えて `verifySameOrigin()` によるOriginヘッダー検証(CSRF対策の多層防御)も行い、不一致の場合は `403 Invalid origin` を返す。読み取り専用の `GET /api/admin/reports` はOrigin検証を行わない。
 
 ### `GET /api/admin/reports?status=open|resolved|all`
 

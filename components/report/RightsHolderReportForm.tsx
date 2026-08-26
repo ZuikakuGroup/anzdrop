@@ -6,6 +6,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { RIGHT_TYPES } from "@/app/api/report/schema";
 
 type RightsHolderReportFormProps = {
   initialShareId: string;
@@ -16,7 +17,7 @@ type ReportResponse = {
   error?: string;
 };
 
-type RightType = "copyright" | "trademark" | "portrait" | "other";
+type RightType = (typeof RIGHT_TYPES)[number];
 
 const RIGHT_TYPE_OPTIONS: { value: RightType; label: string }[] = [
   { value: "copyright", label: "著作権" },

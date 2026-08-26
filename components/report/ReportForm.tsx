@@ -6,6 +6,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { REPORT_CATEGORIES } from "@/app/api/report/schema";
 
 type ReportFormProps = {
   initialShareId: string;
@@ -16,7 +17,7 @@ type ReportResponse = {
   error?: string;
 };
 
-type Category = "csam" | "malware" | "privacy" | "spam" | "other";
+type Category = (typeof REPORT_CATEGORIES)[number];
 
 const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
   { value: "csam", label: "児童ポルノ等の違法コンテンツ" },

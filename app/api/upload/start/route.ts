@@ -1,10 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyTurnstileToken } from "@/lib/turnstile";
+import { requireTurnstile } from "@/lib/turnstile";
 import {
   calculateExpiresAt,
-  isRetention,
   maxDownloadsForRetention,
-  type Retention,
 } from "@/lib/retention";
 import { verifyShareOwnership } from "@/lib/share-auth";
 import { generateShareId } from "@/lib/id";
@@ -15,78 +13,26 @@ import {
   isPreviewAllowedForPlan,
   isRetentionAllowedForPlan,
 } from "@/lib/plan";
+import { withApiHandler } from "@/lib/api/handler";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  UploadStartRequestSchema,
+  type UploadStartResponse,
+} from "@/app/api/upload/start/schema";
 
-type UploadStartRequest = {
-  encryptedFileName: string;
-  shareId?: string;
-  uploadToken?: string;
-  fileSize?: number;
-  retention?: Retention;
-  wrappedKey?: string;
-  keySalt?: string;
-  turnstileToken?: string;
-};
-
-type UploadStartResponse =
-  | {
-      success: true;
-      shareId: string;
-      uploadToken: string;
-      uploadSessionId: string;
-      expiresAt: string;
-    }
-  | {
-      success: false;
-      error: string;
-    };
-
-export async function POST(
-  request: Request
-): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/upload/start",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    // リクエスト取得
-    const requestBody =
-      (await request.json()) as UploadStartRequest;
+    const parsed = await parseJsonBody(request, UploadStartRequestSchema);
 
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+
+    const requestBody = parsed.data;
     const { encryptedFileName, fileSize, retention } = requestBody;
-
-    if (!encryptedFileName) {
-      return Response.json(
-        {
-          success: false,
-          error: "Missing encryptedFileName",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (!retention || !isRetention(retention)) {
-      return Response.json(
-        {
-          success: false,
-          error: "Invalid retention",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    if (!fileSize || fileSize <= 0) {
-      return Response.json(
-        {
-          success: false,
-          error: "Missing fileSize",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
 
     // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
     const session = await verifySession(request, env);
@@ -152,19 +98,13 @@ export async function POST(
       // 新規共有の作成(=Bot悪用の主な標的)のみTurnstile検証を要求する。
       // 同一共有への追加ファイルは、この最初の検証を突破した際に発行された
       // uploadTokenの所持自体が既に正当性の証明になっているため再検証しない。
-      const verification = await verifyTurnstileToken(
+      const turnstile = await requireTurnstile(
         requestBody.turnstileToken,
         env.TURNSTILE_SECRET_KEY
       );
 
-      if (!verification.success) {
-        return Response.json(
-          {
-            success: false,
-            error: "Turnstile verification failed",
-          },
-          { status: 403 }
-        );
+      if (!turnstile.ok) {
+        return turnstile.response;
       }
 
       shareId = generateShareId();
@@ -239,17 +179,5 @@ export async function POST(
     };
 
     return Response.json(responseBody);
-
-  } catch (error) {
-    console.error("POST /api/upload/start failed:", error);
-
-    const responseBody: UploadStartResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, {
-      status: 500,
-    });
   }
-}
+);

@@ -1,18 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
-import { getAccountPlanInfo, type Plan } from "@/lib/plan";
+import { getAccountPlanInfo } from "@/lib/plan";
+import { withApiHandler } from "@/lib/api/handler";
+import type { MeResponse } from "@/app/api/account/me/schema";
 
-type MeResponse =
-  | {
-      success: true;
-      accountId: string;
-      plan: Plan;
-      planExpiresAt: string | null;
-    }
-  | { success: false; error: string };
-
-export async function GET(request: Request): Promise<Response> {
-  try {
+export const GET = withApiHandler(
+  "GET /api/account/me",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
     const session = await verifySession(request, env);
 
@@ -36,14 +30,5 @@ export async function GET(request: Request): Promise<Response> {
     };
 
     return Response.json(responseBody);
-  } catch (error) {
-    console.error("GET /api/account/me failed:", error);
-
-    const responseBody: MeResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

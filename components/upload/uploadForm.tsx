@@ -34,6 +34,7 @@ import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import QrCodeModal from "@/components/brand/QrCodeModal";
+import type { MeResponse } from "@/app/api/account/me/schema";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
@@ -45,10 +46,6 @@ const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "7d", label: "7日" },
   { value: "30d", label: "30日" },
 ];
-
-type MeResponse =
-  | { success: true; plan: Plan }
-  | { success: false; error: string };
 
 type UploadStartResponse = {
   success: boolean;

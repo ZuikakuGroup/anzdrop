@@ -1,13 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
 import { createCharge } from "@/lib/opennode";
+import { withApiHandler } from "@/lib/api/handler";
+import type { ChargeResponse } from "@/app/api/billing/btc/charge/schema";
 
-type ChargeResponse =
-  | { success: true; hostedCheckoutUrl: string }
-  | { success: false; error: string };
-
-export async function POST(request: Request): Promise<Response> {
-  try {
+export const POST = withApiHandler(
+  "POST /api/billing/btc/charge",
+  async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
     const session = await verifySession(request, env);
 
@@ -62,14 +61,5 @@ export async function POST(request: Request): Promise<Response> {
     };
 
     return Response.json(responseBody);
-  } catch (error) {
-    console.error("POST /api/billing/btc/charge failed:", error);
-
-    const responseBody: ChargeResponse = {
-      success: false,
-      error: "Internal server error",
-    };
-
-    return Response.json(responseBody, { status: 500 });
   }
-}
+);

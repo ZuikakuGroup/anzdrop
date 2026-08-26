@@ -1,4 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { checkShareAccessible } from "@/lib/share-auth";
+import { withApiHandler } from "@/lib/api/handler";
+import type { RouteContext } from "@/lib/api/types";
+import type {
+  DownloadResponse,
+  DownloadResponseFile,
+  DownloadResponseShare,
+} from "@/app/api/download/[shareId]/schema";
 
 type Share = {
   id: string;
@@ -19,32 +27,12 @@ type FileRecord = {
   max_downloads: number | null;
 };
 
-type RouteContext = {
-  params: Promise<{
-    shareId: string;
-  }>;
-};
-
-type DownloadResponseFile = {
-  id: string;
-  name: string;
-  size: number;
-  isOneTime: boolean;
-};
-
-type DownloadResponseShare = {
-  id: string;
-  expires_at: string;
-  wrappedKey: string | null;
-  keySalt: string | null;
-  previewAllowed: boolean;
-};
-
-export async function GET(
-  request: Request,
-  context: RouteContext
-) {
-  try {
+export const GET = withApiHandler(
+  "GET /api/download/[shareId]",
+  async (
+    request: Request,
+    context: RouteContext<{ shareId: string }>
+  ): Promise<Response> => {
     const { env } = getCloudflareContext();
 
     const { shareId } = await context.params;
@@ -68,25 +56,15 @@ export async function GET(
       );
     }
 
-    const expiresAt = new Date(share.expires_at);
+    const access = checkShareAccessible({
+      expiresAt: share.expires_at,
+      suspendedAt: share.suspended_at,
+    });
 
-    if (expiresAt <= new Date()) {
+    if (!access.ok) {
       return Response.json(
-        {
-          success: false,
-          error: "Share has expired",
-        },
-        { status: 410 }
-      );
-    }
-
-    if (share.suspended_at) {
-      return Response.json(
-        {
-          success: false,
-          error: "Share is suspended",
-        },
-        { status: 403 }
+        { success: false, error: access.error },
+        { status: access.status }
       );
     }
 
@@ -122,27 +100,16 @@ export async function GET(
       isOneTime: file.max_downloads !== null,
     }));
 
-    return Response.json(
-      {
-        success: true,
-        share: responseShare,
-        files: responseFiles,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      }
-    );
-  } catch (error) {
-    console.error("GET /api/download/[shareId] failed:", error);
+    const responseBody: DownloadResponse = {
+      success: true,
+      share: responseShare,
+      files: responseFiles,
+    };
 
-    return Response.json(
-      {
-        success: false,
-        error: "Internal server error",
+    return Response.json(responseBody, {
+      headers: {
+        "Cache-Control": "no-store",
       },
-      { status: 500 }
-    );
+    });
   }
-}
+);
