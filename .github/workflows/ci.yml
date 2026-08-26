@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [main] # mainへのpushはdeploy.ymlが同じチェックを行う
+  pull_request:
+
+# 同一リポジトリ内のPRでは、pushイベントとpull_request(synchronize)イベントの
+# 両方が同じコミットに対して発火し二重実行になるため、後発のpushで前の実行を
+# キャンセルする。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npx vitest run
