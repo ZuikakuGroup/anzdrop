@@ -173,4 +173,43 @@ describe("POST /api/account/recover", () => {
     });
     expect(reuseOldRecoveryCode.status).toBe(403);
   });
+
+  it("clears any login lockout state (failed attempts / lock) on a successful recovery", async () => {
+    stubTurnstileSuccess();
+    const { accountId, recoveryCode } = await insertTestAccount(env, {
+      failedLoginAttempts: 4,
+      lockedUntil: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    const response = await postRecover({
+      accountId,
+      recoveryCode,
+      newPassword: "brand-new-password",
+      turnstileToken: "tok",
+    });
+    expect(response.status).toBe(200);
+
+    const account = await env.DB.prepare(
+      `SELECT failed_login_attempts, locked_until FROM accounts WHERE id = ?`
+    )
+      .bind(accountId)
+      .first<{ failed_login_attempts: number; locked_until: string | null }>();
+
+    expect(account?.failed_login_attempts).toBe(0);
+    expect(account?.locked_until).toBeNull();
+
+    // ロックが解除されているので、新しいパスワードで即ログインできる。
+    const { POST: login } = await import("@/app/api/account/login/route");
+    const loginResponse = await login(
+      new Request("http://localhost/api/account/login", {
+        method: "POST",
+        body: JSON.stringify({
+          accountId,
+          password: "brand-new-password",
+          turnstileToken: "tok",
+        }),
+      })
+    );
+    expect(loginResponse.status).toBe(200);
+  });
 });

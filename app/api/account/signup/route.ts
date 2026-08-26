@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { generateAccountId, generateRecoveryCode } from "@/lib/account/id";
+import { generateRecoveryCode, isValidAccountId } from "@/lib/account/id";
 import { hashPassword } from "@/lib/account/password";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
@@ -7,6 +7,7 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 200;
 
 type SignupRequest = {
+  accountId: string;
   password: string;
   turnstileToken?: string;
 };
@@ -27,7 +28,18 @@ export async function POST(request: Request): Promise<Response> {
     const { env } = getCloudflareContext();
 
     const requestBody = (await request.json()) as SignupRequest;
-    const { password } = requestBody;
+    const { accountId, password } = requestBody;
+
+    if (typeof accountId !== "string" || !isValidAccountId(accountId)) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "Account ID must be 3-32 characters and contain only letters, numbers, hyphens, and underscores",
+        },
+        { status: 400 }
+      );
+    }
 
     if (
       typeof password !== "string" ||
@@ -57,13 +69,15 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const accountId = generateAccountId();
     const recoveryCode = generateRecoveryCode();
     const passwordHash = await hashPassword(password);
     const recoveryCodeHash = await hashPassword(recoveryCode);
     const createdAt = new Date().toISOString();
 
-    await env.DB.prepare(
+    // IDが既に使われている場合はDO NOTHINGで静かに失敗させ、changesで判定する
+    // (SELECTでの事前チェックだと、チェックとINSERTの間に別リクエストが割り
+    // 込む競合が起きうるため、INSERT自体の原子性に一意性判定を任せる)。
+    const result = await env.DB.prepare(
       `
       INSERT INTO accounts (
         id,
@@ -73,10 +87,18 @@ export async function POST(request: Request): Promise<Response> {
         created_at
       )
       VALUES (?, ?, ?, 'free', ?)
+      ON CONFLICT (id) DO NOTHING
     `
     )
       .bind(accountId, passwordHash, recoveryCodeHash, createdAt)
       .run();
+
+    if (result.meta.changes !== 1) {
+      return Response.json(
+        { success: false, error: "Account ID is already taken" },
+        { status: 409 }
+      );
+    }
 
     // recoveryCodeはこの応答が最初で最後の表示機会(サーバーは平文を保持しない)。
     const responseBody: SignupResponse = {

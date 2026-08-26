@@ -5,6 +5,11 @@ import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import {
+  isValidAccountId,
+  MIN_ACCOUNT_ID_LENGTH,
+  MAX_ACCOUNT_ID_LENGTH,
+} from "@/lib/account/id";
 
 type SignupResponse =
   | { success: true; accountId: string; recoveryCode: string }
@@ -13,15 +18,15 @@ type SignupResponse =
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
+  const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<
     { accountId: string; recoveryCode: string } | null
   >(null);
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   const submit = async () => {
@@ -29,13 +34,15 @@ export default function SignupPage() {
       return;
     }
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
+    if (!isValidAccountId(accountId)) {
+      setError(
+        `アカウントIDは${MIN_ACCOUNT_ID_LENGTH}〜${MAX_ACCOUNT_ID_LENGTH}文字の半角英数字・ハイフン・アンダースコアで入力してください。`
+      );
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError("パスワードが一致しません。");
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
       return;
     }
 
@@ -48,7 +55,7 @@ export default function SignupPage() {
       const response = await fetch("/api/account/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, turnstileToken }),
+        body: JSON.stringify({ accountId, password, turnstileToken }),
       });
 
       const data = (await response.json()) as SignupResponse;
@@ -98,7 +105,7 @@ export default function SignupPage() {
               アカウント作成
             </h1>
             <p className="text-xs text-ink/50">
-              メールアドレスは収集しません。アカウントIDとパスワードだけで利用できます。
+              アカウントIDとパスワードだけで利用できます。
             </p>
           </div>
 
@@ -143,6 +150,30 @@ export default function SignupPage() {
             <div className="space-y-4">
               <div className="space-y-1">
                 <label
+                  htmlFor="signup-account-id"
+                  className="text-xs font-bold text-ink/50"
+                >
+                  アカウントID
+                </label>
+                <input
+                  id="signup-account-id"
+                  type="text"
+                  value={accountId}
+                  onChange={(event) => setAccountId(event.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="w-full rounded border-2 border-ink/20 px-3 py-2 font-mono text-base outline-none focus:border-brand sm:text-sm"
+                />
+                <p className="text-[11px] text-ink/40">
+                  ログインに使うIDです。半角英数字・ハイフン・アンダースコアで
+                  {MIN_ACCOUNT_ID_LENGTH}〜{MAX_ACCOUNT_ID_LENGTH}
+                  文字。あとから変更はできません。
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label
                   htmlFor="signup-password"
                   className="text-xs font-bold text-ink/50"
                 >
@@ -157,23 +188,7 @@ export default function SignupPage() {
                 />
               </div>
 
-              <div className="space-y-1">
-                <label
-                  htmlFor="signup-confirm-password"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  パスワード(確認)
-                </label>
-                <input
-                  id="signup-confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              <div ref={turnstileContainerRef} className="flex justify-center" />
+              {turnstileWidget}
 
               <button
                 onClick={submit}

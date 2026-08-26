@@ -82,12 +82,16 @@ export async function POST(request: Request): Promise<Response> {
 
     // session_versionをインクリメントし、この時点までに発行済みの
     // セッションCookie(盗まれている可能性がある)を全て無効化する。
+    // リカバリーコードによる本人確認ができた時点で、ログイン失敗回数による
+    // ロックアウト状態も解除する。
     await env.DB.prepare(
       `
       UPDATE accounts
       SET password_hash = ?,
           recovery_code_hash = ?,
-          session_version = session_version + 1
+          session_version = session_version + 1,
+          failed_login_attempts = 0,
+          locked_until = NULL
       WHERE id = ?
     `
     )

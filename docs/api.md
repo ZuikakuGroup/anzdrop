@@ -75,13 +75,15 @@
 
 アカウントを新規作成する。ボット対策として `turnstileToken` が必須。
 
-- リクエスト: `{ password, turnstileToken }`(パスワードは8〜200文字)
+- リクエスト: `{ accountId, password, turnstileToken }`(`accountId`は本人が自由に決める3〜32文字の半角英数字・ハイフン・アンダースコア。パスワードは8〜200文字)
 - レスポンス: `{ success: true, accountId, recoveryCode }`。`recoveryCode` はこの応答でのみ表示され、以後サーバーは平文を保持しない。
+- `accountId`が既に使われている場合は409(`{ success: false, error }`)。
 
 ### `POST /api/account/login`
 
 - リクエスト: `{ accountId, password, turnstileToken }`
 - 成功時、セッションCookie(`anzdrop_session`)を発行する。レスポンス: `{ success: true }`
+- 同一アカウントIDで5回連続してログインに失敗すると、5分間はパスワードが正しくても403になる([`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)参照)。
 
 ### `POST /api/account/logout`
 

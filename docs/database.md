@@ -84,7 +84,7 @@
 
 | カラム | 型 | 説明 |
 | --- | --- | --- |
-| `id` | TEXT PK | システム生成のアカウントID([`lib/account/id.ts`](../lib/account/id.ts)、`nanoid(16)`) |
+| `id` | TEXT PK | 本人が自由に設定するアカウントID([`lib/account/id.ts`](../lib/account/id.ts)の`isValidAccountId()`で3〜32文字・半角英数字/ハイフン/アンダースコアのみを検証。一意性はINSERT自体で判定) |
 | `password_hash` | TEXT | パスワードのPBKDF2ハッシュ([`lib/account/password.ts`](../lib/account/password.ts)) |
 | `recovery_code_hash` | TEXT | リカバリーコードのハッシュ。パスワード忘れ時の再設定にのみ使う(サインアップ時に1回だけ平文を表示し、以後は保持しない) |
 | `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` または `"paid"` |
@@ -93,8 +93,10 @@
 | `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
 | `created_at` | TEXT | 作成日時 |
 | `session_version` | INTEGER NOT NULL DEFAULT 0 | セッションCookie(JWT)に埋め込まれる世代番号。パスワード再設定([`recover`](../app/api/account/recover/route.ts))のたびにインクリメントされ、それより前に発行済みのセッションを全て失効させる(migration 0010) |
+| `failed_login_attempts` | INTEGER NOT NULL DEFAULT 0 | ログイン連続失敗回数。アカウントIDが本人設定になり予測不可能性に頼れなくなったための総当たり対策(migration 0012)。成功時・パスワード再設定時に0へリセットされる |
+| `locked_until` | TEXT (nullable) | この時刻まではログインを拒否する(`failed_login_attempts`が5に達すると5分後の時刻をセット、同時に0へリセット。migration 0012) |
 
-migration 0009(`session_version`のみ0010)。
+migration 0009(`session_version`は0010、`failed_login_attempts`/`locked_until`は0012)。
 
 ### `btc_payments`
 
@@ -137,5 +139,6 @@ migration 0009。
 | `0009_add_accounts.sql` | 有料プラン用の`accounts`/`btc_payments`/`stripe_events`テーブル新設 |
 | `0010_add_session_version.sql` | `accounts.session_version` 追加(パスワード再設定時の既存セッション失効) |
 | `0011_add_preview_allowed.sql` | `shares.preview_allowed` 追加(有料プラン限定のブラウザ内プレビュー機能。MP4/MP3/JPEG/PNG) |
+| `0012_add_login_lockout.sql` | `accounts.failed_login_attempts`/`accounts.locked_until` 追加(アカウントID自由設定化に伴うログイン総当たり対策) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

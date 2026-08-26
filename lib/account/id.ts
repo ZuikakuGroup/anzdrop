@@ -1,12 +1,19 @@
-import { nanoid } from "nanoid";
 import { encodeBase64Url } from "@/lib/crypto/base64";
 
-// shareId(lib/id.ts)より長くする。ログインの総当たり攻撃はアカウントIDの
-// 予測不可能性にも依存するため、10文字よりエントロピーを上げておく。
-const ACCOUNT_ID_LENGTH = 16;
+// アカウントIDはログイン時にユーザーが毎回入力するため、本人が自由に設定する
+// (ランダム発行だとコピペが必須になりログインの手間が大きい)。長さと文字種
+// だけを制限する。一意性の保証はサインアップ時のINSERT自体(PRIMARY KEY)に
+// 任せる。
+export const MIN_ACCOUNT_ID_LENGTH = 3;
+export const MAX_ACCOUNT_ID_LENGTH = 32;
+const ACCOUNT_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-export function generateAccountId(): string {
-  return nanoid(ACCOUNT_ID_LENGTH);
+export function isValidAccountId(accountId: string): boolean {
+  return (
+    accountId.length >= MIN_ACCOUNT_ID_LENGTH &&
+    accountId.length <= MAX_ACCOUNT_ID_LENGTH &&
+    ACCOUNT_ID_PATTERN.test(accountId)
+  );
 }
 
 // パスワードを忘れた場合の再設定にのみ使う使い捨てコード。

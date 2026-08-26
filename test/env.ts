@@ -4,11 +4,11 @@
 // (MiniflareのD1エミュレーション)で実行されるため、WHERE句を使った二重処理
 // 防止などのSQLの振る舞いそのものを検証できる。
 import { Miniflare } from "miniflare";
+import { nanoid } from "nanoid";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { vi } from "vitest";
 import { hashPassword } from "@/lib/account/password";
-import { generateAccountId } from "@/lib/account/id";
 import { createSessionCookie } from "@/lib/account/session";
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../migrations");
@@ -113,9 +113,13 @@ export async function insertTestAccount(
     planExpiresAt?: string | null;
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;
+    failedLoginAttempts?: number;
+    lockedUntil?: string | null;
   } = {}
 ): Promise<{ accountId: string; password: string; recoveryCode: string }> {
-  const id = overrides.id ?? generateAccountId();
+  // 本物のsignupではアカウントIDは本人が自由に設定するため、テストでは
+  // 衝突しないランダムな文字列を代わりに使う(idの妥当性検証はlib/account/id.test.tsで担保する)。
+  const id = overrides.id ?? nanoid(16);
   const password = overrides.password ?? "test-password-123";
   const recoveryCode = overrides.recoveryCode ?? "test-recovery-code-123";
   const passwordHash = await hashPassword(password);
@@ -125,8 +129,9 @@ export async function insertTestAccount(
     `
       INSERT INTO accounts (
         id, password_hash, recovery_code_hash, plan, plan_expires_at,
-        stripe_customer_id, stripe_subscription_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        stripe_customer_id, stripe_subscription_id, created_at,
+        failed_login_attempts, locked_until
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   )
     .bind(
@@ -137,7 +142,9 @@ export async function insertTestAccount(
       overrides.planExpiresAt ?? null,
       overrides.stripeCustomerId ?? null,
       overrides.stripeSubscriptionId ?? null,
-      new Date().toISOString()
+      new Date().toISOString(),
+      overrides.failedLoginAttempts ?? 0,
+      overrides.lockedUntil ?? null
     )
     .run();
 

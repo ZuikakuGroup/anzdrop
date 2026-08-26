@@ -55,6 +55,18 @@ async function postLogin(body: unknown) {
   );
 }
 
+async function getFailedLoginState(
+  accountId: string
+): Promise<{ failed_login_attempts: number; locked_until: string | null }> {
+  const row = await env.DB.prepare(
+    `SELECT failed_login_attempts, locked_until FROM accounts WHERE id = ?`
+  )
+    .bind(accountId)
+    .first<{ failed_login_attempts: number; locked_until: string | null }>();
+
+  return row!;
+}
+
 describe("POST /api/account/login", () => {
   it("rejects a request missing accountId or password", async () => {
     const response = await postLogin({ accountId: "x" });
@@ -116,6 +128,11 @@ describe("POST /api/account/login", () => {
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("Secure");
 
+    // ロックアウト用の内部カウンタはレスポンスに含まれない。
+    const body = await readJson<Record<string, unknown>>(response);
+    expect(body).not.toHaveProperty("failed_login_attempts");
+    expect(body).not.toHaveProperty("locked_until");
+
     // 発行されたCookieが/api/account/meで実際に有効であることまで確認する。
     const cookieValue = setCookie!.split(";")[0];
     const { GET } = await import("@/app/api/account/me/route");
@@ -128,5 +145,109 @@ describe("POST /api/account/login", () => {
     expect(meResponse.status).toBe(200);
     const meBody = await readJson<{ accountId: string }>(meResponse);
     expect(meBody.accountId).toBe(accountId);
+  });
+
+  it("increments failed_login_attempts on a wrong password and resets it on a subsequent success", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+    });
+
+    await postLogin({ accountId, password: "wrong", turnstileToken: "tok" });
+    await postLogin({ accountId, password: "wrong", turnstileToken: "tok" });
+
+    expect((await getFailedLoginState(accountId)).failed_login_attempts).toBe(
+      2
+    );
+
+    const success = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+    expect(success.status).toBe(200);
+
+    const state = await getFailedLoginState(accountId);
+    expect(state.failed_login_attempts).toBe(0);
+    expect(state.locked_until).toBeNull();
+  });
+
+  it("does not lock after only 4 failed attempts; the 5th attempt still succeeds with the correct password", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+    });
+
+    for (let i = 0; i < 4; i++) {
+      const response = await postLogin({
+        accountId,
+        password: "wrong",
+        turnstileToken: "tok",
+      });
+      expect(response.status).toBe(403);
+    }
+
+    expect((await getFailedLoginState(accountId)).locked_until).toBeNull();
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("locks the account after 5 consecutive failed attempts, rejecting even the correct password while locked", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+    });
+
+    for (let i = 0; i < 5; i++) {
+      const response = await postLogin({
+        accountId,
+        password: "wrong",
+        turnstileToken: "tok",
+      });
+      expect(response.status).toBe(403);
+    }
+
+    const state = await getFailedLoginState(accountId);
+    expect(state.failed_login_attempts).toBe(0);
+    expect(state.locked_until).not.toBeNull();
+    expect(new Date(state.locked_until!).getTime()).toBeGreaterThan(
+      Date.now()
+    );
+
+    // ロック中は正しいパスワードでもログインできない。
+    const responseWithCorrectPassword = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+    expect(responseWithCorrectPassword.status).toBe(403);
+
+    const bodyWithCorrectPassword = await readJson<{ error: string }>(
+      responseWithCorrectPassword
+    );
+    expect(bodyWithCorrectPassword.error).toMatch(/too many/i);
+  });
+
+  it("allows login again once the lockout window has passed", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+      // 既に過去の時刻でロックされている状態を直接作る(5分待たずに検証するため)。
+      lockedUntil: new Date(Date.now() - 1000).toISOString(),
+      failedLoginAttempts: 0,
+    });
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(200);
   });
 });
