@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { verifyPassword } from "@/lib/account/password";
+import { verifyPassword, DUMMY_PASSWORD_HASH } from "@/lib/account/password";
 import { createSessionCookie } from "@/lib/account/session";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
@@ -16,18 +16,13 @@ type LoginResponse =
 const INVALID_CREDENTIALS_ERROR = "Invalid account ID or password";
 const ACCOUNT_LOCKED_ERROR = "Too many failed attempts. Please try again later.";
 
-// アカウントが存在しない場合でも同じだけPBKDF2の計算コストをかけることで、
-// 「アカウントIDが存在するかどうか」を応答時間の差から推測できないようにする。
-const DUMMY_PASSWORD_HASH =
-  "210000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-
 // アカウントIDを本人が自由に設定できるようになった結果、IDの予測不可能性に
 // 頼れなくなったため、失敗回数によるロックアウトで総当たりを防ぐ。
 const LOGIN_LOCKOUT_THRESHOLD = 5;
 const LOGIN_LOCKOUT_DURATION_MS = 5 * 60 * 1000;
 
 // 失敗回数をアトミックに1つ増やし、その結果(このリクエスト時点での通算値)を返す。
-// パスワード照合(PBKDF2、数十ms)より前にこれを行うことで、並行してリクエストが
+// パスワード照合(Argon2id、数十ms)より前にこれを行うことで、並行してリクエストが
 // 飛んできた場合でも「閾値を超えた分は照合すら行わせない」形で保証を成立させる
 // (パスワード照合後に増分する設計だと、複数リクエストが横並びで照合を終えてから
 // 順番に増分するため、閾値を超えて何度もパスワードを試せてしまう)。

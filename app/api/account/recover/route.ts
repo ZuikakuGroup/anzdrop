@@ -1,6 +1,10 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { generateRecoveryCode } from "@/lib/account/id";
-import { hashPassword, verifyPassword } from "@/lib/account/password";
+import {
+  hashPassword,
+  verifyPassword,
+  DUMMY_PASSWORD_HASH,
+} from "@/lib/account/password";
 import { verifyTurnstileToken } from "@/lib/turnstile";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -18,10 +22,6 @@ type RecoverResponse =
   | { success: false; error: string };
 
 const INVALID_RECOVERY_ERROR = "Invalid account ID or recovery code";
-
-// ログインと同様、アカウント不在時もタイミングを揃えるためのダミーハッシュ。
-const DUMMY_HASH =
-  "210000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -63,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const recoveryCodeMatches = await verifyPassword(
       recoveryCode,
-      account?.recovery_code_hash ?? DUMMY_HASH
+      account?.recovery_code_hash ?? DUMMY_PASSWORD_HASH
     );
 
     if (!account || !recoveryCodeMatches) {

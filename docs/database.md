@@ -85,7 +85,7 @@
 | カラム | 型 | 説明 |
 | --- | --- | --- |
 | `id` | TEXT PK | 本人が自由に設定するアカウントID([`lib/account/id.ts`](../lib/account/id.ts)の`isValidAccountId()`で3〜32文字・半角英数字/ハイフン/アンダースコアのみを検証。一意性はINSERT自体で判定) |
-| `password_hash` | TEXT | パスワードのPBKDF2ハッシュ([`lib/account/password.ts`](../lib/account/password.ts)) |
+| `password_hash` | TEXT | パスワードのArgon2idハッシュ([`lib/account/password.ts`](../lib/account/password.ts)。Cloudflare WorkersランタイムがPBKDF2の反復回数を10万回までしか許可しないため、メモリハードで反復回数の制約を受けないArgon2idを採用) |
 | `recovery_code_hash` | TEXT | リカバリーコードのハッシュ。パスワード忘れ時の再設定にのみ使う(サインアップ時に1回だけ平文を表示し、以後は保持しない) |
 | `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` または `"paid"` |
 | `plan_expires_at` | TEXT (nullable) | 有料プランの有効期限(ISO8601)。Bitcoin決済は自動更新されないため、この期限が切れるとfreeに戻る |
