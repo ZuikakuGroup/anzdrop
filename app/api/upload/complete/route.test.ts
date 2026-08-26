@@ -16,6 +16,7 @@ import {
   type TestEnv,
 } from "@/test/env";
 import type { Retention } from "@/lib/retention";
+import { generateKey, encryptChunk, packChunk } from "@/lib/crypto";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -144,7 +145,9 @@ describe("POST /api/upload/complete", () => {
       2048
     );
     const content = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
-    await uploadPart(uploadSessionId, 1, content);
+    const key = await generateKey();
+    const packed = packChunk(await encryptChunk(content, key));
+    await uploadPart(uploadSessionId, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
 
@@ -186,7 +189,9 @@ describe("POST /api/upload/complete", () => {
 
   it("sets max_downloads=1 on the files row for 'once' retention", async () => {
     const { uploadSessionId } = await startUpload("once", "one-time.enc", 1024);
-    await uploadPart(uploadSessionId, 1, new Uint8Array([42]));
+    const key = await generateKey();
+    const packed = packChunk(await encryptChunk(new Uint8Array([42]), key));
+    await uploadPart(uploadSessionId, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
     expect(response.status).toBe(200);
@@ -203,16 +208,20 @@ describe("POST /api/upload/complete", () => {
   it("reassembles multiple parts in the correct order end-to-end (upload -> complete -> download byte-for-byte)", async () => {
     // R2(Miniflareのエミュレーションも含む)は、マルチパートアップロードの
     // 最終パート以外は最小5MiB以上でなければcomplete()が失敗するため、
-    // part 1は5MiB、part 2は小さいバイト列にする。
+    // 1パケット分の暗号文(5MiB+5バイトの平文をAES-GCMで暗号化したもの)を
+    // ちょうどpart 1が5MiBになる位置で2つに分割する。
     const FIVE_MIB = 5 * 1024 * 1024;
-    const partA = new Uint8Array(FIVE_MIB);
-    partA.fill(0xaa);
-    const partB = new Uint8Array([1, 2, 3, 4, 5]);
+    const plaintext = new Uint8Array(FIVE_MIB + 5);
+    plaintext.fill(0xaa);
+    const key = await generateKey();
+    const packed = packChunk(await encryptChunk(plaintext, key));
+    const partA = packed.slice(0, FIVE_MIB);
+    const partB = packed.slice(FIVE_MIB);
 
     const { uploadSessionId } = await startUpload(
       "7d",
       "multi-part.enc",
-      FIVE_MIB + partB.byteLength
+      plaintext.byteLength
     );
 
     // わざと逆順(part 2を先に、part 1を後に)アップロードし、
@@ -232,10 +241,7 @@ describe("POST /api/upload/complete", () => {
     expect(downloadResponse.status).toBe(200);
 
     const downloaded = new Uint8Array(await downloadResponse.arrayBuffer());
-    const expected = new Uint8Array(FIVE_MIB + partB.byteLength);
-    expected.set(partA, 0);
-    expected.set(partB, FIVE_MIB);
-    expect(downloaded).toEqual(expected);
+    expect(downloaded).toEqual(packed);
 
     await Promise.all(waitUntilPromises);
   });

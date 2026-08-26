@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
 import { getAccountPlanInfo, getMaxFileSizeBytes } from "@/lib/plan";
+import { getPlaintextSizeFromCiphertextSize } from "@/lib/crypto";
 
 type UploadCompleteRequest = {
   uploadSessionId: string;
@@ -107,8 +108,8 @@ export async function POST(
     // クライアント申告のfileSizeは/api/upload/startでの事前チェック用に過ぎず、
     // 実際にアップロードされたバイト数の検証には使えない(申告値を小さく偽って
     // 上限チェックを回避し、実際には無制限にチャンクを送りつけられるため)。
-    // 実サイズが確定するここで、R2が報告する実際のオブジェクトサイズを
-    // 正として上限を再検証する。
+    // 実サイズが確定するここで、R2が報告する実際のオブジェクトサイズ(暗号化後)
+    // から平文サイズを逆算し、それを正として上限を再検証する。
     // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
     const session = await verifySession(request, env);
     const { plan } = await getAccountPlanInfo(
@@ -116,7 +117,9 @@ export async function POST(
       env
     );
 
-    if (object.size > getMaxFileSizeBytes(plan)) {
+    const size = getPlaintextSizeFromCiphertextSize(object.size);
+
+    if (size > getMaxFileSizeBytes(plan)) {
       await env.FILES_BUCKET.delete(upload.storage_key);
 
       await env.DB.prepare(`
@@ -142,7 +145,6 @@ export async function POST(
 
     const fileId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
-    const size = object.size;
 
     await env.DB.prepare(`
       INSERT INTO files (

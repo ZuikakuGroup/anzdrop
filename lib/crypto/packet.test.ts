@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { packChunk, unpackChunk } from "./packet";
-import { IV_LENGTH, type EncryptionResult } from "./types";
+import { getPlaintextSizeFromCiphertextSize, packChunk, unpackChunk } from "./packet";
+import { encryptChunk } from "./encrypt";
+import { generateKey } from "./key";
+import {
+  CHUNK_SIZE,
+  GCM_TAG_LENGTH,
+  IV_LENGTH,
+  PACKED_CHUNK_SIZE,
+  type EncryptionResult,
+} from "./types";
 
 function makeResult(ivByte: number, cipherBytes: number[]): EncryptionResult {
   const iv = new Uint8Array(IV_LENGTH).fill(ivByte);
@@ -89,5 +97,54 @@ describe("packChunk / unpackChunk", () => {
 
     expect(new Uint8Array(unpacked.iv)).toEqual(iv);
     expect(Array.from(new Uint8Array(unpacked.ciphertext))).toEqual(cipherBytes);
+  });
+});
+
+describe("getPlaintextSizeFromCiphertextSize", () => {
+  const OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH;
+
+  it("recovers the plaintext size for a single small packet", () => {
+    expect(getPlaintextSizeFromCiphertextSize(37 + OVERHEAD)).toBe(37);
+  });
+
+  it("recovers the plaintext size for exactly one full CHUNK_SIZE packet (no trailing remainder)", () => {
+    expect(getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE)).toBe(
+      CHUNK_SIZE
+    );
+  });
+
+  it("recovers the plaintext size across a CHUNK_SIZE boundary (full chunk + partial trailing chunk)", () => {
+    const remainder = 12345;
+    const ciphertextSize = PACKED_CHUNK_SIZE + remainder + OVERHEAD;
+
+    expect(getPlaintextSizeFromCiphertextSize(ciphertextSize)).toBe(
+      CHUNK_SIZE + remainder
+    );
+  });
+
+  it("recovers the plaintext size for exactly two full CHUNK_SIZE packets (no trailing remainder)", () => {
+    expect(getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE * 2)).toBe(
+      CHUNK_SIZE * 2
+    );
+  });
+
+  it("throws for a ciphertext size that cannot correspond to any valid packet stream (corrupted/tampered size)", () => {
+    // 28バイトのオーバーヘッドに満たない(かつ0でもない)半端な余りは、
+    // どんな平文サイズをパケット化しても生じ得ない。
+    expect(() => getPlaintextSizeFromCiphertextSize(OVERHEAD)).toThrow();
+    expect(() => getPlaintextSizeFromCiphertextSize(10)).toThrow();
+    expect(() =>
+      getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE + OVERHEAD)
+    ).toThrow();
+  });
+
+  it("agrees with the real encrypt+pack pipeline for an actual encrypted chunk", async () => {
+    const key = await generateKey();
+    const plaintext = new Uint8Array(777).fill(9);
+    const packed = packChunk(await encryptChunk(plaintext, key));
+
+    expect(getPlaintextSizeFromCiphertextSize(packed.byteLength)).toBe(
+      plaintext.byteLength
+    );
   });
 });
