@@ -14,6 +14,37 @@ initOpenNextCloudflareForDev({
   },
 });
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  // lib/account/wasm-argon2/*.wasm を静的importするため(next dev --webpack用)。
+  //
+  // webpackのexperiments.asyncWebAssemblyも試したが、Next.jsの開発モードは
+  // リクエストごとにモジュールを再評価すること(Fast Refresh用の仕組み)があり、
+  // その際JS側の状態(wasm-interface.tsのWeakMapなど)だけがリセットされ、
+  // WASM Instance自体(線形メモリの状態)は使い回されてしまう食い違いが起き、
+  // 開発時に不安定になった。専用ローダーでdata: URI文字列に変換し、呼び出しの
+  // たびにWebAssembly.compile()し直して毎回フレッシュなInstanceを使うことで
+  // この食い違いを避ける(本番のCloudflare Workersでは動的コンパイルが
+  // 禁止されているためこの経路は通らず、turbopack.rules経由の静的wasmモジュール
+  // を使う経路になる。詳細はlib/account/wasm-argon2/wasm-interface.tsを参照)。
+  webpack(config) {
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: "javascript/auto",
+      use: [{ loader: path.resolve("./scripts/wasm-base64-loader.cjs") }],
+    });
+    return config;
+  },
+  // `next build`(このプロジェクトではTurbopackがデフォルト)向けの同等設定。
+  // "wasm"は.wasmを実際に別ファイルとしてバンドルに含め、Cloudflare Workers
+  // 本番でも静的wasmモジュールとして扱われるようにする(詳細は
+  // lib/account/wasm-argon2/wasm-interface.tsのコメントを参照)。
+  turbopack: {
+    rules: {
+      "*.wasm": {
+        type: "wasm",
+      },
+    },
+  },
+};
 
 export default nextConfig;

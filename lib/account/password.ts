@@ -1,15 +1,32 @@
-import { argon2id } from "hash-wasm";
+import { argon2id } from "./wasm-argon2/argon2id";
 import { encodeBase64Url, decodeBase64Url } from "@/lib/crypto/base64";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 
 // PBKDF2(210,000回)はCloudflare Workersランタイムの上限(反復回数10万回まで)を
 // 超えるため本番で常に失敗していた。メモリハードで反復回数の制約を受けない
 // Argon2idに切り替える。パラメータはOWASPの最小推奨相当(19MiB, 2回, 並列度1)。
+//
+// Argon2idの実装は ./wasm-argon2 を参照。hash-wasm(npmパッケージ)のような
+// 「WASMバイナリを実行時にBase64からWebAssembly.instantiateする」実装は、
+// Cloudflare Workers本番ランタイムの動的WASMコード生成禁止に抵触して
+// 動作しないため、あらかじめコンパイル済みのWASMモジュールを静的import
+// する自前の実装に切り替えている。
 const ARGON2ID_MEMORY_KIB = 19_456;
 const ARGON2ID_ITERATIONS = 2;
 const ARGON2ID_PARALLELISM = 1;
 const ARGON2ID_HASH_LENGTH = 32;
 const SALT_LENGTH = 16;
+
+// verifyPasswordはDBのpassword_hash列に保存された文字列からこれらの値を
+// 読み取って使う。この列は常にhashPassword()自身が書き込んだものだが、
+// Argon2idのWASM Instance・線形メモリはWorkerのisolateにまたがって共有
+// されうるため(lib/account/wasm-argon2/argon2id.tsを参照)、万が一
+// 想定外に大きな値が渡された場合に同じisolate上の他のリクエストまで
+// 巻き込んで詰まらせないよう、将来のコスト引き上げを許容しつつ
+// 常識的な上限で防御しておく。
+const MAX_ARGON2ID_MEMORY_KIB = ARGON2ID_MEMORY_KIB * 4;
+const MAX_ARGON2ID_ITERATIONS = 10;
+const MAX_ARGON2ID_PARALLELISM = 8;
 
 async function derive(
   password: string,
@@ -19,13 +36,12 @@ async function derive(
   parallelism: number
 ): Promise<Uint8Array> {
   return argon2id({
-    password,
+    password: new TextEncoder().encode(password),
     salt,
     memorySize,
     iterations,
     parallelism,
     hashLength: ARGON2ID_HASH_LENGTH,
-    outputType: "binary",
   });
 }
 
@@ -80,9 +96,15 @@ export async function verifyPassword(
   const [memorySize, iterations, parallelism] = paramParts.map(Number);
 
   if (
-    ![memorySize, iterations, parallelism].every(
-      (value) => Number.isInteger(value) && value > 0
-    )
+    !Number.isInteger(memorySize) ||
+    memorySize <= 0 ||
+    memorySize > MAX_ARGON2ID_MEMORY_KIB ||
+    !Number.isInteger(iterations) ||
+    iterations <= 0 ||
+    iterations > MAX_ARGON2ID_ITERATIONS ||
+    !Number.isInteger(parallelism) ||
+    parallelism <= 0 ||
+    parallelism > MAX_ARGON2ID_PARALLELISM
   ) {
     return false;
   }

@@ -63,6 +63,31 @@ describe("hashPassword / verifyPassword", () => {
     ).resolves.toBe(false);
   });
 
+  it("rejects a stored hash with an unreasonably large memorySize/iterations/parallelism", async () => {
+    // password_hash列は常にhashPassword()自身が書き込んだ値のみを想定するが、
+    // Argon2idのWASM Instance・線形メモリはWorkerのisolateにまたがって共有
+    // されうるため、万が一想定外に大きな値が渡された場合に同じisolate上の
+    // 他のリクエストまで巻き込んで詰まらせないよう上限を設けている。
+    await expect(
+      verifyPassword(
+        "password",
+        "999999999:2:1$c2FsdA$aGFzaA"
+      )
+    ).resolves.toBe(false);
+    await expect(
+      verifyPassword(
+        "password",
+        "19456:999:1$c2FsdA$aGFzaA"
+      )
+    ).resolves.toBe(false);
+    await expect(
+      verifyPassword(
+        "password",
+        "19456:2:999$c2FsdA$aGFzaA"
+      )
+    ).resolves.toBe(false);
+  });
+
   it("exposes a dummy hash with the same cost parameters as a real hash", async () => {
     // login/recoverルートは、アカウント/リカバリーコードが存在しない場合に
     // このダミーハッシュでverifyPasswordを呼び、実在する場合と同じだけ

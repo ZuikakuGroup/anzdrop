@@ -27,6 +27,9 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      - name: Test
+        run: npx vitest run
+
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
         env:

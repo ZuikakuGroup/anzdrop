@@ -44,6 +44,8 @@ npm run dev
 
 > **既知の問題(Turbopack)**: `next dev`(Turbopackモード、デフォルト)では、ローカルD1/R2の永続化ディレクトリへの定期的な書き込みをTurbopackのファイル監視が変更として検知し続け、既知のTurbopack内部パニック(`Next.js package not found`)を踏んで、ブラウザへ無限にフルリロードを送り続ける不具合が確認されている。これを回避するため、`dev` スクリプトはwebpackモードを使っている。本番ビルド(`npm run build`/`npm run deploy`)はTurbopackのまま影響を受けない。
 
+> **既知の問題(.wasm静的import)**: [`lib/account/wasm-argon2/`](../lib/account/wasm-argon2/)の`.wasm`ファイルは、`next dev`(webpack)と`next build`(Turbopack)とで別々の設定(`next.config.ts`の`webpack()`・`turbopack.rules`)を必要とし、かつ実行時に渡ってくる値の形も異なる(`lib/account/wasm-argon2/wasm-interface.ts`のコメント参照)。この設定を変えると、ローカルでは問題なく動くのに本番のCloudflare Workersでだけ`CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder`で全滅する、という壊れ方をしうる(実際に一度これで本番のアカウント登録が完全に止まった)。`.wasm`のimport方法を変更した場合は、`npx opennextjs-cloudflare build`でビルドした後、`npx wrangler dev --local`(実際のビルド成果物を本物のworkerdで動かす、`next dev`とは別のローカル実行環境)でアカウント登録・ログイン・パスワード再設定を一通り確認すること。`next dev`だけの確認では不十分。
+
 [http://localhost:3000](http://localhost:3000) で確認できる。
 
 ### Docker(任意)
