@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   PLAN_LIMITS,
   getMaxFileSizeBytes,
@@ -6,8 +6,10 @@ import {
   isPreviewAllowedForPlan,
   effectivePlan,
   extendPaidPeriod,
+  getAccountPlanInfo,
 } from "./plan";
 import { MAX_FILE_SIZE_BYTES } from "./limits";
+import { createTestEnv, clearAllTables, insertTestAccount, type TestEnv } from "@/test/env";
 
 describe("getMaxFileSizeBytes", () => {
   it("matches the existing global limit for the free plan (no regression)", () => {
@@ -107,5 +109,74 @@ describe("extendPaidPeriod", () => {
     const expectedApprox = new Date(future).getTime() + 30 * 24 * 60 * 60 * 1000;
 
     expect(Math.abs(result - expectedApprox)).toBeLessThan(1000);
+  });
+});
+
+describe("getAccountPlanInfo", () => {
+  let env: TestEnv;
+  let dispose: () => Promise<void>;
+
+  beforeAll(async () => {
+    const handle = await createTestEnv();
+    env = handle.env;
+    dispose = handle.dispose;
+  });
+
+  afterAll(async () => {
+    await dispose();
+  });
+
+  beforeEach(async () => {
+    await clearAllTables(env);
+  });
+
+  it("returns free with no expiry when there is no account id (anonymous)", async () => {
+    await expect(getAccountPlanInfo(null, env)).resolves.toEqual({
+      plan: "free",
+      planExpiresAt: null,
+    });
+  });
+
+  it("returns free when the account id does not exist in the DB", async () => {
+    await expect(
+      getAccountPlanInfo("no-such-account", env)
+    ).resolves.toEqual({ plan: "free", planExpiresAt: null });
+  });
+
+  it("returns the free plan for a free-plan account", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+
+    await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
+      plan: "free",
+      planExpiresAt: null,
+    });
+  });
+
+  it("returns the paid plan for a paid account with a future expiry", async () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "paid",
+      planExpiresAt: future,
+    });
+
+    await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
+      plan: "paid",
+      planExpiresAt: future,
+    });
+  });
+
+  it("returns free (but preserves the stale expiry value) for a paid account whose expiry has lapsed", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "paid",
+      planExpiresAt: past,
+    });
+
+    // effectivePlanはlapsed(期限切れ)をfreeとして扱うが、DB上のplan_expires_at
+    // 自体はここでは書き換えない(表示用の情報としてそのまま返す)。
+    await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
+      plan: "free",
+      planExpiresAt: past,
+    });
   });
 });

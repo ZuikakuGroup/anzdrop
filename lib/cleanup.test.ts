@@ -1,201 +1,275 @@
-import { describe, expect, it, vi } from "vitest";
-import { cleanupExpiredShares, cleanupStaleUploads } from "./cleanup";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
+import { deleteShare, cleanupExpiredShares, cleanupStaleUploads } from "@/lib/cleanup";
 
-type FakeEnvConfig = {
-  expiredShares?: { id: string }[];
-  filesByShare?: Record<string, { storage_key: string }[]>;
-  uploadsByShare?: Record<
-    string,
-    { id: string; storage_key: string; upload_id: string }[]
-  >;
-  staleUploads?: { id: string; storage_key: string; upload_id: string }[];
-  abortShouldThrow?: boolean;
-};
+let env: TestEnv;
+let dispose: () => Promise<void>;
 
-function createFakeEnv(config: FakeEnvConfig) {
-  const bucketDelete = vi.fn(async () => {});
-  const abort = vi.fn(async () => {
-    if (config.abortShouldThrow) {
-      throw new Error("already completed");
-    }
-  });
-  const resumeMultipartUpload = vi.fn(() => ({ abort }));
-  const batch = vi.fn(async () => []);
-  let currentSql = "";
+beforeAll(async () => {
+  const handle = await createTestEnv();
+  env = handle.env;
+  dispose = handle.dispose;
+});
 
-  const bind = vi.fn((...args: unknown[]) => {
-    const sql = currentSql;
+afterAll(async () => {
+  await dispose();
+});
 
-    return {
-      all: async () => {
-        if (sql.includes("FROM shares WHERE expires_at")) {
-          return { results: config.expiredShares ?? [] };
-        }
-        if (sql.includes("FROM files WHERE share_id")) {
-          const shareId = args[0] as string;
-          return { results: config.filesByShare?.[shareId] ?? [] };
-        }
-        if (sql.includes("FROM uploads WHERE share_id")) {
-          const shareId = args[0] as string;
-          return { results: config.uploadsByShare?.[shareId] ?? [] };
-        }
-        if (sql.includes("FROM uploads WHERE created_at")) {
-          return { results: config.staleUploads ?? [] };
-        }
-        return { results: [] };
-      },
-    };
-  });
+beforeEach(async () => {
+  await clearAllTables(env);
+});
 
-  const prepare = vi.fn((sql: string) => {
-    currentSql = sql;
-    return { bind };
-  });
-
-  const env = {
-    DB: { prepare, batch } as unknown as CloudflareEnv["DB"],
-    FILES_BUCKET: {
-      delete: bucketDelete,
-      resumeMultipartUpload,
-    } as unknown as CloudflareEnv["FILES_BUCKET"],
-  } as unknown as CloudflareEnv;
-
-  return { env, bucketDelete, abort, resumeMultipartUpload, batch, prepare, bind };
+async function insertShare(overrides: { id: string; expiresAt?: string }) {
+  await env.DB.prepare(
+    `INSERT INTO shares (id, created_at, expires_at) VALUES (?, ?, ?)`
+  )
+    .bind(
+      overrides.id,
+      new Date().toISOString(),
+      overrides.expiresAt ?? new Date(Date.now() + 60_000).toISOString()
+    )
+    .run();
 }
 
-describe("cleanupExpiredShares", () => {
-  it("does nothing when there are no expired shares", async () => {
-    const { env, batch, bucketDelete, resumeMultipartUpload } =
-      createFakeEnv({ expiredShares: [] });
+async function insertFile(shareId: string, storageKey: string) {
+  await env.DB.prepare(
+    `INSERT INTO files (id, share_id, storage_key, encrypted_file_name, size, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      crypto.randomUUID(),
+      shareId,
+      storageKey,
+      "encrypted-name",
+      1234,
+      new Date().toISOString()
+    )
+    .run();
+}
 
-    await cleanupExpiredShares(env);
+async function insertUpload(overrides: {
+  id: string;
+  shareId: string;
+  storageKey: string;
+  uploadId: string;
+  createdAt?: string;
+}) {
+  await env.DB.prepare(
+    `INSERT INTO uploads (id, share_id, storage_key, upload_id, encrypted_file_name, created_at) VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      overrides.id,
+      overrides.shareId,
+      overrides.storageKey,
+      overrides.uploadId,
+      "encrypted-name",
+      overrides.createdAt ?? new Date().toISOString()
+    )
+    .run();
+}
 
-    expect(batch).not.toHaveBeenCalled();
-    expect(bucketDelete).not.toHaveBeenCalled();
-    expect(resumeMultipartUpload).not.toHaveBeenCalled();
+async function insertUploadPart(uploadSessionId: string, partNumber = 1) {
+  await env.DB.prepare(
+    `INSERT INTO upload_parts (upload_session_id, part_number, etag) VALUES (?, ?, ?)`
+  )
+    .bind(uploadSessionId, partNumber, `etag-${partNumber}`)
+    .run();
+}
+
+async function uploadExists(id: string): Promise<boolean> {
+  const row = await env.DB.prepare(`SELECT id FROM uploads WHERE id = ?`)
+    .bind(id)
+    .first();
+
+  return row !== null;
+}
+
+async function uploadPartsCountFor(uploadSessionId: string): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM upload_parts WHERE upload_session_id = ?`
+  )
+    .bind(uploadSessionId)
+    .first<{ count: number }>();
+
+  return row?.count ?? 0;
+}
+
+async function shareExists(id: string): Promise<boolean> {
+  const row = await env.DB.prepare(`SELECT id FROM shares WHERE id = ?`)
+    .bind(id)
+    .first();
+
+  return row !== null;
+}
+
+async function filesCountFor(shareId: string): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS count FROM files WHERE share_id = ?`
+  )
+    .bind(shareId)
+    .first<{ count: number }>();
+
+  return row?.count ?? 0;
+}
+
+describe("deleteShare", () => {
+  it("removes R2 objects and all 4 related DB tables' rows for the share", async () => {
+    const shareId = "share-1";
+    const storageKey = `files/${shareId}/file-1`;
+    await insertShare({ id: shareId });
+    await insertFile(shareId, storageKey);
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([1, 2, 3]));
+
+    const uploadId = "upload-1";
+    await insertUpload({
+      id: uploadId,
+      shareId,
+      storageKey: `files/${shareId}/other`,
+      uploadId: "irrelevant-r2-upload-id",
+    });
+    await insertUploadPart(uploadId);
+
+    expect((await env.FILES_BUCKET.get(storageKey)) !== null).toBe(true);
+
+    await deleteShare(env, shareId);
+
+    expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
+    expect(await filesCountFor(shareId)).toBe(0);
+    expect(await uploadExists(uploadId)).toBe(false);
+    expect(await uploadPartsCountFor(uploadId)).toBe(0);
+    expect(await shareExists(shareId)).toBe(false);
   });
 
-  it("deletes R2 objects for completed files and aborts incomplete multipart uploads", async () => {
-    const { env, batch, bucketDelete, resumeMultipartUpload, abort } =
-      createFakeEnv({
-        expiredShares: [{ id: "share-1" }],
-        filesByShare: {
-          "share-1": [{ storage_key: "file-key-1" }],
-        },
-        uploadsByShare: {
-          "share-1": [
-            {
-              id: "upload-1",
-              storage_key: "upload-key-1",
-              upload_id: "r2-upload-id-1",
-            },
-          ],
-        },
-      });
+  it("is a safe no-op for a shareId that does not exist", async () => {
+    await expect(deleteShare(env, "no-such-share")).resolves.not.toThrow();
+  });
 
-    await cleanupExpiredShares(env);
+  it("aborts an in-progress multipart upload and removes its uploads row", async () => {
+    const shareId = "share-multipart";
+    const storageKey = `files/${shareId}/incomplete`;
+    await insertShare({ id: shareId });
 
-    expect(bucketDelete).toHaveBeenCalledWith("file-key-1");
-    expect(resumeMultipartUpload).toHaveBeenCalledWith(
-      "upload-key-1",
-      "r2-upload-id-1"
+    const multipart = await env.FILES_BUCKET.createMultipartUpload(
+      storageKey
     );
-    expect(abort).toHaveBeenCalled();
-    expect(batch).toHaveBeenCalledTimes(1);
+    const part = await multipart.uploadPart(
+      1,
+      new TextEncoder().encode("partial content")
+    );
+    // わざとcomplete/abortしないまま、DB上のuploads行だけ作る。
+    await insertUpload({
+      id: "upload-incomplete",
+      shareId,
+      storageKey,
+      uploadId: multipart.uploadId,
+    });
+
+    await expect(deleteShare(env, shareId)).resolves.not.toThrow();
+
+    expect(await uploadExists("upload-incomplete")).toBe(false);
+
+    // DB行が消えているだけでなく、R2側でも実際にabortされ、もはや
+    // このuploadIdでは完了できなくなっていることまで確認する
+    // (abortMultipartUpload呼び出し自体が実装から失われていないことの検証)。
+    await expect(
+      env.FILES_BUCKET.resumeMultipartUpload(
+        storageKey,
+        multipart.uploadId
+      ).complete([{ partNumber: 1, etag: part.etag }])
+    ).rejects.toThrow();
   });
 
   it("still deletes DB rows even when aborting the multipart upload fails", async () => {
-    const { env, batch } = createFakeEnv({
-      expiredShares: [{ id: "share-1" }],
-      uploadsByShare: {
-        "share-1": [
-          {
-            id: "upload-1",
-            storage_key: "upload-key-1",
-            upload_id: "r2-upload-id-1",
-          },
-        ],
-      },
-      abortShouldThrow: true,
+    // lib/cleanup.tsのabortMultipartUploadはtry/catchで例外を握りつぶす設計
+    // (既に完了/中断済みなどでR2側が失敗しても、DBの掃除自体は継続すべきため)。
+    // 実在しないuploadIdへのabortは実際にR2側がエラーを返すため、
+    // その保証を検証できる。
+    const shareId = "share-abort-fails";
+    await insertShare({ id: shareId });
+    await insertUpload({
+      id: "upload-bad",
+      shareId,
+      storageKey: "files/does-not-matter",
+      uploadId: "totally-bogus-upload-id-that-was-never-created",
     });
 
-    await expect(cleanupExpiredShares(env)).resolves.toBeUndefined();
-    expect(batch).toHaveBeenCalledTimes(1);
+    await expect(deleteShare(env, shareId)).resolves.not.toThrow();
+
+    expect(await uploadExists("upload-bad")).toBe(false);
+    expect(await shareExists(shareId)).toBe(false);
   });
+});
 
-  it("processes each expired share independently", async () => {
-    const { env, batch } = createFakeEnv({
-      expiredShares: [{ id: "share-1" }, { id: "share-2" }],
+describe("cleanupExpiredShares", () => {
+  it("deletes expired shares and their files while leaving non-expired shares untouched", async () => {
+    const expiredId = "share-expired";
+    const expiredKey = `files/${expiredId}/file`;
+    await insertShare({
+      id: expiredId,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
+    await insertFile(expiredId, expiredKey);
+    await env.FILES_BUCKET.put(expiredKey, new Uint8Array([9]));
+
+    const activeId = "share-active";
+    const activeKey = `files/${activeId}/file`;
+    await insertShare({
+      id: activeId,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await insertFile(activeId, activeKey);
+    await env.FILES_BUCKET.put(activeKey, new Uint8Array([9]));
 
     await cleanupExpiredShares(env);
 
-    expect(batch).toHaveBeenCalledTimes(2);
+    expect(await shareExists(expiredId)).toBe(false);
+    expect(await env.FILES_BUCKET.get(expiredKey)).toBeNull();
+
+    expect(await shareExists(activeId)).toBe(true);
+    expect((await env.FILES_BUCKET.get(activeKey)) !== null).toBe(true);
   });
 });
 
 describe("cleanupStaleUploads", () => {
-  it("does nothing when there are no stale upload sessions", async () => {
-    const { env, batch, resumeMultipartUpload } = createFakeEnv({
-      staleUploads: [],
+  it("deletes only upload sessions older than 24 hours, leaving shares/files untouched", async () => {
+    const shareId = "share-with-uploads";
+    // このシェア自体はまだ有効期限内(cleanupStaleUploadsはsharesを見ないことの確認も兼ねる)。
+    await insertShare({
+      id: shareId,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
+
+    const staleId = "upload-stale";
+    const staleCreatedAt = new Date(
+      Date.now() - 25 * 60 * 60 * 1000
+    ).toISOString();
+    await insertUpload({
+      id: staleId,
+      shareId,
+      storageKey: `files/${shareId}/stale`,
+      uploadId: "r2-upload-stale",
+      createdAt: staleCreatedAt,
+    });
+    await insertUploadPart(staleId);
+
+    const freshId = "upload-fresh";
+    await insertUpload({
+      id: freshId,
+      shareId,
+      storageKey: `files/${shareId}/fresh`,
+      uploadId: "r2-upload-fresh",
+      createdAt: new Date().toISOString(),
+    });
+    await insertUploadPart(freshId);
 
     await cleanupStaleUploads(env);
 
-    expect(batch).not.toHaveBeenCalled();
-    expect(resumeMultipartUpload).not.toHaveBeenCalled();
-  });
+    expect(await uploadExists(staleId)).toBe(false);
+    expect(await uploadPartsCountFor(staleId)).toBe(0);
 
-  it("aborts stale multipart uploads and deletes their DB rows, independently of share expiry", async () => {
-    const { env, batch, resumeMultipartUpload, abort } = createFakeEnv({
-      staleUploads: [
-        {
-          id: "upload-1",
-          storage_key: "upload-key-1",
-          upload_id: "r2-upload-id-1",
-        },
-      ],
-    });
+    expect(await uploadExists(freshId)).toBe(true);
+    expect(await uploadPartsCountFor(freshId)).toBe(1);
 
-    await cleanupStaleUploads(env);
-
-    expect(resumeMultipartUpload).toHaveBeenCalledWith(
-      "upload-key-1",
-      "r2-upload-id-1"
-    );
-    expect(abort).toHaveBeenCalled();
-    expect(batch).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not throw when aborting an already-finished upload fails", async () => {
-    const { env, batch } = createFakeEnv({
-      staleUploads: [
-        {
-          id: "upload-1",
-          storage_key: "upload-key-1",
-          upload_id: "r2-upload-id-1",
-        },
-      ],
-      abortShouldThrow: true,
-    });
-
-    await expect(cleanupStaleUploads(env)).resolves.toBeUndefined();
-    expect(batch).toHaveBeenCalledTimes(1);
-  });
-
-  it("queries using a threshold roughly 24 hours in the past", async () => {
-    const { env, bind } = createFakeEnv({ staleUploads: [] });
-
-    const before = Date.now() - 24 * 60 * 60 * 1000;
-    await cleanupStaleUploads(env);
-    const after = Date.now() - 24 * 60 * 60 * 1000;
-
-    const staleQueryArgs = bind.mock.calls.at(-1);
-    expect(staleQueryArgs).toBeDefined();
-
-    const threshold = new Date(staleQueryArgs![0] as string).getTime();
-
-    expect(threshold).toBeGreaterThanOrEqual(before - 1000);
-    expect(threshold).toBeLessThanOrEqual(after + 1000);
+    // shares/filesテーブルには触れないことの確認。
+    expect(await shareExists(shareId)).toBe(true);
   });
 });
