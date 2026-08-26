@@ -30,6 +30,100 @@ async function markEventAsProcessedOnce(
   return result.meta.changes === 1;
 }
 
+async function applyEvent(
+  event: Stripe.Event,
+  stripe: Stripe,
+  env: CloudflareEnv
+): Promise<void> {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const accountId = session.client_reference_id;
+      const customerId =
+        typeof session.customer === "string" ? session.customer : null;
+      const subscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : null;
+
+      if (!accountId || !customerId || !subscriptionId) {
+        break;
+      }
+
+      const subscription = await stripe.subscriptions.retrieve(
+        subscriptionId
+      );
+      const periodEnd = getSubscriptionPeriodEnd(subscription);
+
+      if (!periodEnd) {
+        break;
+      }
+
+      await env.DB.prepare(
+        `
+        UPDATE accounts
+        SET plan = 'paid',
+            plan_expires_at = ?,
+            stripe_customer_id = ?,
+            stripe_subscription_id = ?
+        WHERE id = ?
+      `
+      )
+        .bind(
+          unixSecondsToIso(periodEnd),
+          customerId,
+          subscriptionId,
+          accountId
+        )
+        .run();
+
+      break;
+    }
+
+    case "customer.subscription.updated": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const isActive =
+        subscription.status === "active" ||
+        subscription.status === "trialing";
+      const periodEnd = getSubscriptionPeriodEnd(subscription);
+
+      if (isActive && periodEnd) {
+        await env.DB.prepare(
+          `
+          UPDATE accounts
+          SET plan = 'paid', plan_expires_at = ?
+          WHERE stripe_subscription_id = ?
+        `
+        )
+          .bind(unixSecondsToIso(periodEnd), subscription.id)
+          .run();
+      }
+
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const subscription = event.data.object as Stripe.Subscription;
+
+      // 即時ダウングレード。stripe_subscription_idは失効済みなので消しておく。
+      await env.DB.prepare(
+        `
+        UPDATE accounts
+        SET plan_expires_at = ?, stripe_subscription_id = NULL
+        WHERE stripe_subscription_id = ?
+      `
+      )
+        .bind(new Date().toISOString(), subscription.id)
+        .run();
+
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
 export async function POST(request: Request): Promise<Response> {
   try {
     const { env } = getCloudflareContext();
@@ -71,92 +165,18 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ success: true, note: "duplicate event" });
     }
 
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const accountId = session.client_reference_id;
-        const customerId =
-          typeof session.customer === "string" ? session.customer : null;
-        const subscriptionId =
-          typeof session.subscription === "string"
-            ? session.subscription
-            : null;
+    try {
+      await applyEvent(event, stripe, env);
+    } catch (error) {
+      // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
+      // ままにすると、Stripeが同じイベントIDで再送してきても
+      // markEventAsProcessedOnceが「重複」と誤判定し、二度とプランが
+      // 反映されなくなってしまう(顧客は決済済みなのにアップグレードされない)。
+      await env.DB.prepare(`DELETE FROM stripe_events WHERE id = ?`)
+        .bind(event.id)
+        .run();
 
-        if (!accountId || !customerId || !subscriptionId) {
-          break;
-        }
-
-        const subscription = await stripe.subscriptions.retrieve(
-          subscriptionId
-        );
-        const periodEnd = getSubscriptionPeriodEnd(subscription);
-
-        if (!periodEnd) {
-          break;
-        }
-
-        await env.DB.prepare(
-          `
-          UPDATE accounts
-          SET plan = 'paid',
-              plan_expires_at = ?,
-              stripe_customer_id = ?,
-              stripe_subscription_id = ?
-          WHERE id = ?
-        `
-        )
-          .bind(
-            unixSecondsToIso(periodEnd),
-            customerId,
-            subscriptionId,
-            accountId
-          )
-          .run();
-
-        break;
-      }
-
-      case "customer.subscription.updated": {
-        const subscription = event.data.object as Stripe.Subscription;
-        const isActive =
-          subscription.status === "active" ||
-          subscription.status === "trialing";
-        const periodEnd = getSubscriptionPeriodEnd(subscription);
-
-        if (isActive && periodEnd) {
-          await env.DB.prepare(
-            `
-            UPDATE accounts
-            SET plan = 'paid', plan_expires_at = ?
-            WHERE stripe_subscription_id = ?
-          `
-          )
-            .bind(unixSecondsToIso(periodEnd), subscription.id)
-            .run();
-        }
-
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
-
-        // 即時ダウングレード。stripe_subscription_idは失効済みなので消しておく。
-        await env.DB.prepare(
-          `
-          UPDATE accounts
-          SET plan_expires_at = ?, stripe_subscription_id = NULL
-          WHERE stripe_subscription_id = ?
-        `
-        )
-          .bind(new Date().toISOString(), subscription.id)
-          .run();
-
-        break;
-      }
-
-      default:
-        break;
+      throw error;
     }
 
     return Response.json({ success: true });
