@@ -46,7 +46,7 @@ export default function ReportForm({
     getOriginSnapshot,
     getOriginServerSnapshot
   );
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   const submit = async () => {
@@ -214,7 +214,7 @@ export default function ReportForm({
                 />
               </div>
 
-              <div ref={turnstileContainerRef} className="flex justify-center" />
+              {turnstileWidget}
 
               <button
                 onClick={submit}

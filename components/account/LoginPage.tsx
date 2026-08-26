@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   const submit = async () => {
@@ -103,7 +103,7 @@ export default function LoginPage() {
               />
             </div>
 
-            <div ref={turnstileContainerRef} className="flex justify-center" />
+            {turnstileWidget}
 
             <button
               onClick={submit}

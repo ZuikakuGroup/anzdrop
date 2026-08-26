@@ -48,7 +48,7 @@ export default function RightsHolderReportForm({
     getOriginSnapshot,
     getOriginServerSnapshot
   );
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   const submit = async () => {
@@ -271,7 +271,7 @@ export default function RightsHolderReportForm({
                 </span>
               </label>
 
-              <div ref={turnstileContainerRef} className="flex justify-center" />
+              {turnstileWidget}
 
               <button
                 onClick={submit}

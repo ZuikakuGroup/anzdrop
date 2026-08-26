@@ -269,7 +269,7 @@ export default function UploadForm() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [plan, setPlan] = useState<Plan>("free");
   const dragCounterRef = useRef(0);
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   // 未ログインなら常にfree(既存の匿名アップロードの挙動を維持)。ログイン
@@ -827,7 +827,7 @@ export default function UploadForm() {
               </div>
             </div>
 
-            <div ref={turnstileContainerRef} className="flex justify-center" />
+            {turnstileWidget}
 
             <button
               onClick={upload}

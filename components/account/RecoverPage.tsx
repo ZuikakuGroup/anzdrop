@@ -19,7 +19,7 @@ export default function RecoverPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
-  const { containerRef: turnstileContainerRef, getToken: getTurnstileToken } =
+  const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
   const submit = async () => {
@@ -153,7 +153,7 @@ export default function RecoverPage() {
                 />
               </div>
 
-              <div ref={turnstileContainerRef} className="flex justify-center" />
+              {turnstileWidget}
 
               <button
                 onClick={submit}
