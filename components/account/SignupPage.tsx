@@ -167,9 +167,9 @@ export default function SignupPage() {
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 font-mono text-base outline-none focus:border-brand sm:text-sm"
                 />
                 <p className="text-[11px] text-ink/40">
-                  ログインに使うIDです。半角英数字・ハイフン・アンダースコアで
+                  半角英数字・ハイフン・アンダースコアで
                   {MIN_ACCOUNT_ID_LENGTH}〜{MAX_ACCOUNT_ID_LENGTH}
-                  文字。あとから変更はできません。
+                  文字
                 </p>
               </div>
 
