@@ -39,7 +39,17 @@ export default function SiteHeader() {
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-6 sm:px-8">
-      <BrandHeader />
+      <div className="flex items-center gap-6">
+        <BrandHeader />
+        <nav className="text-xs font-bold">
+          <a
+            href="/pricing"
+            className="text-ink/60 transition-colors hover:text-ink"
+          >
+            料金プラン
+          </a>
+        </nav>
+      </div>
 
       <div className="flex items-center gap-4">
         {isAuthChecked && (accountId ? (
