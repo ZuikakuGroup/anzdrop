@@ -45,7 +45,7 @@ export default function SiteHeader() {
         {isAuthChecked && (accountId ? (
           <div className="flex items-center gap-2">
             <a
-              href="/billing"
+              href="/mypage/billing"
               className="font-mono text-xs text-ink/60 transition-colors hover:text-ink"
             >
               {accountId}
@@ -61,13 +61,13 @@ export default function SiteHeader() {
         ) : (
           <div className="flex items-center gap-3 text-xs font-bold">
             <a
-              href="/login"
+              href="/mypage/login"
               className="text-ink/60 transition-colors hover:text-ink"
             >
               ログイン
             </a>
             <a
-              href="/signup"
+              href="/mypage/signup"
               className="rounded bg-brand px-3 py-1.5 text-paper transition-colors hover:bg-brand/90"
             >
               アカウント作成

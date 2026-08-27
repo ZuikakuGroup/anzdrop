@@ -25,7 +25,7 @@ export default function BillingPage() {
       .then((data) => {
         if (!data.success) {
           // 未ログインなら「ログインが必要です」の専用表示は出さず、そのままログインへ誘導する。
-          window.location.href = "/login";
+          window.location.href = "/mypage/login";
           return;
         }
 
