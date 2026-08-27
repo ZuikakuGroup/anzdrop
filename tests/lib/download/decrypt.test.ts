@@ -1,0 +1,204 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  decryptFileName,
+  decryptFileList,
+  unwrapKeyWithPassword,
+  fetchAndDecrypt,
+  type RawFile,
+} from "@/lib/download/decrypt";
+import { FileGoneError, FriendlyError, FILE_GONE_ERROR } from "@/lib/download/errors";
+import {
+  generateKey,
+  exportKey,
+  encryptChunk,
+  packChunk,
+  encodeBase64Url,
+  iterateEncryptedChunks,
+} from "@/lib/crypto";
+import { wrapKeyWithPassword } from "@/lib/upload/encrypt";
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+  const result = new Uint8Array(total);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return result;
+}
+
+describe("decryptFileName", () => {
+  it("decrypts a name encrypted the same way the upload side does", async () => {
+    const key = await generateKey();
+    const nameBytes = new TextEncoder().encode("報告書.pdf");
+    const encrypted = await encryptChunk(nameBytes, key);
+    const encoded = encodeBase64Url(packChunk(encrypted));
+
+    const result = await decryptFileName(encoded, key);
+
+    expect(result).toBe("報告書.pdf");
+  });
+
+  it("rejects when decrypted with the wrong key", async () => {
+    const key = await generateKey();
+    const wrongKey = await generateKey();
+    const nameBytes = new TextEncoder().encode("secret.txt");
+    const encrypted = await encryptChunk(nameBytes, key);
+    const encoded = encodeBase64Url(packChunk(encrypted));
+
+    await expect(decryptFileName(encoded, wrongKey)).rejects.toThrow();
+  });
+});
+
+describe("decryptFileList", () => {
+  it("decrypts each name while preserving id/size/isOneTime and order", async () => {
+    const key = await generateKey();
+    const rawFiles: RawFile[] = await Promise.all(
+      ["a.txt", "b.txt"].map(async (name, i) => {
+        const encrypted = await encryptChunk(
+          new TextEncoder().encode(name),
+          key
+        );
+
+        return {
+          id: `id-${i}`,
+          name: encodeBase64Url(packChunk(encrypted)),
+          size: 100 + i,
+          isOneTime: i === 0,
+        };
+      })
+    );
+
+    const result = await decryptFileList(rawFiles, key);
+
+    expect(result).toEqual([
+      { id: "id-0", name: "a.txt", size: 100, isOneTime: true },
+      { id: "id-1", name: "b.txt", size: 101, isOneTime: false },
+    ]);
+  });
+});
+
+describe("unwrapKeyWithPassword", () => {
+  it("round-trips a key wrapped by wrapKeyWithPassword using the same password", async () => {
+    const key = await generateKey();
+    const { wrappedKey, keySalt } = await wrapKeyWithPassword(
+      key,
+      "pw-123456"
+    );
+
+    const unwrapped = await unwrapKeyWithPassword(
+      wrappedKey,
+      keySalt,
+      "pw-123456"
+    );
+
+    expect(new Uint8Array(await exportKey(unwrapped))).toEqual(
+      new Uint8Array(await exportKey(key))
+    );
+  });
+
+  it("rejects when unwrapped with the wrong password", async () => {
+    const key = await generateKey();
+    const { wrappedKey, keySalt } = await wrapKeyWithPassword(
+      key,
+      "correct-password"
+    );
+
+    await expect(
+      unwrapKeyWithPassword(wrappedKey, keySalt, "wrong-password")
+    ).rejects.toThrow();
+  });
+});
+
+describe("fetchAndDecrypt", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("downloads and decrypts a file's full content", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode(
+      "hello world, this is a small test file."
+    );
+    const file = new File([content], "test.bin");
+
+    const packedChunks: Uint8Array[] = [];
+    for await (const chunk of iterateEncryptedChunks(file, key)) {
+      packedChunks.push(chunk);
+    }
+    const combinedPacked = concatBytes(packedChunks);
+
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(combinedPacked);
+        controller.close();
+      },
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(url).toBe("/api/file/file-1");
+        return new Response(body, { status: 200 });
+      })
+    );
+
+    const result = await fetchAndDecrypt(
+      { id: "file-1", name: "test.bin", size: content.byteLength, isOneTime: false },
+      key
+    );
+
+    expect(new TextDecoder().decode(result)).toBe(
+      "hello world, this is a small test file."
+    );
+  });
+
+  it("throws a FileGoneError with the standard message on 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 }))
+    );
+    const key = await generateKey();
+
+    await expect(
+      fetchAndDecrypt(
+        { id: "gone", name: "x", size: 0, isOneTime: false },
+        key
+      )
+    ).rejects.toThrow(FileGoneError);
+
+    await expect(
+      fetchAndDecrypt(
+        { id: "gone", name: "x", size: 0, isOneTime: false },
+        key
+      )
+    ).rejects.toThrow(FILE_GONE_ERROR);
+  });
+
+  it("throws a generic FriendlyError on other non-ok statuses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 500 }))
+    );
+    const key = await generateKey();
+
+    await expect(
+      fetchAndDecrypt({ id: "x", name: "x", size: 0, isOneTime: false }, key)
+    ).rejects.toThrow(FriendlyError);
+  });
+
+  it("throws a generic FriendlyError when the response has no body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 200 }))
+    );
+    const key = await generateKey();
+
+    await expect(
+      fetchAndDecrypt({ id: "x", name: "x", size: 0, isOneTime: false }, key)
+    ).rejects.toThrow("ダウンロードに失敗しました。");
+  });
+});

@@ -1,14 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { zip } from "fflate";
-import {
-  importKey,
-  decodeBase64Url,
-  unpackChunk,
-  decryptChunk,
-  iterateDecryptedChunks,
-  deriveKeyFromPassword,
-} from "@/lib/crypto";
+import { importKey, decodeBase64Url } from "@/lib/crypto";
 import { formatBytes } from "@/lib/format";
 import {
   guessPreviewMimeType,
@@ -21,6 +13,20 @@ import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
 import { XIcon, EyeIcon } from "@/components/brand/ShareIcons";
 import PasswordInput from "@/components/brand/PasswordInput";
+import {
+  FileGoneError,
+  FriendlyError,
+  FILE_GONE_ERROR,
+  toFriendlyMessage,
+} from "@/lib/download/errors";
+import {
+  decryptFileList,
+  fetchAndDecrypt,
+  unwrapKeyWithPassword,
+  type DecryptedFile,
+  type RawFile,
+} from "@/lib/download/decrypt";
+import { withDuplicateSuffix, zipFiles } from "@/lib/download/zipDownload";
 
 type DownloadPageProps = {
   shareId: string;
@@ -36,13 +42,6 @@ const NON_DISMISSIBLE_ERRORS = new Set([
   INVALID_LINK_MESSAGE,
 ]);
 
-type RawFile = {
-  id: string;
-  name: string;
-  size: number;
-  isOneTime: boolean;
-};
-
 type DownloadResponse = {
   success: boolean;
   share: {
@@ -56,89 +55,16 @@ type DownloadResponse = {
   error?: string;
 };
 
-type DecryptedFile = {
-  id: string;
-  name: string;
-  size: number;
-  isOneTime: boolean;
-};
-
 type PreviewState = {
   file: DecryptedFile;
   url: string;
   kind: PreviewKind;
 };
 
-// ユーザーに表示してよい文言だけを持つエラー。それ以外の技術的なエラーは
-// 汎用メッセージに丸めて表示する(壊れた鍵フラグメントなどでブラウザの
-// 生の例外文言がそのまま出てしまうのを防ぐため)。
-class FriendlyError extends Error { }
-
-// ダウンロード対象のファイルがサーバー側で既に消費/削除済み(「1回」設定など)だったことを示す。
-// 通常のダウンロード失敗と違い、再試行を促さず一覧からも取り除く。
-class FileGoneError extends FriendlyError { }
-
 const GENERIC_LOAD_ERROR =
   "ファイルの取得に失敗しました。URLが正しいかご確認のうえ、もう一度お試しください。";
 const GENERIC_DOWNLOAD_ERROR =
   "ダウンロードに失敗しました。もう一度お試しください。";
-const FILE_GONE_ERROR =
-  "このファイルはすでにダウンロード済みか、削除されています。";
-
-function toFriendlyMessage(err: unknown, fallback: string): string {
-  return err instanceof FriendlyError ? err.message : fallback;
-}
-
-async function decryptFileName(
-  encryptedName: string,
-  key: CryptoKey
-): Promise<string> {
-  const packed = new Uint8Array(decodeBase64Url(encryptedName));
-  const { iv, ciphertext } = unpackChunk(packed);
-  const decrypted = await decryptChunk(ciphertext, iv, key);
-
-  return new TextDecoder().decode(decrypted);
-}
-
-async function decryptFileList(
-  rawFiles: RawFile[],
-  key: CryptoKey
-): Promise<DecryptedFile[]> {
-  return Promise.all(
-    rawFiles.map(async (file) => ({
-      id: file.id,
-      name: await decryptFileName(file.name, key),
-      size: file.size,
-      isOneTime: file.isOneTime,
-    }))
-  );
-}
-
-async function unwrapKeyWithPassword(
-  wrappedKey: string,
-  keySalt: string,
-  password: string
-): Promise<CryptoKey> {
-  const salt = new Uint8Array(decodeBase64Url(keySalt));
-  const kek = await deriveKeyFromPassword(password, salt);
-  const packed = new Uint8Array(decodeBase64Url(wrappedKey));
-  const { iv, ciphertext } = unpackChunk(packed);
-  const rawKey = await decryptChunk(ciphertext, iv, kek);
-
-  return importKey(rawKey);
-}
-
-function withDuplicateSuffix(name: string, count: number): string {
-  if (count === 0) {
-    return name;
-  }
-
-  const dotIndex = name.lastIndexOf(".");
-  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
-  const ext = dotIndex > 0 ? name.slice(dotIndex) : "";
-
-  return `${base} (${count})${ext}`;
-}
 
 function triggerBlobDownload(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes as BlobPart]);
@@ -306,45 +232,6 @@ export default function DownloadPage({
     }
   };
 
-  const fetchAndDecrypt = async (
-    file: DecryptedFile,
-    key: CryptoKey
-  ): Promise<Uint8Array> => {
-    const response = await fetch(`/api/file/${file.id}`);
-
-    if (response.status === 404) {
-      throw new FileGoneError(FILE_GONE_ERROR);
-    }
-
-    if (!response.ok || !response.body) {
-      throw new FriendlyError("ダウンロードに失敗しました。");
-    }
-
-    const chunks: Uint8Array[] = [];
-
-    for await (const decrypted of iterateDecryptedChunks(
-      response.body,
-      key,
-      file.size
-    )) {
-      chunks.push(decrypted);
-    }
-
-    const totalLength = chunks.reduce(
-      (sum, chunk) => sum + chunk.byteLength,
-      0
-    );
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-
-    return combined;
-  };
-
   const downloadFile = async (file: DecryptedFile) => {
     if (!key || downloadingId || isDownloadingAll || previewLoadingId) {
       return;
@@ -460,15 +347,7 @@ export default function DownloadPage({
         throw new FriendlyError(FILE_GONE_ERROR);
       }
 
-      const zipped = await new Promise<Uint8Array>((resolve, reject) => {
-        zip(zipInput, (err, data) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(data);
-          }
-        });
-      });
+      const zipped = await zipFiles(zipInput);
 
       triggerBlobDownload(zipped, "anzdrop.zip");
     } catch (err) {

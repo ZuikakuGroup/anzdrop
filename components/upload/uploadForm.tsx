@@ -5,12 +5,8 @@ import Script from "next/script";
 import {
   generateKey,
   exportKey,
-  encryptChunk,
-  packChunk,
   encodeBase64Url,
   iterateEncryptedChunks,
-  generateSalt,
-  deriveKeyFromPassword,
 } from "@/lib/crypto";
 import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { bufferAhead } from "@/lib/asyncBuffer";
@@ -35,6 +31,12 @@ import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import QrCodeModal from "@/components/brand/QrCodeModal";
 import type { MeResponse } from "@/app/api/account/me/schema";
+import { uploadChunksFromStream } from "@/lib/upload/chunkUploader";
+import {
+  type PendingFile,
+  collectDataTransferFiles,
+} from "@/lib/upload/dragDropFiles";
+import { encryptFileName, wrapKeyWithPassword } from "@/lib/upload/encrypt";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
@@ -62,123 +64,10 @@ type UploadCompleteResponse = {
   error?: string;
 };
 
-async function encryptFileName(
-  name: string,
-  key: CryptoKey
-): Promise<string> {
-  const nameBytes = new TextEncoder().encode(name);
-  const encrypted = await encryptChunk(nameBytes, key);
-  const packed = packChunk(encrypted);
-
-  return encodeBase64Url(packed);
-}
-
-const CHUNK_UPLOAD_CONCURRENCY = 8;
-
 // 暗号化1チャンクあたり最大この件数まで、アップロード側の消費を待たずに先読みしておく
 // (8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロードを始めるのではなく、
 // 暗号化とアップロードを重ねて進めるためのバッファ上限で、メモリ使用量をここで頭打ちにする。
 const ENCRYPT_PREFETCH_CHUNKS = 8;
-
-// パート番号はR2のマルチパートアップロード上で順不同に受け付けられるため、
-// チャンクを並列アップロードして1ラウンドトリップあたりの待ち時間を隠す。
-// chunksは非同期ジェネレータ(暗号化が終わったチャンクから順に届く)で、
-// 呼び出し中の.next()はソース側で発行順に処理されるため、複数ワーカーが
-// 同時にnext()を呼んでも受け取る順序は暗号化された順序と一致する。
-async function uploadChunksFromStream(
-  chunks: AsyncGenerator<Uint8Array>,
-  uploadSessionId: string,
-  uploadToken: string,
-  path: string,
-  onChunkUploaded: () => void
-): Promise<void> {
-  let nextPartNumber = 1;
-  let firstError: Error | null = null;
-
-  const worker = async (): Promise<void> => {
-    while (firstError === null) {
-      let value: Uint8Array | undefined;
-      let done: boolean | undefined;
-
-      try {
-        ({ value, done } = await chunks.next());
-      } catch (unknownErr) {
-        firstError =
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("Unknown error");
-        return;
-      }
-
-      if (done || !value) {
-        return;
-      }
-
-      const chunk = value;
-      const partNumber = nextPartNumber++;
-      const body = chunk.buffer.slice(
-        chunk.byteOffset,
-        chunk.byteOffset + chunk.byteLength
-      ) as ArrayBuffer;
-
-      try {
-        const chunkResponse = await fetch("/api/upload/chunk", {
-          method: "POST",
-          headers: {
-            "Anzdrop-Upload-Session": uploadSessionId,
-            "Anzdrop-Part-Number": String(partNumber),
-            "Anzdrop-Upload-Token": uploadToken,
-          },
-          body,
-        });
-
-        if (!chunkResponse.ok) {
-          throw new Error(
-            `${path} のチャンク ${partNumber} アップロードに失敗しました`
-          );
-        }
-
-        onChunkUploaded();
-      } catch (unknownErr) {
-        firstError =
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("Unknown error");
-        return;
-      }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: CHUNK_UPLOAD_CONCURRENCY }, () => worker())
-  );
-
-  if (firstError) {
-    throw firstError;
-  }
-}
-
-async function wrapKeyWithPassword(
-  key: CryptoKey,
-  password: string
-): Promise<{ wrappedKey: string; keySalt: string }> {
-  const salt = generateSalt();
-  const kek = await deriveKeyFromPassword(password, salt);
-  const rawKey = await exportKey(key);
-  const encrypted = await encryptChunk(rawKey, kek);
-  const packed = packChunk(encrypted);
-
-  return {
-    wrappedKey: encodeBase64Url(packed),
-    keySalt: encodeBase64Url(salt),
-  };
-}
-
-type PendingFile = {
-  file: File;
-  // フォルダ選択/ドロップ時は "サブフォルダ/ファイル名" のような相対パス
-  path: string;
-};
 
 // ファイル追加と同時にバックグラウンドで暗号化を始めるストリーム。
 // chunksは先読みバッファ付きの非同期ジェネレータで、ファイル全体を暗号化し終える
@@ -193,65 +82,6 @@ type QueuedFile = {
   encrypted: EncryptedFileStream;
   uploaded: boolean;
 };
-
-function readEntryAsFile(entry: FileSystemFileEntry): Promise<File> {
-  return new Promise((resolve, reject) => entry.file(resolve, reject));
-}
-
-function readDirectoryEntries(
-  reader: FileSystemDirectoryReader
-): Promise<FileSystemEntry[]> {
-  return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
-}
-
-async function collectEntry(
-  entry: FileSystemEntry,
-  pending: PendingFile[]
-): Promise<void> {
-  if (entry.isFile) {
-    const file = await readEntryAsFile(entry as FileSystemFileEntry);
-    pending.push({ file, path: entry.fullPath.replace(/^\//, "") });
-    return;
-  }
-
-  if (entry.isDirectory) {
-    const reader = (entry as FileSystemDirectoryEntry).createReader();
-    let batch: FileSystemEntry[];
-
-    do {
-      batch = await readDirectoryEntries(reader);
-
-      for (const child of batch) {
-        await collectEntry(child, pending);
-      }
-    } while (batch.length > 0);
-  }
-}
-
-// ドラッグ&ドロップされたフォルダを再帰的に展開し、相対パス付きのファイル一覧にする。
-// webkitGetAsEntryが使えない環境ではフラットなファイル一覧にフォールバックする。
-async function collectDataTransferFiles(
-  dataTransfer: DataTransfer
-): Promise<PendingFile[]> {
-  const entries = Array.from(dataTransfer.items)
-    .map((item) => item.webkitGetAsEntry?.())
-    .filter((entry): entry is FileSystemEntry => !!entry);
-
-  if (entries.length === 0) {
-    return Array.from(dataTransfer.files).map((file) => ({
-      file,
-      path: file.name,
-    }));
-  }
-
-  const pending: PendingFile[] = [];
-
-  for (const entry of entries) {
-    await collectEntry(entry, pending);
-  }
-
-  return pending;
-}
 
 export default function UploadForm() {
   const fileInputId = useId();

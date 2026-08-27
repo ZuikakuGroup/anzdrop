@@ -4,101 +4,27 @@ import { useCallback, useEffect, useState } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
-
-type StatusFilter = "open" | "resolved" | "all";
-
-type ShareInfo = {
-  exists: boolean;
-  expired: boolean;
-  suspended: boolean;
-  fileCount: number;
-};
-
-type AdminReport = {
-  id: string;
-  shareId: string;
-  reason: string;
-  createdAt: string;
-  resolvedAt: string | null;
-  reportType: string;
-  claimantName: string | null;
-  contactEmail: string | null;
-  rightType: string | null;
-  category: string;
-  share: ShareInfo;
-};
-
-type ReportsResponse = {
-  success: boolean;
-  reports?: AdminReport[];
-  error?: string;
-};
-
-type ActionResponse = {
-  success: boolean;
-  error?: string;
-};
+import {
+  categoryLabel,
+  formatDateTime,
+  rightTypeLabel,
+  shareStatusLabel,
+} from "@/lib/admin/reportLabels";
+import {
+  deleteReport as deleteReportRequest,
+  deleteShare as deleteShareRequest,
+  fetchReports,
+  resolveReport as resolveReportRequest,
+  toggleShareSuspend as toggleShareSuspendRequest,
+  type AdminReport,
+  type StatusFilter,
+} from "@/lib/admin/reportsApi";
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "open", label: "未対応" },
   { value: "resolved", label: "対応済み" },
   { value: "all", label: "すべて" },
 ];
-
-function formatDateTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("ja-JP", {
-      dateStyle: "short",
-      timeStyle: "short",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-const RIGHT_TYPE_LABELS: Record<string, string> = {
-  copyright: "著作権",
-  trademark: "商標権",
-  portrait: "肖像権・パブリシティ権",
-  other: "その他",
-};
-
-function rightTypeLabel(rightType: string | null): string {
-  if (!rightType) {
-    return "";
-  }
-
-  return RIGHT_TYPE_LABELS[rightType] ?? rightType;
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  csam: "児童ポルノ等の違法コンテンツ",
-  malware: "マルウェア・危険なファイル",
-  privacy: "個人情報の無断掲載・晒し",
-  spam: "スパム・迷惑行為",
-  other: "その他",
-  rights_infringement: "権利侵害の申し立て",
-};
-
-function categoryLabel(category: string): string {
-  return CATEGORY_LABELS[category] ?? category;
-}
-
-function shareStatusLabel(share: ShareInfo): string {
-  if (!share.exists) {
-    return "共有は既に存在しません";
-  }
-
-  if (share.suspended) {
-    return `一時停止中・ファイル${share.fileCount}件`;
-  }
-
-  if (share.expired) {
-    return `期限切れ・ファイル${share.fileCount}件`;
-  }
-
-  return `有効・ファイル${share.fileCount}件`;
-}
 
 export default function AdminReportsPage() {
   const [status, setStatus] = useState<StatusFilter>("open");
@@ -112,41 +38,20 @@ export default function AdminReportsPage() {
   const [confirmingReportId, setConfirmingReportId] = useState("");
   const [deletingReportId, setDeletingReportId] = useState("");
 
-  const fetchReports = useCallback(
-    async (targetStatus: StatusFilter): Promise<AdminReport[]> => {
-      const response = await fetch(
-        `/api/admin/reports?status=${targetStatus}`
-      );
-      const result: ReportsResponse = await response.json();
-
-      if (!response.ok || !result.success || !result.reports) {
-        throw new Error(result.error ?? "読み込みに失敗しました。");
-      }
-
-      return result.reports;
-    },
-    []
-  );
-
   // クリックハンドラなどエフェクト外から呼ぶための、状態更新込みの再読み込み。
-  const load = useCallback(
-    async (targetStatus: StatusFilter) => {
-      try {
-        setReports(await fetchReports(targetStatus));
-        setError("");
-      } catch (unknownErr) {
-        const err =
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("Unknown error");
+  const load = useCallback(async (targetStatus: StatusFilter) => {
+    try {
+      setReports(await fetchReports(targetStatus));
+      setError("");
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
 
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [fetchReports]
-  );
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   // データ取得エフェクトは通例どおり、呼び出し(fetchReports)自体は
   // awaitより前でsetStateしない純粋な処理とし、setStateはこのエフェクト
@@ -180,7 +85,7 @@ export default function AdminReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, fetchReports]);
+  }, [status]);
 
   const switchStatus = (nextStatus: StatusFilter) => {
     if (nextStatus === status) {
@@ -200,16 +105,7 @@ export default function AdminReportsPage() {
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/admin/reports/${reportId}/resolve`,
-        { method: "POST" }
-      );
-      const result: ActionResponse = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "更新に失敗しました。");
-      }
-
+      await resolveReportRequest(reportId);
       await load(status);
     } catch (unknownErr) {
       const err =
@@ -232,14 +128,7 @@ export default function AdminReportsPage() {
     setError("");
 
     try {
-      const response = await fetch(`/api/admin/shares/${shareId}`, {
-        method: "DELETE",
-      });
-      const result: ActionResponse = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "削除に失敗しました。");
-      }
+      await deleteShareRequest(shareId);
 
       setConfirmingShareId("");
       await load(status);
@@ -264,16 +153,7 @@ export default function AdminReportsPage() {
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/admin/shares/${shareId}/${suspend ? "suspend" : "unsuspend"}`,
-        { method: "POST" }
-      );
-      const result: ActionResponse = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "更新に失敗しました。");
-      }
-
+      await toggleShareSuspendRequest(shareId, suspend);
       await load(status);
     } catch (unknownErr) {
       const err =
@@ -296,14 +176,7 @@ export default function AdminReportsPage() {
     setError("");
 
     try {
-      const response = await fetch(`/api/admin/reports/${reportId}`, {
-        method: "DELETE",
-      });
-      const result: ActionResponse = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "削除に失敗しました。");
-      }
+      await deleteReportRequest(reportId);
 
       setConfirmingReportId("");
       await load(status);
