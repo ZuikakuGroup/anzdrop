@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import BrandHeader from "./BrandHeader";
-import { GitHubIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
 export default function SiteHeader() {
@@ -75,16 +74,6 @@ export default function SiteHeader() {
             </a>
           </div>
         ))}
-
-        <a
-          href="https://github.com/ZuikakuGroup/anzdrop"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="GitHub"
-          className="text-ink/70 transition-colors hover:text-ink"
-        >
-          <GitHubIcon className="h-5 w-5" />
-        </a>
       </div>
     </header>
   );
