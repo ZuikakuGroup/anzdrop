@@ -1,8 +1,18 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
 import { createCharge } from "@/lib/opennode";
+import { PLAN_LABELS } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
-import type { ChargeResponse } from "@/app/api/billing/btc/charge/schema";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  ChargeRequestSchema,
+  type ChargeResponse,
+} from "@/app/api/billing/btc/charge/schema";
+
+const OPENNODE_BTC_CHARGE_AMOUNT_USD_BY_PLAN = {
+  standard: "OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD",
+  premium: "OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM",
+} as const;
 
 export const POST = withApiHandler(
   "POST /api/billing/btc/charge",
@@ -17,14 +27,24 @@ export const POST = withApiHandler(
       );
     }
 
+    const parsed = await parseJsonBody(request, ChargeRequestSchema);
+
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+
+    const { plan } = parsed.data;
+    const amountUsd =
+      env[OPENNODE_BTC_CHARGE_AMOUNT_USD_BY_PLAN[plan]];
+
     const paymentId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
     const origin = new URL(request.url).origin;
 
     const charge = await createCharge({
-      amountUsd: env.OPENNODE_BTC_CHARGE_AMOUNT_USD,
+      amountUsd,
       orderId: paymentId,
-      description: `Anzdrop paid plan (${env.OPENNODE_BTC_DAYS_PER_CHARGE} days)`,
+      description: `Anzdrop ${PLAN_LABELS[plan]} (${env.OPENNODE_BTC_DAYS_PER_CHARGE} days)`,
       callbackUrl: `${origin}/api/billing/btc/webhook`,
       successUrl: `${origin}/billing?checkout=success`,
       apiKey: env.OPENNODE_API_KEY,
@@ -47,12 +67,13 @@ export const POST = withApiHandler(
         account_id,
         opennode_charge_id,
         status,
+        plan,
         created_at
       )
-      VALUES (?, ?, ?, 'pending', ?)
+      VALUES (?, ?, ?, 'pending', ?, ?)
     `
     )
-      .bind(paymentId, session.accountId, charge.chargeId, createdAt)
+      .bind(paymentId, session.accountId, charge.chargeId, plan, createdAt)
       .run();
 
     const responseBody: ChargeResponse = {

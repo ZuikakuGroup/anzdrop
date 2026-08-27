@@ -108,12 +108,13 @@
 
 ログイン中アカウントのプラン・有効期限を返す(要セッションCookie)。
 
-- レスポンス: `{ success: true, accountId, plan: "free"|"paid", planExpiresAt: string|null }`
+- レスポンス: `{ success: true, accountId, plan: "free"|"standard"|"premium", planExpiresAt: string|null }`
 
 ### `POST /api/billing/stripe/checkout`
 
 ログイン必須。Stripe Checkout Session(`mode: "subscription"`)を作成する。
 
+- リクエスト: `{ plan: "standard"|"premium" }`
 - レスポンス: `{ success: true, url }`。クライアントはこのURLへリダイレクトするだけでよい(Stripe.js不要)。
 
 ### `POST /api/billing/stripe/webhook`
@@ -124,6 +125,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 ログイン必須。OpenNodeでBitcoin決済のchargeを作成する(「期間チャージ」方式、自動更新なし)。
 
+- リクエスト: `{ plan: "standard"|"premium" }`
 - レスポンス: `{ success: true, hostedCheckoutUrl }`
 
 ### `POST /api/billing/btc/webhook`

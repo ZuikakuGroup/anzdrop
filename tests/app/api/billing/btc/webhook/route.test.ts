@@ -71,14 +71,16 @@ async function postWebhook(fields: Record<string, string>) {
 async function insertPendingPayment(params: {
   accountId: string;
   chargeId: string;
+  plan?: "standard" | "premium";
 }) {
   await env.DB.prepare(
-    `INSERT INTO btc_payments (id, account_id, opennode_charge_id, status, created_at) VALUES (?, ?, ?, 'pending', ?)`
+    `INSERT INTO btc_payments (id, account_id, opennode_charge_id, status, plan, created_at) VALUES (?, ?, ?, 'pending', ?, ?)`
   )
     .bind(
       crypto.randomUUID(),
       params.accountId,
       params.chargeId,
+      params.plan ?? "premium",
       new Date().toISOString()
     )
     .run();
@@ -159,7 +161,7 @@ describe("POST /api/billing/btc/webhook", () => {
     expect(response.status).toBe(200);
 
     const account = await getAccount(accountId);
-    expect(account?.plan).toBe("paid");
+    expect(account?.plan).toBe("premium");
 
     const expiresAtMs = new Date(account!.plan_expires_at!).getTime();
     const expectedDays = env.OPENNODE_BTC_DAYS_PER_CHARGE * 24 * 60 * 60 * 1000;
@@ -175,12 +177,32 @@ describe("POST /api/billing/btc/webhook", () => {
     expect(payment?.extends_plan_until).toBe(account?.plan_expires_at);
   });
 
+  it("activates the standard plan when the pending payment was recorded for standard", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    await insertPendingPayment({
+      accountId,
+      chargeId: "charge-standard",
+      plan: "standard",
+    });
+
+    const hashedOrder = await hmacHex(env.OPENNODE_API_KEY, "charge-standard");
+    const response = await postWebhook({
+      id: "charge-standard",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("standard");
+  });
+
   it("stacks the extension on top of an existing future expiry instead of resetting it", async () => {
     const future = new Date(
       Date.now() + 10 * 24 * 60 * 60 * 1000
     ).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: future,
     });
     await insertPendingPayment({ accountId, chargeId: "charge-stack" });

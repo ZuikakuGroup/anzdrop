@@ -12,7 +12,9 @@ import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { bufferAhead } from "@/lib/asyncBuffer";
 import {
   getMaxFileSizeBytes,
+  getUploadConcurrencyForPlan,
   isRetentionAllowedForPlan,
+  isTurnstileRequiredForPlan,
   type Plan,
 } from "@/lib/plan";
 import type { Retention } from "@/lib/retention";
@@ -40,12 +42,14 @@ import { encryptFileName, wrapKeyWithPassword } from "@/lib/upload/encrypt";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
-// "30d"は有料プラン限定。実際に選択肢として出すかどうかはisRetentionAllowedForPlanで絞る。
+// "15d"はStandard/Premium限定、"30d"はPremium限定。実際に選択肢として出すか
+// どうかはisRetentionAllowedForPlanで絞る。
 const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "once", label: "1回" },
   { value: "1d", label: "1日" },
   { value: "3d", label: "3日" },
   { value: "7d", label: "7日" },
+  { value: "15d", label: "15日" },
   { value: "30d", label: "30日" },
 ];
 
@@ -256,7 +260,10 @@ export default function UploadForm() {
       const key = await getKey();
       const isNewShare = !shareIdRef.current;
 
-      const turnstileToken = isNewShare ? await getTurnstileToken() : undefined;
+      const turnstileToken =
+        isNewShare && isTurnstileRequiredForPlan(plan)
+          ? await getTurnstileToken()
+          : undefined;
       const passwordWrap =
         isNewShare && usePassword
           ? await wrapKeyWithPassword(key, password)
@@ -313,6 +320,7 @@ export default function UploadForm() {
           startResult.uploadSessionId,
           startResult.uploadToken,
           path,
+          getUploadConcurrencyForPlan(plan),
           () => {
             completedChunks++;
             setProgress(

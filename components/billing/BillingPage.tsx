@@ -7,9 +7,19 @@ import Spinner from "@/components/brand/Spinner";
 import type { MeResponse } from "@/app/api/account/me/schema";
 import type { CheckoutResponse } from "@/app/api/billing/stripe/checkout/schema";
 import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
-import type { Plan } from "@/lib/plan";
+import {
+  PLAN_LABELS,
+  PLAN_LIMITS,
+  PLAN_MONTHLY_PRICE_JPY,
+  type Plan,
+} from "@/lib/plan";
+import { formatBytes } from "@/lib/format";
 
 type MeData = { accountId: string; plan: Plan; planExpiresAt: string | null };
+
+type PurchasablePlan = "standard" | "premium";
+
+const PURCHASABLE_PLANS: PurchasablePlan[] = ["standard", "premium"];
 
 export default function BillingPage() {
   const [me, setMe] = useState<MeData | null>(null);
@@ -18,6 +28,9 @@ export default function BillingPage() {
     "stripe" | "btc" | null
   >(null);
   const [error, setError] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState<PurchasablePlan>(
+    "standard"
+  );
 
   useEffect(() => {
     fetch("/api/account/me")
@@ -45,6 +58,8 @@ export default function BillingPage() {
     try {
       const response = await fetch("/api/billing/stripe/checkout", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selectedPlan }),
       });
       const data = (await response.json()) as CheckoutResponse;
 
@@ -69,6 +84,8 @@ export default function BillingPage() {
     try {
       const response = await fetch("/api/billing/btc/charge", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: selectedPlan }),
       });
       const data = (await response.json()) as BtcChargeResponse;
 
@@ -110,14 +127,45 @@ export default function BillingPage() {
             <div className="space-y-5">
               <div className="rounded border-2 border-ink/20 p-4 text-sm">
                 <p className="font-bold">
-                  現在のプラン: {me.plan === "paid" ? "有料プラン" : "無料プラン"}
+                  現在のプラン: {PLAN_LABELS[me.plan]}
                 </p>
-                {me.plan === "paid" && me.planExpiresAt && (
+                {me.plan !== "free" && me.planExpiresAt && (
                   <p className="mt-1 text-xs text-ink/60">
                     有効期限:{" "}
                     {new Date(me.planExpiresAt).toLocaleString("ja-JP")}
                   </p>
                 )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {PURCHASABLE_PLANS.map((plan) => (
+                  <button
+                    key={plan}
+                    type="button"
+                    onClick={() => setSelectedPlan(plan)}
+                    disabled={isLoadingAction !== null}
+                    className={`rounded border-2 p-3 text-left text-xs transition-colors disabled:opacity-30 ${
+                      selectedPlan === plan
+                        ? "border-brand bg-brand/5"
+                        : "border-ink/20 hover:border-ink/40"
+                    }`}
+                  >
+                    <p className="text-sm font-black">{PLAN_LABELS[plan]}</p>
+                    <p className="mt-0.5 font-bold text-ink/70">
+                      ¥{PLAN_MONTHLY_PRICE_JPY[plan]} / 月
+                    </p>
+                    <ul className="mt-2 space-y-0.5 text-ink/60">
+                      <li>
+                        最大{formatBytes(PLAN_LIMITS[plan].maxFileSizeBytes)}
+                      </li>
+                      <li>
+                        {PLAN_LIMITS[plan].previewEnabled
+                          ? "ブラウザ内プレビュー可"
+                          : "プレビュー不可"}
+                      </li>
+                    </ul>
+                  </button>
+                ))}
               </div>
 
               <div className="space-y-2">

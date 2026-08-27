@@ -33,9 +33,9 @@
 
 | 変数名 | 用途 |
 | --- | --- |
-| `STRIPE_PRICE_ID` | Stripeダッシュボードで作成した月額サブスクリプション用Priceのid |
-| `OPENNODE_BTC_CHARGE_AMOUNT_USD` | Bitcoin「期間チャージ」1回分の金額(USD) |
-| `OPENNODE_BTC_DAYS_PER_CHARGE` | 上記の支払いが確定した際に有効期限を延長する日数 |
+| `STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` | Stripeダッシュボードで作成した、Standard/Premiumそれぞれの月額サブスクリプション用Priceのid |
+| `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` | Bitcoin「期間チャージ」1回分の金額(USD)。Standard/Premiumで別々に設定する |
+| `OPENNODE_BTC_DAYS_PER_CHARGE` | 上記の支払いが確定した際に有効期限を延長する日数(両プラン共通) |
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
@@ -47,7 +47,7 @@
 - **D1**: `binding: "DB"`, `database_name: "anzdrop-db"`(`database_id` は固定値でリポジトリに含まれる。新しい環境向けに作り直す場合は `wrangler d1 create anzdrop-db` 後にIDを書き換える)。
 - **R2**: `binding: "FILES_BUCKET"`, `bucket_name: "anzdrop"`。
 - **Cron Trigger**: `"0 0 * * *"`(毎日0時UTC、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)。
-- **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID` / `OPENNODE_BTC_CHARGE_AMOUNT_USD` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
+- **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
 
 ## Cloudflare Access(管理画面の保護)
@@ -64,11 +64,11 @@
 
 設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境でセットアップする場合の概略:
 
-1. Stripeダッシュボードで月額サブスクリプション用のPriceを作成し、そのidを`wrangler.jsonc`の`STRIPE_PRICE_ID`に設定する。
+1. Stripeダッシュボード(またはStripe API)でStandard用・Premium用それぞれの月額サブスクリプションProduct/Priceを作成し、そのidを`wrangler.jsonc`の`STRIPE_PRICE_ID_STANDARD`・`STRIPE_PRICE_ID_PREMIUM`に設定する。Webhook(`app/api/billing/stripe/webhook/route.ts`)はSubscriptionの実際のPrice IDを見てプランを判定するため、ここで設定したid以外のPriceで契約された場合はプランが反映されない(意図しないプラン活性化を防ぐための防御的な挙動)。
 2. Stripeダッシュボードで秘密鍵を取得し、`wrangler secret put STRIPE_SECRET_KEY`で設定する。
 3. Stripeダッシュボードで`https://<本番ドメイン>/api/billing/stripe/webhook`宛のWebhookエンドポイントを作成し、`checkout.session.completed`・`customer.subscription.updated`・`customer.subscription.deleted`を購読する。発行される署名シークレットを`wrangler secret put STRIPE_WEBHOOK_SECRET`で設定する。
 4. OpenNodeでビジネスアカウントを作成(要KYB/KYC)し、APIキーを取得して`wrangler secret put OPENNODE_API_KEY`で設定する。OpenNode側でのWebhookエンドポイント登録は不要(charge作成時に`callback_url`として都度指定している)。
-5. `wrangler.jsonc`の`OPENNODE_BTC_CHARGE_AMOUNT_USD`・`OPENNODE_BTC_DAYS_PER_CHARGE`を実際の価格に合わせて調整する。
+5. `wrangler.jsonc`の`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`・`OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM`・`OPENNODE_BTC_DAYS_PER_CHARGE`を実際の価格に合わせて調整する。
 6. `SESSION_SECRET`(ログインセッションJWTの署名鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put SESSION_SECRET`で設定する。
 
 ## 手動デプロイ・プレビュー

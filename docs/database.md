@@ -87,7 +87,7 @@
 | `id` | TEXT PK | 本人が自由に設定するアカウントID([`lib/account/id.ts`](../lib/account/id.ts)の`isValidAccountId()`で3〜32文字・半角英数字/ハイフン/アンダースコアのみを検証。一意性はINSERT自体で判定) |
 | `password_hash` | TEXT | パスワードのArgon2idハッシュ([`lib/account/password.ts`](../lib/account/password.ts)。Cloudflare WorkersランタイムがPBKDF2の反復回数を10万回までしか許可しないため、メモリハードで反復回数の制約を受けないArgon2idを採用)。実行時の動的WebAssemblyコンパイルもCloudflare Workers本番では禁止されているため、npmのhash-wasmはそのままでは使えず、静的importで済むよう自前でビルドしたWASM実装を[`lib/account/wasm-argon2/`](../lib/account/wasm-argon2/)に置いている(由来・ビルド方法は同ディレクトリの`NOTICE.md`を参照) |
 | `recovery_code_hash` | TEXT | リカバリーコードのハッシュ。パスワード忘れ時の再設定にのみ使う(サインアップ時に1回だけ平文を表示し、以後は保持しない) |
-| `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` または `"paid"` |
+| `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` / `"standard"` / `"premium"`(旧値`"paid"`はmigration 0013で`"premium"`へ正規化済み。アプリ側の`normalizeStoredPlan()`も同じ変換を防御的に行う) |
 | `plan_expires_at` | TEXT (nullable) | 有料プランの有効期限(ISO8601)。Bitcoin決済は自動更新されないため、この期限が切れるとfreeに戻る |
 | `stripe_customer_id` | TEXT (nullable) | Stripe Customer ID |
 | `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
@@ -108,10 +108,11 @@ Bitcoin(OpenNode)決済の履歴。カード決済と異なり自動更新でき
 | `account_id` | TEXT | `accounts.id`への参照(`ON DELETE CASCADE`) |
 | `opennode_charge_id` | TEXT | OpenNode側のcharge ID |
 | `status` | TEXT NOT NULL DEFAULT `'pending'` | `"pending"|"paid"|"expired"` |
+| `plan` | TEXT NOT NULL DEFAULT `'premium'` | `"standard"` または `"premium"`。charge作成時のリクエストの値をそのまま記録し、Webhook確定時にこれを読み戻して`accounts.plan`へ反映する(migration 0014) |
 | `extends_plan_until` | TEXT (nullable) | この支払いが確定した場合に`accounts.plan_expires_at`へ反映する日時 |
 | `created_at` | TEXT | 作成日時 |
 
-migration 0009。
+migration 0009(`plan`は0014)。
 
 ### `stripe_events`
 
@@ -140,5 +141,7 @@ migration 0009。
 | `0010_add_session_version.sql` | `accounts.session_version` 追加(パスワード再設定時の既存セッション失効) |
 | `0011_add_preview_allowed.sql` | `shares.preview_allowed` 追加(有料プラン限定のブラウザ内プレビュー機能。MP4/MP3/JPEG/PNG) |
 | `0012_add_login_lockout.sql` | `accounts.failed_login_attempts`/`accounts.locked_until` 追加(アカウントID自由設定化に伴うログイン総当たり対策) |
+| `0013_normalize_paid_plan_to_premium.sql` | Standardプラン新設に伴う`Plan`型3値化(`"free"|"standard"|"premium"`)。既存の`accounts.plan = 'paid'`を`'premium'`へ正規化 |
+| `0014_add_btc_payments_plan.sql` | `btc_payments.plan` 追加(Bitcoin決済がどのプラン向けかをWebhook確定時に判定するため) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

@@ -1,10 +1,11 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyOpenNodeSignature } from "@/lib/opennode";
-import { extendPaidPeriod } from "@/lib/plan";
+import { extendPaidPeriod, type Plan } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
 
 type BtcPaymentRecord = {
   account_id: string;
+  plan: Plan;
 };
 
 export const POST = withApiHandler(
@@ -64,7 +65,7 @@ export const POST = withApiHandler(
     }
 
     const payment = await env.DB.prepare(
-      `SELECT account_id FROM btc_payments WHERE opennode_charge_id = ? LIMIT 1`
+      `SELECT account_id, plan FROM btc_payments WHERE opennode_charge_id = ? LIMIT 1`
     )
       .bind(chargeId)
       .first<BtcPaymentRecord>();
@@ -85,9 +86,9 @@ export const POST = withApiHandler(
     );
 
     await env.DB.prepare(
-      `UPDATE accounts SET plan = 'paid', plan_expires_at = ? WHERE id = ?`
+      `UPDATE accounts SET plan = ?, plan_expires_at = ? WHERE id = ?`
     )
-      .bind(newExpiry, payment.account_id)
+      .bind(payment.plan, newExpiry, payment.account_id)
       .run();
 
     await env.DB.prepare(

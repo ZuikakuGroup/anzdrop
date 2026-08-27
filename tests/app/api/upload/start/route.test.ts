@@ -236,11 +236,11 @@ describe("POST /api/upload/start", () => {
     expect(upload?.max_downloads).toBeNull();
   });
 
-  it("creates a new share for a paid uploader with preview_allowed=1", async () => {
+  it("creates a new share for a premium uploader with preview_allowed=1", async () => {
     stubTurnstileSuccess();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: future,
     });
     const cookie = await sessionCookieHeader(env, accountId);
@@ -262,11 +262,54 @@ describe("POST /api/upload/start", () => {
     expect(share?.preview_allowed).toBe(1);
   });
 
+  it("skips Turnstile verification for a standard-plan uploader creating a new share (no token, no stub)", async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: future,
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postStart(
+      {
+        encryptedFileName: "file.enc",
+        fileSize: 1024,
+        retention: "15d",
+      },
+      { cookie }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await readJson<StartResponseBody>(response);
+    const share = await getShare(body.shareId);
+    expect(share?.preview_allowed).toBe(0);
+  });
+
+  it("returns 403 when a standard-plan uploader requests 30d retention (premium-only)", async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: future,
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postStart(
+      {
+        encryptedFileName: "file.enc",
+        fileSize: 1024,
+        retention: "30d",
+      },
+      { cookie }
+    );
+
+    expect(response.status).toBe(403);
+  });
+
   it("allows joining an existing share via shareId+uploadToken without a Turnstile token, and keeps the original preview_allowed", async () => {
     stubTurnstileSuccess();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: future,
     });
     const cookie = await sessionCookieHeader(env, accountId);
@@ -299,7 +342,7 @@ describe("POST /api/upload/start", () => {
     expect(joinedBody.shareId).toBe(createdBody.shareId);
     expect(joinedBody.uploadToken).toBe(createdBody.uploadToken);
 
-    // 相乗り時はpreview_allowedを再判定しない(作成時の値=paid由来の1のまま)。
+    // 相乗り時はpreview_allowedを再判定しない(作成時の値=premium由来の1のまま)。
     const share = await getShare(createdBody.shareId);
     expect(share?.preview_allowed).toBe(1);
 
