@@ -14,7 +14,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 ### ログイン状態に応じた画面遷移・ヘッダー表示
 
 - アカウント関連の画面(ログイン・サインアップ・パスワード再設定・プラン確認)は、いずれも`/mypage`配下(`/mypage/login`・`/mypage/signup`・`/mypage/recover`・`/mypage/billing`)にまとめて配置している(`app/mypage/`)。
-- `/mypage/billing`は未ログインだと専用の案内は出さず、`GET /api/account/me`が401を返した時点でクライアント側から`/mypage/login`へリダイレクトする(`components/billing/BillingPage.tsx`)。
+- `/mypage/billing`は未ログインだと専用の案内は出さず、`GET /api/account/me`が`{ success: false }`(未ログイン時の401だけでなく、`withApiHandler`による予期しないエラー時の500応答も含む)を返した時点でクライアント側から`/mypage/login`へリダイレクトする(`components/billing/BillingPage.tsx`)。
 - 逆に`/mypage/login`・`/mypage/signup`はログイン済み(`GET /api/account/me`が成功)なら`/mypage/billing`へリダイレクトする(`lib/account/useRedirectIfLoggedIn.ts`)。行き先は暫定で、将来変更の可能性がある。
 - いずれもサーバー側でのリダイレクト(Server Component等)ではなく、マウント後に`GET /api/account/me`を呼んでクライアント側で判定する方式。判定が終わるまでは対象画面の代わりにスピナーを表示する。
 - 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントID(`/mypage/billing`へのリンク)とログアウトボタンを、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
