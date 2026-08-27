@@ -1,13 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches-ignore: [main] # mainへのpushはdeploy.ymlが同じチェックを行う
   pull_request:
 
-# 同一リポジトリ内のPRでは、pushイベントとpull_request(synchronize)イベントの
-# 両方が同じコミットに対して発火し二重実行になるため、後発のpushで前の実行を
-# キャンセルする。
+# mainへのpushはdeploy.ymlが同じチェックを行うため、ここではpull_requestのみで
+# トリガーする(以前はpushにも反応していたが、PRを開いた直後はpushイベントと
+# pull_requestイベントが同じコミットに対して両方発火し、後発のイベントが前の
+# 実行をキャンセルすることでPRのチェック一覧に紛らわしい失敗表示が残っていた)。
+# 同一PRへの連続pushでの二重実行を避けるため、concurrencyは維持する。
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
