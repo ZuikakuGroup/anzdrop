@@ -197,6 +197,97 @@ describe("POST /api/billing/btc/webhook", () => {
     expect(account?.plan).toBe("standard");
   });
 
+  it("does not downgrade an active premium account when a standard payment is confirmed (but still extends the expiry)", async () => {
+    const future = new Date(
+      Date.now() + 10 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: future,
+    });
+    await insertPendingPayment({
+      accountId,
+      chargeId: "charge-downgrade-attempt",
+      plan: "standard",
+    });
+
+    const hashedOrder = await hmacHex(
+      env.OPENNODE_API_KEY,
+      "charge-downgrade-attempt"
+    );
+    const response = await postWebhook({
+      id: "charge-downgrade-attempt",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // プランはpremiumのまま(格下げされない)。
+    expect(account?.plan).toBe("premium");
+    // 有効期限は支払った分だけ延長される。
+    const expected =
+      new Date(future).getTime() +
+      env.OPENNODE_BTC_DAYS_PER_CHARGE * 24 * 60 * 60 * 1000;
+    expect(
+      Math.abs(new Date(account!.plan_expires_at!).getTime() - expected)
+    ).toBeLessThan(1000);
+  });
+
+  it("upgrades an active standard account to premium when a premium payment is confirmed", async () => {
+    const future = new Date(
+      Date.now() + 10 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: future,
+    });
+    await insertPendingPayment({
+      accountId,
+      chargeId: "charge-upgrade",
+      plan: "premium",
+    });
+
+    const hashedOrder = await hmacHex(env.OPENNODE_API_KEY, "charge-upgrade");
+    const response = await postWebhook({
+      id: "charge-upgrade",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
+  });
+
+  it("activates standard for a lapsed (expired) premium account instead of preserving the stale higher tier", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: past,
+    });
+    await insertPendingPayment({
+      accountId,
+      chargeId: "charge-lapsed-premium",
+      plan: "standard",
+    });
+
+    const hashedOrder = await hmacHex(
+      env.OPENNODE_API_KEY,
+      "charge-lapsed-premium"
+    );
+    const response = await postWebhook({
+      id: "charge-lapsed-premium",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // 失効済みのpremiumは実効的にはfree扱いなので、standardへの新規加入が反映される。
+    expect(account?.plan).toBe("standard");
+  });
+
   it("stacks the extension on top of an existing future expiry instead of resetting it", async () => {
     const future = new Date(
       Date.now() + 10 * 24 * 60 * 60 * 1000

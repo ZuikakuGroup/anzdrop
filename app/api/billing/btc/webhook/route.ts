@@ -1,6 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyOpenNodeSignature } from "@/lib/opennode";
-import { extendPaidPeriod, type Plan } from "@/lib/plan";
+import { extendPaidPeriod, getAccountPlanInfo, PLAN_RANK, type Plan } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
 
 type BtcPaymentRecord = {
@@ -74,21 +74,26 @@ export const POST = withApiHandler(
       return Response.json({ success: true });
     }
 
-    const account = await env.DB.prepare(
-      `SELECT plan_expires_at FROM accounts WHERE id = ? LIMIT 1`
-    )
-      .bind(payment.account_id)
-      .first<{ plan_expires_at: string | null }>();
+    const { plan: currentEffectivePlan, planExpiresAt: currentExpiresAt } =
+      await getAccountPlanInfo(payment.account_id, env);
+
+    // 既にアクティブな上位プラン(例: premium)を、より安価なプラン
+    // (例: standard)の支払いで誤って格下げしない。有効期限はどちらの
+    // 場合も延長する(支払った分は無駄にしない)。
+    const newPlan =
+      PLAN_RANK[currentEffectivePlan] > PLAN_RANK[payment.plan]
+        ? currentEffectivePlan
+        : payment.plan;
 
     const newExpiry = extendPaidPeriod(
-      account?.plan_expires_at ?? null,
+      currentExpiresAt,
       env.OPENNODE_BTC_DAYS_PER_CHARGE
     );
 
     await env.DB.prepare(
       `UPDATE accounts SET plan = ?, plan_expires_at = ? WHERE id = ?`
     )
-      .bind(payment.plan, newExpiry, payment.account_id)
+      .bind(newPlan, newExpiry, payment.account_id)
       .run();
 
     await env.DB.prepare(

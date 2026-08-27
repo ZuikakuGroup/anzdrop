@@ -51,6 +51,15 @@ export const PLAN_MONTHLY_PRICE_JPY: Record<Exclude<Plan, "free">, number> = {
   premium: 450,
 };
 
+// プランの階層順序。Bitcoin決済のWebhook確定処理で、既にアクティブな上位
+// プラン(例: premium)を、より安価なプラン(例: standard)の支払いで
+// 誤って格下げしないための比較に使う。
+export const PLAN_RANK: Record<Plan, number> = {
+  free: 0,
+  standard: 1,
+  premium: 2,
+};
+
 export function getMaxFileSizeBytes(plan: Plan): number {
   return PLAN_LIMITS[plan].maxFileSizeBytes;
 }

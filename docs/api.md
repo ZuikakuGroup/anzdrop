@@ -16,11 +16,11 @@
 
 共有(または既存共有への相乗り)とR2マルチパートアップロードセッションを開始する。
 
-- 新規共有作成時(`shareId`未指定時)は `turnstileToken` によるTurnstile検証が必須。既存共有への相乗り(`shareId`指定時)は `uploadToken` の一致で認可し、Turnstile再検証は行わない。
-- リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
+- 新規共有作成時(`shareId`未指定時)は、アップローダーの実効プラン(未ログインは常にfree)がfreeの場合のみ `turnstileToken` によるTurnstile検証が必須。Standard/Premiumはログイン済みアカウントであることが分かっているため検証をスキップする(`isTurnstileRequiredForPlan()`、[`lib/plan.ts`](../lib/plan.ts))。既存共有への相乗り(`shareId`指定時)は `uploadToken` の一致で認可し、プランに関わらずTurnstile再検証は行わない。
+- リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
   - `wrappedKey`/`keySalt` は新規共有かつパスワード保護を設定した場合のみ。
 - レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt }`
-- ファイルサイズは `MAX_FILE_SIZE_BYTES`(5GB, [`lib/limits.ts`](../lib/limits.ts))を超えると400。
+- ファイルサイズ上限・選べる`retention`はアップローダーの実効プランによって異なる(free: 5GB・`once`/`1d`/`3d`/`7d`、standard: 20GB・上記+`15d`、premium: 50GB・上記+`30d`)。詳細は[`accounts.md`](./accounts.md#プランの差libplants)の表を参照。超過・許可外の場合はそれぞれ400/403。
 
 ### `POST /api/upload/chunk`
 

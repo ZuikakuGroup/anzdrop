@@ -141,7 +141,7 @@ migration 0009。
 | `0010_add_session_version.sql` | `accounts.session_version` 追加(パスワード再設定時の既存セッション失効) |
 | `0011_add_preview_allowed.sql` | `shares.preview_allowed` 追加(有料プラン限定のブラウザ内プレビュー機能。MP4/MP3/JPEG/PNG) |
 | `0012_add_login_lockout.sql` | `accounts.failed_login_attempts`/`accounts.locked_until` 追加(アカウントID自由設定化に伴うログイン総当たり対策) |
-| `0013_normalize_paid_plan_to_premium.sql` | Standardプラン新設に伴う`Plan`型3値化(`"free"|"standard"|"premium"`)。既存の`accounts.plan = 'paid'`を`'premium'`へ正規化 |
+| `0013_normalize_paid_plan_to_premium.sql` | Standardプラン新設に伴う`Plan`型3値化(`"free"\|"standard"\|"premium"`)。既存の`accounts.plan = 'paid'`を`'premium'`へ正規化 |
 | `0014_add_btc_payments_plan.sql` | `btc_payments.plan` 追加(Bitcoin決済がどのプラン向けかをWebhook確定時に判定するため) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。
