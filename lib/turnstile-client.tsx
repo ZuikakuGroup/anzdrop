@@ -106,6 +106,42 @@ export function useTurnstile(): { getToken: () => Promise<string>; widget: React
     return widgetId;
   };
 
+  // ウィジェットのrender()(Cloudflare側のiframe初期化を伴う)を、送信ボタン
+  // クリックまで遅延させず、マウント後(turnstile.jsの読み込み待ちを挟みつつ)
+  // 先行して行っておく。こうすることで送信時にgetToken()から呼ばれる
+  // ensureWidget()は既にレンダリング済みのwidgetIdを即座に返すだけになり、
+  // execute()の呼び出しだけが送信時の待ち時間として残る。
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || !isMounted) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const tryRender = () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (window.turnstile) {
+        ensureWidget();
+        return;
+      }
+
+      timeoutId = setTimeout(tryRender, 100);
+    };
+
+    tryRender();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [isMounted]);
+
   // モーダル表示中は背景のスクロールを止める(オーバーレイはクリックを
   // 吸収するが、タッチ操作によるスクロールまでは防げないため)。
   useEffect(() => {

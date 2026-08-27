@@ -4,7 +4,9 @@ import { useState } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
+import Spinner from "@/components/brand/Spinner";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { useRedirectIfLoggedIn } from "@/lib/account/useRedirectIfLoggedIn";
 import PasswordInput from "@/components/brand/PasswordInput";
 import {
   isValidAccountId,
@@ -16,6 +18,7 @@ import type { SignupResponse } from "@/app/api/account/signup/schema";
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
+  const canRenderForm = useRedirectIfLoggedIn("/billing");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -107,7 +110,11 @@ export default function SignupPage() {
             </p>
           </div>
 
-          {result ? (
+          {!canRenderForm ? (
+            <div className="flex justify-center py-8">
+              <Spinner className="h-6 w-6 text-brand" />
+            </div>
+          ) : result ? (
             <div className="space-y-4">
               <div className="rounded border-2 border-brand p-4 text-sm">
                 <p className="mb-3 font-bold text-brand">
@@ -158,6 +165,7 @@ export default function SignupPage() {
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
+                  placeholder="yamada-taro"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -181,9 +189,13 @@ export default function SignupPage() {
                   id="signup-password"
                   value={password}
                   onChange={setPassword}
+                  placeholder="8文字以上のパスワード"
                   autoComplete="new-password"
                   className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
+                <p className="text-[11px] text-ink/40">
+                  {MIN_PASSWORD_LENGTH}文字以上
+                </p>
               </div>
 
               {turnstileWidget}

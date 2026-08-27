@@ -7,9 +7,13 @@ import Spinner from "@/components/brand/Spinner";
 import type { MeResponse } from "@/app/api/account/me/schema";
 import type { CheckoutResponse } from "@/app/api/billing/stripe/checkout/schema";
 import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
+import type { Plan } from "@/lib/plan";
+
+type MeData = { accountId: string; plan: Plan; planExpiresAt: string | null };
 
 export default function BillingPage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const [me, setMe] = useState<MeData | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [isLoadingAction, setIsLoadingAction] = useState<
     "stripe" | "btc" | null
   >(null);
@@ -18,8 +22,20 @@ export default function BillingPage() {
   useEffect(() => {
     fetch("/api/account/me")
       .then((response) => response.json() as Promise<MeResponse>)
-      .then((data) => setMe(data))
-      .catch(() => setMe({ success: false, error: "読み込みに失敗しました。" }));
+      .then((data) => {
+        if (!data.success) {
+          // 未ログインなら「ログインが必要です」の専用表示は出さず、そのままログインへ誘導する。
+          window.location.href = "/login";
+          return;
+        }
+
+        setMe({
+          accountId: data.accountId,
+          plan: data.plan,
+          planExpiresAt: data.planExpiresAt,
+        });
+      })
+      .catch(() => setLoadError(true));
   }, []);
 
   const startStripeCheckout = async () => {
@@ -82,19 +98,13 @@ export default function BillingPage() {
             </h1>
           </div>
 
-          {me === null ? (
+          {loadError ? (
+            <p className="text-sm font-bold text-brand">
+              読み込みに失敗しました。
+            </p>
+          ) : me === null ? (
             <div className="flex justify-center py-8">
               <Spinner className="h-6 w-6 text-brand" />
-            </div>
-          ) : !me.success ? (
-            <div className="space-y-3 text-sm">
-              <p className="text-ink/60">ログインが必要です。</p>
-              <a
-                href="/login"
-                className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
-              >
-                ログインへ
-              </a>
             </div>
           ) : (
             <div className="space-y-5">
@@ -130,11 +140,11 @@ export default function BillingPage() {
                   {isLoadingAction === "btc" && (
                     <Spinner className="h-4 w-4 text-ink" />
                   )}
-                  Bitcoinで支払う
+                  ビットコインで支払う
                 </button>
 
                 <p className="text-center text-xs text-ink/50">
-                  Bitcoin決済は自動更新されません。期限が来たら都度お支払いください。
+                  ビットコイン決済は自動更新されません。期限が来たら都度お支払いください。
                 </p>
               </div>
 
