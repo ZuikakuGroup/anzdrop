@@ -25,24 +25,27 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 ## プランの差(`lib/plan.ts`)
 
-| | 無料プラン | 有料プラン |
-| --- | --- | --- |
-| 1ファイルの上限サイズ | `lib/limits.ts`の`MAX_FILE_SIZE_BYTES`(既定5GB) | `lib/plan.ts`の`PLAN_LIMITS.paid.maxFileSizeBytes`(暫定50GB) |
-| 選べる保存期間 | 1回・1日・3日・7日 | 左記に加えて30日 |
-| ブラウザ内プレビュー | 不可 | 可(MP4/MP3/JPEG/PNGのみ。保存期間「1回」のファイルは対象外) |
+| | 無料プラン | Standardプラン | Premiumプラン |
+| --- | --- | --- | --- |
+| 価格 | ¥0 | ¥250 / 月 | ¥450 / 月(Bitcoinは参考価格) |
+| 1ファイルの上限サイズ | `lib/limits.ts`の`MAX_FILE_SIZE_BYTES`(既定5GB) | 20GB | 50GB |
+| 選べる保存期間 | 1回・1日・3日・7日 | 左記に加えて15日 | 左記に加えて15日・30日 |
+| ブラウザ内プレビュー | 不可 | 不可 | 可(MP4/MP3/JPEG/PNGのみ。保存期間「1回」のファイルは対象外) |
+| Turnstile認証(`POST /api/upload/start`) | あり | スキップ | スキップ |
+| アップロードの並列数(`lib/upload/chunkUploader.ts`) | 8 | 8 | 12 |
 
-具体的な容量・金額は暫定値。正式なプラン内容が決まったら`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`OPENNODE_BTC_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
+すべて`lib/plan.ts`の`PLAN_LIMITS`に集約されており、ここを変更するだけでアップロードフロー全体・料金表示に反映される。具体的な容量・金額は暫定値。変更する場合は`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`STRIPE_PRICE_ID_*`/`OPENNODE_BTC_CHARGE_AMOUNT_USD_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
 
 ブラウザ内プレビューの可否(`shares.preview_allowed`)も、保存期間の上限と同じく共有作成時のアップローダーの実効プランから一度だけ判定して共有に焼き込む(`lib/preview.ts`)。以後アカウントの状態が変わっても、既に作成済みの共有の値は変わらない。ダウンロード側は完全に匿名なので、この判定は「プレビューする人」ではなく「共有を作ったアップローダー」のプランに基づく。保存期間「1回」のファイルは、プレビューが`GET /api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、共有がプレビュー可であっても無条件でプレビューを非表示にする。
 
-`accounts.plan`と`accounts.plan_expires_at`から実効プランを判定するのが`getAccountPlanInfo()`/`effectivePlan()`で、`plan_expires_at`が過去なら(DB上`plan='paid'`のままでも)自動的にfree扱いになる。これはBitcoin決済が自動更新されないための「失効」判定を兼ねている。
+`accounts.plan`と`accounts.plan_expires_at`から実効プランを判定するのが`getAccountPlanInfo()`/`effectivePlan()`で、`plan_expires_at`が過去なら自動的にfree扱いになる。これはBitcoin決済が自動更新されないための「失効」判定を兼ねている。なお`accounts.plan`は元々`"free" | "paid"`の2値だったが、Standardプラン新設に伴い`"free" | "standard" | "premium"`の3値に拡張した(migration 0013で既存の`'paid'`は`'premium'`へ正規化済み。加えて`lib/plan.ts`内の`normalizeStoredPlan()`が、万一DB上に旧値`'paid'`が残っていても`premium`として扱う防御的なエイリアスを持つ)。
 
 ## 決済手段
 
 ### Stripe(カード、自動更新サブスクリプション)
 
-- `POST /api/billing/stripe/checkout`でCheckout Session(`mode: "subscription"`)を作成し、返ってきたURLへリダイレクトするだけ(Stripe.jsは使わない)。
-- `POST /api/billing/stripe/webhook`が`checkout.session.completed`(初回有効化)・`customer.subscription.updated`(更新のたびに有効期限を同期)・`customer.subscription.deleted`(即時ダウングレード)を処理する。
+- `POST /api/billing/stripe/checkout`はリクエストボディの`plan`(`"standard"`または`"premium"`)を見て、対応するPrice(`STRIPE_PRICE_ID_STANDARD`/`STRIPE_PRICE_ID_PREMIUM`)でCheckout Session(`mode: "subscription"`)を作成し、返ってきたURLへリダイレクトするだけ(Stripe.jsは使わない)。
+- `POST /api/billing/stripe/webhook`が`checkout.session.completed`(初回有効化)・`customer.subscription.updated`(更新のたびに有効期限を同期)・`customer.subscription.deleted`(即時ダウングレード)を処理する。どのプランを付与するかは、Webhookのmetadataではなく**Subscriptionの実際のPrice ID**(`subscription.items.data[0].price.id`)を見て判定する(`planFromSubscription()`)。これはStripeカスタマーポータル等で後からプランが変更された場合にも自動追従できるようにするための設計で、未知のPrice IDの場合は何も更新しない(意図しないプラン活性化を防ぐ防御的な扱い)。
 - Cloudflare WorkersにはNodeの`crypto`モジュールが無いため、SDKの`Stripe.createFetchHttpClient()`(HTTPクライアント)と`Stripe.createSubtleCryptoProvider()`(Webhook署名検証)を明示的に指定している。
 - Stripeの新しいAPIバージョンでは請求期間(`current_period_end`)がSubscription直下ではなく各SubscriptionItemに付く。このアプリは1サブスクリプションにつき1アイテムのみ使うため、先頭アイテムの値を使う(`getSubscriptionPeriodEnd()`)。
 - 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに処理済みイベントIDを記録する。
@@ -51,7 +54,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 Bitcoinはカードのような自動引き落としができないため、「N日分の利用権を都度購入する」方式にしている。
 
-- `POST /api/billing/btc/charge`でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする。
+- `POST /api/billing/btc/charge`はリクエストボディの`plan`(`"standard"`または`"premium"`)に応じた金額(`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`/`_PREMIUM`)でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする。どのプラン向けの支払いかは`btc_payments.plan`列に記録しておき、Webhook確定時に読み戻して`accounts.plan`へ反映する(OpenNodeのWebhook本文にはプラン種別の情報が含まれないため)。
 - OpenNodeのWebhook(`POST /api/billing/btc/webhook`)は`application/x-www-form-urlencoded`で届く(JSONではない)。署名検証は別のWebhookシークレットではなく、**charge作成に使ったAPIキー自体をHMAC鍵として使う**(`hashed_order = HMAC-SHA256(apiKey, chargeId)`、[`lib/opennode.ts`](../lib/opennode.ts))。
 - 支払いが確定(`status = "paid"`)すると、`extendPaidPeriod()`(`lib/plan.ts`)で有効期限を延長する。**既に有効期限が未来にある場合はそこに積み増し**、失効済み(または初回)なら「今から」を起点にする。
 - `btc_payments`テーブルの`status`列を`pending → paid`に更新する際に`WHERE status = 'pending'`を条件にすることで、OpenNodeからのWebhook再送による有効期限の二重加算を防いでいる。
@@ -72,3 +75,5 @@ Bitcoinはカードのような自動引き落としができないため、「N
 ## 新規テーブル
 
 `accounts` / `btc_payments` / `stripe_events`(migration 0009)。詳細は[`database.md`](./database.md)を参照。
+
+Standardプラン新設(migration 0013・0014)で、`accounts.plan`の値域が3値に拡張され、`btc_payments`に`plan`列が追加された。新規テーブルの追加は伴わない。

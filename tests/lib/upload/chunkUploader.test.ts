@@ -38,6 +38,7 @@ describe("uploadChunksFromStream", () => {
       "session-1",
       "token-1",
       "some-file.bin",
+      8,
       onChunkUploaded
     );
 
@@ -65,6 +66,36 @@ describe("uploadChunksFromStream", () => {
     expect(bodyByPart.get(3)).toEqual(new Uint8Array([6]));
   });
 
+  it("never runs more concurrent requests than the given concurrency limit", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const fetchSpy = vi.fn(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      // 他のワーカーが追いつく余地を作るため、1マイクロタスク分だけ待つ。
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight--;
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const chunks = Array.from({ length: 9 }, (_, i) => new Uint8Array([i]));
+
+    await uploadChunksFromStream(
+      fromArray(chunks),
+      "session-1",
+      "token-1",
+      "many-chunks.bin",
+      3,
+      () => {}
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(9);
+    expect(maxInFlight).toBeLessThanOrEqual(3);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+
   it("throws with the path and part number when a chunk upload fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -77,6 +108,7 @@ describe("uploadChunksFromStream", () => {
         "session-1",
         "token-1",
         "broken.bin",
+        8,
         () => {}
       )
     ).rejects.toThrow("broken.bin のチャンク 1 アップロードに失敗しました");
@@ -99,6 +131,7 @@ describe("uploadChunksFromStream", () => {
         "session-1",
         "token-1",
         "some-file.bin",
+        8,
         () => {}
       )
     ).rejects.toThrow("encrypt failed");
@@ -115,6 +148,7 @@ describe("uploadChunksFromStream", () => {
         "session-1",
         "token-1",
         "some-file.bin",
+        8,
         () => {}
       )
     ).rejects.toThrow("Unknown error");
@@ -129,6 +163,7 @@ describe("uploadChunksFromStream", () => {
       "session-1",
       "token-1",
       "empty.bin",
+      8,
       () => {}
     );
 

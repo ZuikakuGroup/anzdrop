@@ -4,6 +4,8 @@ import {
   getMaxFileSizeBytes,
   isRetentionAllowedForPlan,
   isPreviewAllowedForPlan,
+  isTurnstileRequiredForPlan,
+  getUploadConcurrencyForPlan,
   effectivePlan,
   extendPaidPeriod,
   getAccountPlanInfo,
@@ -16,9 +18,12 @@ describe("getMaxFileSizeBytes", () => {
     expect(getMaxFileSizeBytes("free")).toBe(MAX_FILE_SIZE_BYTES);
   });
 
-  it("gives the paid plan a strictly larger limit", () => {
-    expect(getMaxFileSizeBytes("paid")).toBeGreaterThan(
+  it("gives standard a strictly larger limit than free, and premium a strictly larger limit than standard", () => {
+    expect(getMaxFileSizeBytes("standard")).toBeGreaterThan(
       getMaxFileSizeBytes("free")
+    );
+    expect(getMaxFileSizeBytes("premium")).toBeGreaterThan(
+      getMaxFileSizeBytes("standard")
     );
   });
 });
@@ -30,12 +35,19 @@ describe("isRetentionAllowedForPlan", () => {
     }
   });
 
-  it("does not allow 30d on the free plan", () => {
+  it("does not allow 15d or 30d on the free plan", () => {
+    expect(isRetentionAllowedForPlan("15d", "free")).toBe(false);
     expect(isRetentionAllowedForPlan("30d", "free")).toBe(false);
   });
 
-  it("allows 30d on the paid plan", () => {
-    expect(isRetentionAllowedForPlan("30d", "paid")).toBe(true);
+  it("allows 15d but not 30d on the standard plan", () => {
+    expect(isRetentionAllowedForPlan("15d", "standard")).toBe(true);
+    expect(isRetentionAllowedForPlan("30d", "standard")).toBe(false);
+  });
+
+  it("allows both 15d and 30d on the premium plan", () => {
+    expect(isRetentionAllowedForPlan("15d", "premium")).toBe(true);
+    expect(isRetentionAllowedForPlan("30d", "premium")).toBe(true);
   });
 });
 
@@ -46,19 +58,55 @@ describe("PLAN_LIMITS", () => {
     );
   });
 
-  it("only the paid plan enables preview", () => {
+  it("only the premium plan enables preview", () => {
     expect(PLAN_LIMITS.free.previewEnabled).toBe(false);
-    expect(PLAN_LIMITS.paid.previewEnabled).toBe(true);
+    expect(PLAN_LIMITS.standard.previewEnabled).toBe(false);
+    expect(PLAN_LIMITS.premium.previewEnabled).toBe(true);
+  });
+
+  it("skips Turnstile for standard and premium, but not free", () => {
+    expect(PLAN_LIMITS.free.skipTurnstile).toBe(false);
+    expect(PLAN_LIMITS.standard.skipTurnstile).toBe(true);
+    expect(PLAN_LIMITS.premium.skipTurnstile).toBe(true);
+  });
+
+  it("gives premium a strictly higher upload concurrency than free/standard", () => {
+    expect(PLAN_LIMITS.premium.uploadConcurrency).toBeGreaterThan(
+      PLAN_LIMITS.standard.uploadConcurrency
+    );
+    expect(PLAN_LIMITS.standard.uploadConcurrency).toBe(
+      PLAN_LIMITS.free.uploadConcurrency
+    );
   });
 });
 
 describe("isPreviewAllowedForPlan", () => {
-  it("does not allow preview on the free plan", () => {
+  it("does not allow preview on the free or standard plan", () => {
     expect(isPreviewAllowedForPlan("free")).toBe(false);
+    expect(isPreviewAllowedForPlan("standard")).toBe(false);
   });
 
-  it("allows preview on the paid plan", () => {
-    expect(isPreviewAllowedForPlan("paid")).toBe(true);
+  it("allows preview on the premium plan", () => {
+    expect(isPreviewAllowedForPlan("premium")).toBe(true);
+  });
+});
+
+describe("isTurnstileRequiredForPlan", () => {
+  it("requires Turnstile only on the free plan", () => {
+    expect(isTurnstileRequiredForPlan("free")).toBe(true);
+    expect(isTurnstileRequiredForPlan("standard")).toBe(false);
+    expect(isTurnstileRequiredForPlan("premium")).toBe(false);
+  });
+});
+
+describe("getUploadConcurrencyForPlan", () => {
+  it("returns the configured concurrency per plan", () => {
+    expect(getUploadConcurrencyForPlan("free")).toBe(
+      PLAN_LIMITS.free.uploadConcurrency
+    );
+    expect(getUploadConcurrencyForPlan("premium")).toBe(
+      PLAN_LIMITS.premium.uploadConcurrency
+    );
   });
 });
 
@@ -68,20 +116,23 @@ describe("effectivePlan", () => {
     expect(effectivePlan("free", "2099-01-01T00:00:00.000Z")).toBe("free");
   });
 
-  it("treats a paid account with no expiry as free (defensive default)", () => {
-    expect(effectivePlan("paid", null)).toBe("free");
+  it("treats a standard/premium account with no expiry as free (defensive default)", () => {
+    expect(effectivePlan("standard", null)).toBe("free");
+    expect(effectivePlan("premium", null)).toBe("free");
   });
 
-  it("treats a paid account with a future expiry as paid", () => {
+  it("treats a standard/premium account with a future expiry as itself", () => {
     const future = new Date(Date.now() + 60_000).toISOString();
 
-    expect(effectivePlan("paid", future)).toBe("paid");
+    expect(effectivePlan("standard", future)).toBe("standard");
+    expect(effectivePlan("premium", future)).toBe("premium");
   });
 
-  it("treats a paid account with a past expiry as free (lapsed Bitcoin top-up)", () => {
+  it("treats a standard/premium account with a past expiry as free (lapsed Bitcoin top-up)", () => {
     const past = new Date(Date.now() - 60_000).toISOString();
 
-    expect(effectivePlan("paid", past)).toBe("free");
+    expect(effectivePlan("standard", past)).toBe("free");
+    expect(effectivePlan("premium", past)).toBe("free");
   });
 });
 
@@ -152,7 +203,33 @@ describe("getAccountPlanInfo", () => {
     });
   });
 
-  it("returns the paid plan for a paid account with a future expiry", async () => {
+  it("returns the standard plan for a standard account with a future expiry", async () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: future,
+    });
+
+    await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
+      plan: "standard",
+      planExpiresAt: future,
+    });
+  });
+
+  it("returns the premium plan for a premium account with a future expiry", async () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: future,
+    });
+
+    await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
+      plan: "premium",
+      planExpiresAt: future,
+    });
+  });
+
+  it("treats a legacy 'paid' DB value as premium (backward compatibility)", async () => {
     const future = new Date(Date.now() + 60_000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "paid",
@@ -160,15 +237,15 @@ describe("getAccountPlanInfo", () => {
     });
 
     await expect(getAccountPlanInfo(accountId, env)).resolves.toEqual({
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: future,
     });
   });
 
-  it("returns free (but preserves the stale expiry value) for a paid account whose expiry has lapsed", async () => {
+  it("returns free (but preserves the stale expiry value) for a premium account whose expiry has lapsed", async () => {
     const past = new Date(Date.now() - 60_000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: past,
     });
 

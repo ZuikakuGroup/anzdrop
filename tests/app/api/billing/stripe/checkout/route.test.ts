@@ -52,13 +52,20 @@ beforeEach(async () => {
   mockSessionsCreate.mockReset();
 });
 
-async function postCheckout(cookie?: string) {
+async function postCheckout(
+  cookie?: string,
+  body: unknown = { plan: "standard" }
+) {
   const { POST } = await import("@/app/api/billing/stripe/checkout/route");
 
   return POST(
     new Request("http://localhost/api/billing/stripe/checkout", {
       method: "POST",
-      headers: cookie ? { cookie } : {},
+      headers: {
+        ...(cookie ? { cookie } : {}),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     })
   );
 }
@@ -71,14 +78,26 @@ describe("POST /api/billing/stripe/checkout", () => {
     expect(mockSessionsCreate).not.toHaveBeenCalled();
   });
 
-  it("creates a subscription checkout session for the account's price and returns its url", async () => {
+  it("returns 400 when plan is missing or invalid", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const missing = await postCheckout(cookie, {});
+    const invalid = await postCheckout(cookie, { plan: "free" });
+
+    expect(missing.status).toBe(400);
+    expect(invalid.status).toBe(400);
+    expect(mockSessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("creates a subscription checkout session for the standard plan's price and returns its url", async () => {
     const { accountId } = await insertTestAccount(env);
     const cookie = await sessionCookieHeader(env, accountId);
     mockSessionsCreate.mockResolvedValue({
       url: "https://checkout.stripe.com/session-abc",
     });
 
-    const response = await postCheckout(cookie);
+    const response = await postCheckout(cookie, { plan: "standard" });
 
     expect(response.status).toBe(200);
     const body = await response.json();
@@ -90,10 +109,35 @@ describe("POST /api/billing/stripe/checkout", () => {
     expect(mockSessionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "subscription",
-        line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
+        line_items: [
+          { price: env.STRIPE_PRICE_ID_STANDARD, quantity: 1 },
+        ],
         client_reference_id: accountId,
-        subscription_data: { metadata: { accountId } },
+        subscription_data: {
+          metadata: { accountId, plan: "standard" },
+        },
         customer: undefined,
+      })
+    );
+  });
+
+  it("creates a subscription checkout session for the premium plan's price", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSessionsCreate.mockResolvedValue({
+      url: "https://checkout.stripe.com/session-premium",
+    });
+
+    await postCheckout(cookie, { plan: "premium" });
+
+    expect(mockSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          { price: env.STRIPE_PRICE_ID_PREMIUM, quantity: 1 },
+        ],
+        subscription_data: {
+          metadata: { accountId, plan: "premium" },
+        },
       })
     );
   });
@@ -107,7 +151,7 @@ describe("POST /api/billing/stripe/checkout", () => {
       url: "https://checkout.stripe.com/session-xyz",
     });
 
-    await postCheckout(cookie);
+    await postCheckout(cookie, { plan: "standard" });
 
     expect(mockSessionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ customer: "cus_existing_123" })
@@ -119,7 +163,7 @@ describe("POST /api/billing/stripe/checkout", () => {
     const cookie = await sessionCookieHeader(env, accountId);
     mockSessionsCreate.mockResolvedValue({ url: null });
 
-    const response = await postCheckout(cookie);
+    const response = await postCheckout(cookie, { plan: "standard" });
 
     expect(response.status).toBe(500);
     const body = await readJson<{ success: boolean }>(response);
@@ -133,7 +177,7 @@ describe("POST /api/billing/stripe/checkout", () => {
       new Error("stripe unreachable: secret internal detail")
     );
 
-    const response = await postCheckout(cookie);
+    const response = await postCheckout(cookie, { plan: "standard" });
 
     expect(response.status).toBe(500);
     const body = await readJson<{ success: boolean; error: string }>(

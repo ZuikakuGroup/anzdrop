@@ -67,8 +67,10 @@ export async function createTestEnv(): Promise<TestEnvHandle> {
     FILES_BUCKET,
     CF_ACCESS_TEAM_DOMAIN: "test.cloudflareaccess.com",
     CF_ACCESS_AUD: "test-aud",
-    STRIPE_PRICE_ID: "price_test",
-    OPENNODE_BTC_CHARGE_AMOUNT_USD: 3,
+    STRIPE_PRICE_ID_STANDARD: "price_test_standard",
+    STRIPE_PRICE_ID_PREMIUM: "price_test_premium",
+    OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD: 2,
+    OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM: 3,
     OPENNODE_BTC_DAYS_PER_CHARGE: 30,
     TURNSTILE_SECRET_KEY: "test-turnstile-secret",
     SESSION_SECRET: "test-session-secret-thats-long-enough-for-hs256-signing",
@@ -109,7 +111,8 @@ export async function insertTestAccount(
     id?: string;
     password?: string;
     recoveryCode?: string;
-    plan?: "free" | "paid";
+    // "paid"は3値化前の旧値。normalizeStoredPlan()の後方互換テスト専用。
+    plan?: "free" | "standard" | "premium" | "paid";
     planExpiresAt?: string | null;
     stripeCustomerId?: string | null;
     stripeSubscriptionId?: string | null;

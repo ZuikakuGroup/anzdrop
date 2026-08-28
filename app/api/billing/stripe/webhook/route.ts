@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
+import type { Plan } from "@/lib/plan";
 
 function unixSecondsToIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString();
@@ -14,6 +15,27 @@ function getSubscriptionPeriodEnd(
   subscription: Stripe.Subscription
 ): number | null {
   return subscription.items.data[0]?.current_period_end ?? null;
+}
+
+// SubscriptionのPrice IDから、どのプランかを判定する。metadataではなく実際の
+// Price IDを正とすることで、Stripeカスタマーポータル等で後からプランが変更
+// された場合にも自動追従できる。未知のPrice IDはnullを返し、呼び出し元で
+// 更新をスキップする(意図しないプラン活性化を防ぐ防御的な扱い)。
+function planFromSubscription(
+  subscription: Stripe.Subscription,
+  env: CloudflareEnv
+): Plan | null {
+  const priceId = subscription.items.data[0]?.price?.id;
+
+  if (priceId === env.STRIPE_PRICE_ID_STANDARD) {
+    return "standard";
+  }
+
+  if (priceId === env.STRIPE_PRICE_ID_PREMIUM) {
+    return "premium";
+  }
+
+  return null;
 }
 
 // 同一イベントの再送(Stripeはリトライしうる)による二重処理を防ぐ。
@@ -55,15 +77,16 @@ async function applyEvent(
         subscriptionId
       );
       const periodEnd = getSubscriptionPeriodEnd(subscription);
+      const plan = planFromSubscription(subscription, env);
 
-      if (!periodEnd) {
+      if (!periodEnd || !plan) {
         break;
       }
 
       await env.DB.prepare(
         `
         UPDATE accounts
-        SET plan = 'paid',
+        SET plan = ?,
             plan_expires_at = ?,
             stripe_customer_id = ?,
             stripe_subscription_id = ?
@@ -71,6 +94,7 @@ async function applyEvent(
       `
       )
         .bind(
+          plan,
           unixSecondsToIso(periodEnd),
           customerId,
           subscriptionId,
@@ -87,16 +111,17 @@ async function applyEvent(
         subscription.status === "active" ||
         subscription.status === "trialing";
       const periodEnd = getSubscriptionPeriodEnd(subscription);
+      const plan = planFromSubscription(subscription, env);
 
-      if (isActive && periodEnd) {
+      if (isActive && periodEnd && plan) {
         await env.DB.prepare(
           `
           UPDATE accounts
-          SET plan = 'paid', plan_expires_at = ?
+          SET plan = ?, plan_expires_at = ?
           WHERE stripe_subscription_id = ?
         `
         )
-          .bind(unixSecondsToIso(periodEnd), subscription.id)
+          .bind(plan, unixSecondsToIso(periodEnd), subscription.id)
           .run();
       }
 

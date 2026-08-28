@@ -76,10 +76,10 @@ describe("GET /api/account/me", () => {
     });
   });
 
-  it("returns the account's plan and expiry for a paid account (not just the free default)", async () => {
+  it("returns the account's plan and expiry for a premium account (not just the free default)", async () => {
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: future,
     });
     const cookie = await sessionCookieHeader(env, accountId);
@@ -101,9 +101,49 @@ describe("GET /api/account/me", () => {
     expect(body).toEqual({
       success: true,
       accountId,
+      plan: "premium",
+      planExpiresAt: future,
+    });
+  });
+
+  it("returns 'standard' for a standard-plan account", async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: future,
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const { GET } = await import("@/app/api/account/me/route");
+    const response = await GET(
+      new Request("http://localhost/api/account/me", {
+        headers: { cookie },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await readJson<{ plan: string }>(response);
+    expect(body.plan).toBe("standard");
+  });
+
+  it("returns 'premium' for a legacy 'paid' DB value (backward compatibility)", async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
       plan: "paid",
       planExpiresAt: future,
     });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const { GET } = await import("@/app/api/account/me/route");
+    const response = await GET(
+      new Request("http://localhost/api/account/me", {
+        headers: { cookie },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await readJson<{ plan: string }>(response);
+    expect(body.plan).toBe("premium");
   });
 
   it("returns 401 for a session cookie referencing a non-existent account", async () => {

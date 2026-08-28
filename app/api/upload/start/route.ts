@@ -12,6 +12,7 @@ import {
   getMaxFileSizeBytes,
   isPreviewAllowedForPlan,
   isRetentionAllowedForPlan,
+  isTurnstileRequiredForPlan,
 } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -98,13 +99,17 @@ export const POST = withApiHandler(
       // 新規共有の作成(=Bot悪用の主な標的)のみTurnstile検証を要求する。
       // 同一共有への追加ファイルは、この最初の検証を突破した際に発行された
       // uploadTokenの所持自体が既に正当性の証明になっているため再検証しない。
-      const turnstile = await requireTurnstile(
-        requestBody.turnstileToken,
-        env.TURNSTILE_SECRET_KEY
-      );
+      // Standard/Premiumはログイン済みアカウントであることが分かっているため、
+      // Turnstile検証自体をスキップする。
+      if (isTurnstileRequiredForPlan(plan)) {
+        const turnstile = await requireTurnstile(
+          requestBody.turnstileToken,
+          env.TURNSTILE_SECRET_KEY
+        );
 
-      if (!turnstile.ok) {
-        return turnstile.response;
+        if (!turnstile.ok) {
+          return turnstile.response;
+        }
       }
 
       shareId = generateShareId();

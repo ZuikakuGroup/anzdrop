@@ -73,6 +73,14 @@ function fakeEvent(id: string, type: string, data: unknown) {
   return { id, type, data: { object: data } };
 }
 
+function subscriptionWithPrice(priceId: string, periodEndUnix: number) {
+  return {
+    items: {
+      data: [{ current_period_end: periodEndUnix, price: { id: priceId } }],
+    },
+  };
+}
+
 async function getAccount(accountId: string) {
   return env.DB.prepare(
     `SELECT plan, plan_expires_at, stripe_customer_id, stripe_subscription_id FROM accounts WHERE id = ?`
@@ -102,7 +110,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(response.status).toBe(400);
   });
 
-  it("processes checkout.session.completed and activates the account's plan", async () => {
+  it("processes checkout.session.completed and activates the premium plan for the premium price id", async () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
@@ -113,21 +121,44 @@ describe("POST /api/billing/stripe/webhook", () => {
         subscription: "sub_new",
       })
     );
-    mockSubscriptionsRetrieve.mockResolvedValue({
-      items: { data: [{ current_period_end: periodEndUnix }] },
-    });
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
+    );
 
     const response = await postWebhook("{}");
 
     expect(response.status).toBe(200);
 
     const account = await getAccount(accountId);
-    expect(account?.plan).toBe("paid");
+    expect(account?.plan).toBe("premium");
     expect(account?.stripe_customer_id).toBe("cus_new");
     expect(account?.stripe_subscription_id).toBe("sub_new");
     expect(new Date(account!.plan_expires_at!).getTime()).toBe(
       periodEndUnix * 1000
     );
+  });
+
+  it("processes checkout.session.completed and activates the standard plan for the standard price id", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_1b", "checkout.session.completed", {
+        client_reference_id: accountId,
+        customer: "cus_std",
+        subscription: "sub_std",
+      })
+    );
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix)
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("standard");
   });
 
   it("does not modify any account when checkout.session.completed is missing required ids", async () => {
@@ -150,9 +181,32 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(account?.plan).toBe("free");
   });
 
+  it("does not modify the account when the subscription's price id is unrecognized (defensive)", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_unknown_price", "checkout.session.completed", {
+        client_reference_id: accountId,
+        customer: "cus_unknown",
+        subscription: "sub_unknown",
+      })
+    );
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionWithPrice("price_totally_unrelated", periodEndUnix)
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("free");
+    expect(account?.stripe_customer_id).toBeNull();
+  });
+
   it("processes customer.subscription.updated for an active subscription", async () => {
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       stripeSubscriptionId: "sub_existing",
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
@@ -161,7 +215,7 @@ describe("POST /api/billing/stripe/webhook", () => {
       fakeEvent("evt_3", "customer.subscription.updated", {
         id: "sub_existing",
         status: "active",
-        items: { data: [{ current_period_end: periodEndUnix }] },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
       })
     );
 
@@ -170,16 +224,63 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(response.status).toBe(200);
 
     const account = await getAccount(accountId);
-    expect(account?.plan).toBe("paid");
+    expect(account?.plan).toBe("premium");
     expect(new Date(account!.plan_expires_at!).getTime()).toBe(
       periodEndUnix * 1000
     );
   });
 
+  it("downgrades from premium to standard when the subscription's price changes to the standard price", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      stripeSubscriptionId: "sub_downgrade",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_downgrade", "customer.subscription.updated", {
+        id: "sub_downgrade",
+        status: "active",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
+      })
+    );
+
+    await postWebhook("{}");
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("standard");
+  });
+
+  it("does not update the account when customer.subscription.updated reports an unrecognized price id (defensive)", async () => {
+    const originalExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: originalExpiry,
+      stripeSubscriptionId: "sub_unknown_price",
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_unknown_price_update", "customer.subscription.updated", {
+        id: "sub_unknown_price",
+        status: "active",
+        ...subscriptionWithPrice(
+          "price_totally_unrelated",
+          Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+        ),
+      })
+    );
+
+    await postWebhook("{}");
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(originalExpiry);
+  });
+
   it("does not update the account when customer.subscription.updated reports a non-active status", async () => {
     const originalExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: originalExpiry,
       stripeSubscriptionId: "sub_canceling",
     });
@@ -188,20 +289,23 @@ describe("POST /api/billing/stripe/webhook", () => {
       fakeEvent("evt_4", "customer.subscription.updated", {
         id: "sub_canceling",
         status: "canceled",
-        items: { data: [{ current_period_end: Math.floor(Date.now() / 1000) }] },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          Math.floor(Date.now() / 1000)
+        ),
       })
     );
 
     await postWebhook("{}");
 
     const account = await getAccount(accountId);
-    expect(account?.plan).toBe("paid");
+    expect(account?.plan).toBe("premium");
     expect(account?.plan_expires_at).toBe(originalExpiry);
   });
 
   it("processes customer.subscription.deleted by clearing the subscription id and expiring the plan immediately", async () => {
     const { accountId } = await insertTestAccount(env, {
-      plan: "paid",
+      plan: "premium",
       planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       stripeSubscriptionId: "sub_deleted",
     });
@@ -249,9 +353,9 @@ describe("POST /api/billing/stripe/webhook", () => {
       subscription: "sub_dup",
     });
     mockConstructEventAsync.mockResolvedValue(event);
-    mockSubscriptionsRetrieve.mockResolvedValue({
-      items: { data: [{ current_period_end: periodEndUnix }] },
-    });
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
+    );
 
     const first = await postWebhook("{}");
     expect(first.status).toBe(200);
@@ -302,9 +406,9 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     // 2回目(Stripeからの再送を模したもの): 今度は成功する状況で、
     // 同じイベントIDでも正しく処理され、プランが反映されること。
-    mockSubscriptionsRetrieve.mockResolvedValue({
-      items: { data: [{ current_period_end: periodEndUnix }] },
-    });
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
+    );
 
     const retried = await postWebhook("{}");
     expect(retried.status).toBe(200);
@@ -312,7 +416,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(retriedBody.note).toBeUndefined();
 
     const accountAfterRetry = await getAccount(accountId);
-    expect(accountAfterRetry?.plan).toBe("paid");
+    expect(accountAfterRetry?.plan).toBe("premium");
     expect(accountAfterRetry?.stripe_customer_id).toBe("cus_retry");
   });
 });

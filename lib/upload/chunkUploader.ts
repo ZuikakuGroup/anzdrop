@@ -1,15 +1,15 @@
-const CHUNK_UPLOAD_CONCURRENCY = 8;
-
 // パート番号はR2のマルチパートアップロード上で順不同に受け付けられるため、
 // チャンクを並列アップロードして1ラウンドトリップあたりの待ち時間を隠す。
 // chunksは非同期ジェネレータ(暗号化が終わったチャンクから順に届く)で、
 // 呼び出し中の.next()はソース側で発行順に処理されるため、複数ワーカーが
 // 同時にnext()を呼んでも受け取る順序は暗号化された順序と一致する。
+// concurrencyはプラン別(lib/plan.tsのgetUploadConcurrencyForPlan)に呼び出し元が決める。
 export async function uploadChunksFromStream(
   chunks: AsyncGenerator<Uint8Array>,
   uploadSessionId: string,
   uploadToken: string,
   path: string,
+  concurrency: number,
   onChunkUploaded: () => void
 ): Promise<void> {
   let nextPartNumber = 1;
@@ -69,9 +69,7 @@ export async function uploadChunksFromStream(
     }
   };
 
-  await Promise.all(
-    Array.from({ length: CHUNK_UPLOAD_CONCURRENCY }, () => worker())
-  );
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
   if (firstError) {
     throw firstError;

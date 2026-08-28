@@ -10,13 +10,15 @@
   "vars": {
     "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",
     "CF_ACCESS_AUD": "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88",
-    // Stripeダッシュボードで作成する月額サブスクリプション用Priceのid。
+    // Stripeダッシュボードで作成する月額サブスクリプション用Price(プラン別)のid。
     // 実際の金額・課金サイクルはStripe側のPrice設定で決める(要ユーザー設定)。
-    "STRIPE_PRICE_ID": "price_REPLACE_ME",
-    // Bitcoin(OpenNode)の「期間チャージ」1回分の金額(USD)と、それが延長する日数。
+    "STRIPE_PRICE_ID_STANDARD": "price_1U912gRoVdcNVq9tWSz1luJb",
+    "STRIPE_PRICE_ID_PREMIUM": "price_1U912iRoVdcNVq9tfIzXTacc",
+    // Bitcoin(OpenNode)の「期間チャージ」1回分の金額(USD、プラン別)と、それが延長する日数。
     // Bitcoinは自動更新できないため、都度この金額を支払うと有効期限がこの日数分延びる。
-    // 月額¥500(非営利・コスト回収想定)に概ね合わせたUSD換算。
-    "OPENNODE_BTC_CHARGE_AMOUNT_USD": 3,
+    // 月額¥250(Standard)/¥450(Premium、非営利・コスト回収想定)に概ね合わせたUSD換算。
+    "OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD": 2,
+    "OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM": 3,
     "OPENNODE_BTC_DAYS_PER_CHARGE": 30
   },
 

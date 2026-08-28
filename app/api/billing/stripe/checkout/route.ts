@@ -2,7 +2,16 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
-import type { CheckoutResponse } from "@/app/api/billing/stripe/checkout/schema";
+import { parseJsonBody } from "@/lib/api/validate";
+import {
+  CheckoutRequestSchema,
+  type CheckoutResponse,
+} from "@/app/api/billing/stripe/checkout/schema";
+
+const STRIPE_PRICE_ID_BY_PLAN = {
+  standard: "STRIPE_PRICE_ID_STANDARD",
+  premium: "STRIPE_PRICE_ID_PREMIUM",
+} as const;
 
 export const POST = withApiHandler(
   "POST /api/billing/stripe/checkout",
@@ -16,6 +25,14 @@ export const POST = withApiHandler(
         { status: 401 }
       );
     }
+
+    const parsed = await parseJsonBody(request, CheckoutRequestSchema);
+
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+
+    const priceId = env[STRIPE_PRICE_ID_BY_PLAN[parsed.data.plan]];
 
     const account = await env.DB.prepare(
       `SELECT stripe_customer_id FROM accounts WHERE id = ? LIMIT 1`
@@ -40,11 +57,11 @@ export const POST = withApiHandler(
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "subscription",
-      line_items: [{ price: env.STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       customer: account.stripe_customer_id ?? undefined,
       client_reference_id: session.accountId,
       subscription_data: {
-        metadata: { accountId: session.accountId },
+        metadata: { accountId: session.accountId, plan: parsed.data.plan },
       },
       success_url: `${origin}/billing?checkout=success`,
       cancel_url: `${origin}/billing?checkout=cancelled`,
