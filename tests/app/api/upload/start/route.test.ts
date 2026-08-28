@@ -118,21 +118,29 @@ describe("POST /api/upload/start", () => {
     expect(invalid.status).toBe(400);
   });
 
-  it("returns 400 when fileSize is missing or non-positive", async () => {
-    const missing = await postStart({
+  it("returns 400 with a distinct message when fileSize is missing", async () => {
+    const response = await postStart({
       encryptedFileName: "file.enc",
       retention: "7d",
       turnstileToken: "tok",
     });
-    const zero = await postStart({
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("ファイルサイズが入力されていません");
+  });
+
+  it("returns 400 with a distinct message when fileSize is non-positive", async () => {
+    const response = await postStart({
       encryptedFileName: "file.enc",
       fileSize: 0,
       retention: "7d",
       turnstileToken: "tok",
     });
+    const body = (await response.json()) as { error?: string };
 
-    expect(missing.status).toBe(400);
-    expect(zero.status).toBe(400);
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("ファイルサイズは正の数で指定してください");
   });
 
   it("returns 400 when the free plan's max file size is exceeded", async () => {

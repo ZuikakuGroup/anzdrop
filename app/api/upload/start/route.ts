@@ -46,7 +46,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "File exceeds the maximum allowed size",
+          error: "ファイルサイズが上限を超えています",
         },
         {
           status: 400,
@@ -58,7 +58,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "This retention period requires a paid plan",
+          error: "この保存期間は有料プラン限定です",
         },
         {
           status: 403,

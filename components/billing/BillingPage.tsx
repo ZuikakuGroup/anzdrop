@@ -70,7 +70,7 @@ export default function BillingPage() {
       window.location.href = data.url;
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
       setIsLoadingAction(null);
@@ -96,7 +96,7 @@ export default function BillingPage() {
       window.location.href = data.hostedCheckoutUrl;
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
       setIsLoadingAction(null);

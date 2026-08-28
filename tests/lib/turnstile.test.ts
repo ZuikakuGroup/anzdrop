@@ -180,7 +180,7 @@ describe("requireTurnstile", () => {
     const body = await result.response.json();
     expect(body).toEqual({
       success: false,
-      error: "Turnstile verification failed",
+      error: "Turnstile検証に失敗しました",
     });
   });
 });

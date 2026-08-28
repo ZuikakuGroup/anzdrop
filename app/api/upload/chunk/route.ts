@@ -28,7 +28,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Missing headers",
+          error: "必要なヘッダーがありません",
         },
         { status: 400 }
       );
@@ -40,7 +40,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Invalid part number",
+          error: "パート番号が正しくありません",
         },
         { status: 400 }
       );
@@ -53,7 +53,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Empty body",
+          error: "リクエストボディが空です",
         },
         {
           status: 400,
@@ -68,7 +68,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Chunk exceeds maximum allowed size",
+          error: "チャンクサイズが上限を超えています",
         },
         {
           status: 413,
@@ -99,7 +99,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Upload session not found",
+          error: "アップロードセッションが見つかりません",
         },
         {
           status: 404,
@@ -118,7 +118,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Invalid uploadToken",
+          error: "アップロードトークンが正しくありません",
         },
         {
           status: 403,
@@ -140,7 +140,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Part number exceeds expected chunk count",
+          error: "パート番号が想定するチャンク数を超えています",
         },
         {
           status: 400,

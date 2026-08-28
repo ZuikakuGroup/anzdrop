@@ -237,7 +237,7 @@ describe("POST /api/account/recover", () => {
         response
       );
       expect(body.success).toBe(false);
-      expect(body.error).toBe("Internal server error");
+      expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
       forceContextError = false;
     }

@@ -33,11 +33,14 @@ export async function createCharge(params: {
       }),
     });
   } catch {
-    return { success: false, error: "Failed to reach OpenNode" };
+    return { success: false, error: "OpenNodeへの接続に失敗しました" };
   }
 
   if (!response.ok) {
-    return { success: false, error: `OpenNode returned HTTP ${response.status}` };
+    return {
+      success: false,
+      error: `OpenNodeからHTTP ${response.status}が返されました`,
+    };
   }
 
   const body = (await response.json()) as {
@@ -45,7 +48,7 @@ export async function createCharge(params: {
   };
 
   if (!body.data?.id || !body.data.hosted_checkout_url) {
-    return { success: false, error: "Unexpected OpenNode response" };
+    return { success: false, error: "OpenNodeから予期しない応答がありました" };
   }
 
   return {

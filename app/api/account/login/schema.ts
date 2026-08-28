@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { ApiResponse } from "@/lib/api/response";
 
 export const LoginRequestSchema = z.object({
-  accountId: z.string({ error: "Missing accountId or password" }),
-  password: z.string({ error: "Missing accountId or password" }),
+  accountId: z.string({ error: "アカウントIDまたはパスワードが入力されていません" }),
+  password: z.string({ error: "アカウントIDまたはパスワードが入力されていません" }),
   turnstileToken: z.string().optional(),
 });
 

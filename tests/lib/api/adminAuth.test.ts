@@ -35,7 +35,7 @@ describe("requireAdmin", () => {
     }
     expect(result.response.status).toBe(403);
     const body = await result.response.json();
-    expect(body).toEqual({ success: false, error: "Unauthorized" });
+    expect(body).toEqual({ success: false, error: "認証されていません" });
     expect(verifySameOrigin).not.toHaveBeenCalled();
   });
 
@@ -51,7 +51,7 @@ describe("requireAdmin", () => {
     }
     expect(result.response.status).toBe(403);
     const body = await result.response.json();
-    expect(body).toEqual({ success: false, error: "Invalid origin" });
+    expect(body).toEqual({ success: false, error: "不正なオリジンからのリクエストです" });
   });
 
   it("skips the Origin check when verifyOrigin:false is passed (read-only GET routes)", async () => {

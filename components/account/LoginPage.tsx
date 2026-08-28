@@ -54,7 +54,7 @@ export default function LoginPage() {
       window.location.href = "/mypage/billing";
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
       setIsSubmitting(false);
@@ -91,6 +91,10 @@ export default function LoginPage() {
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
+                  placeholder="yamada-taro"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
@@ -106,6 +110,7 @@ export default function LoginPage() {
                   id="login-password"
                   value={password}
                   onChange={setPassword}
+                  placeholder="パスワード"
                   autoComplete="current-password"
                   className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />

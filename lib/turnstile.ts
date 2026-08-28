@@ -74,7 +74,7 @@ export async function requireTurnstile(
     return {
       ok: false,
       response: Response.json(
-        { success: false, error: "Turnstile verification failed" },
+        { success: false, error: "Turnstile検証に失敗しました" },
         { status: 403 }
       ),
     };

@@ -3,7 +3,7 @@ import type { ApiResponse } from "@/lib/api/response";
 
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 200;
-const INVALID_REQUEST_ERROR = "Invalid request";
+const INVALID_REQUEST_ERROR = "リクエストの内容が正しくありません";
 
 export const RecoverRequestSchema = z.object({
   accountId: z.string({ error: INVALID_REQUEST_ERROR }),

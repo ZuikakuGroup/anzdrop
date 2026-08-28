@@ -170,7 +170,7 @@ describe("POST /api/account/login", () => {
         response
       );
       expect(body.success).toBe(false);
-      expect(body.error).toBe("Internal server error");
+      expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
       env.SESSION_SECRET = originalSecret;
     }

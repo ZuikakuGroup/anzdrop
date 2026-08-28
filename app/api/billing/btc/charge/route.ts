@@ -22,7 +22,7 @@ export const POST = withApiHandler(
 
     if (!session) {
       return Response.json(
-        { success: false, error: "Login required" },
+        { success: false, error: "ログインが必要です" },
         { status: 401 }
       );
     }

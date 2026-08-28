@@ -4,16 +4,16 @@ import { isRetention, type Retention } from "@/lib/retention";
 
 export const UploadStartRequestSchema = z.object({
   encryptedFileName: z
-    .string({ error: "Missing encryptedFileName" })
-    .min(1, { error: "Missing encryptedFileName" }),
+    .string({ error: "暗号化済みファイル名が入力されていません" })
+    .min(1, { error: "暗号化済みファイル名が入力されていません" }),
   retention: z
-    .string({ error: "Invalid retention" })
+    .string({ error: "保存期間の指定が正しくありません" })
     .refine((value): value is Retention => isRetention(value), {
-      error: "Invalid retention",
+      error: "保存期間の指定が正しくありません",
     }),
   fileSize: z
-    .number({ error: "Missing fileSize" })
-    .positive({ error: "Missing fileSize" }),
+    .number({ error: "ファイルサイズが入力されていません" })
+    .positive({ error: "ファイルサイズは正の数で指定してください" }),
   shareId: z.string().optional(),
   uploadToken: z.string().optional(),
   wrappedKey: z.string().optional(),

@@ -9,7 +9,7 @@ import {
   type LoginResponse,
 } from "@/app/api/account/login/schema";
 
-const INVALID_CREDENTIALS_ERROR = "Invalid account ID or password";
+const INVALID_CREDENTIALS_ERROR = "アカウントIDまたはパスワードが正しくありません";
 
 // アカウントIDを本人が自由に設定できるようになった結果、IDの予測不可能性に
 // 頼れなくなったため、失敗回数によるロックアウトで総当たりを防ぐ。

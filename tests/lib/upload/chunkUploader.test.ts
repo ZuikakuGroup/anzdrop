@@ -151,7 +151,7 @@ describe("uploadChunksFromStream", () => {
         8,
         () => {}
       )
-    ).rejects.toThrow("Unknown error");
+    ).rejects.toThrow("不明なエラー");
   });
 
   it("does not call the network when the stream yields no chunks", async () => {

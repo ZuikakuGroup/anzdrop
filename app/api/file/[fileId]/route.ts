@@ -61,7 +61,7 @@ export const GET = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "File not found",
+          error: "ファイルが見つかりません",
         },
         { status: 404 }
       );
@@ -81,7 +81,7 @@ export const GET = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Share not found",
+          error: "共有が見つかりません",
         },
         { status: 404 }
       );
@@ -117,7 +117,7 @@ export const GET = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "File not found",
+          error: "ファイルが見つかりません",
         },
         { status: 404 }
       );
@@ -129,7 +129,7 @@ export const GET = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "File data not found",
+          error: "ファイルデータが見つかりません",
         },
         { status: 404 }
       );

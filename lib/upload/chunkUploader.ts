@@ -26,7 +26,7 @@ export async function uploadChunksFromStream(
         firstError =
           unknownErr instanceof Error
             ? unknownErr
-            : new Error("Unknown error");
+            : new Error("不明なエラー");
         return;
       }
 
@@ -63,7 +63,7 @@ export async function uploadChunksFromStream(
         firstError =
           unknownErr instanceof Error
             ? unknownErr
-            : new Error("Unknown error");
+            : new Error("不明なエラー");
         return;
       }
     }

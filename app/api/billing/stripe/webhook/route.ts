@@ -160,7 +160,7 @@ export const POST = withApiHandler(
 
     if (!signature || !env.STRIPE_WEBHOOK_SECRET) {
       return Response.json(
-        { success: false, error: "Missing signature" },
+        { success: false, error: "署名がありません" },
         { status: 400 }
       );
     }
@@ -183,7 +183,7 @@ export const POST = withApiHandler(
       );
     } catch {
       return Response.json(
-        { success: false, error: "Invalid signature" },
+        { success: false, error: "署名が正しくありません" },
         { status: 400 }
       );
     }

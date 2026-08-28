@@ -12,7 +12,7 @@ export const GET = withApiHandler(
 
     if (!session) {
       return Response.json(
-        { success: false, error: "Not logged in" },
+        { success: false, error: "ログインしていません" },
         { status: 401 }
       );
     }

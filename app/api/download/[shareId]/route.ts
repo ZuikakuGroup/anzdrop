@@ -50,7 +50,7 @@ export const GET = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Share not found",
+          error: "共有が見つかりません",
         },
         { status: 404 }
       );

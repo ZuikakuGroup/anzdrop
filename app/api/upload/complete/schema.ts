@@ -3,8 +3,8 @@ import type { ApiResponse } from "@/lib/api/response";
 
 export const UploadCompleteRequestSchema = z.object({
   uploadSessionId: z
-    .string({ error: "Missing uploadSessionId" })
-    .min(1, { error: "Missing uploadSessionId" }),
+    .string({ error: "アップロードセッションIDが入力されていません" })
+    .min(1, { error: "アップロードセッションIDが入力されていません" }),
 });
 
 export type UploadCompleteRequest = z.infer<typeof UploadCompleteRequestSchema>;

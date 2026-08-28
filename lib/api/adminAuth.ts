@@ -25,7 +25,7 @@ export async function requireAdmin(
     return {
       ok: false,
       response: Response.json(
-        { success: false, error: "Unauthorized" },
+        { success: false, error: "認証されていません" },
         { status: 403 }
       ),
     };
@@ -35,7 +35,7 @@ export async function requireAdmin(
     return {
       ok: false,
       response: Response.json(
-        { success: false, error: "Invalid origin" },
+        { success: false, error: "不正なオリジンからのリクエストです" },
         { status: 403 }
       ),
     };
