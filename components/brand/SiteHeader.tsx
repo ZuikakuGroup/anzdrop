@@ -134,6 +134,8 @@ export default function SiteHeader() {
         <button
           onClick={() => setIsMobileMenuOpen((open) => !open)}
           aria-label={isMobileMenuOpen ? "メニューを閉じる" : "メニューを開く"}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="mobile-menu-panel"
           className="rounded p-1.5 text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
         >
           <MenuToggleIcon open={isMobileMenuOpen} className="h-5 w-5" />
@@ -141,6 +143,7 @@ export default function SiteHeader() {
       </div>
 
       <div
+        id="mobile-menu-panel"
         inert={!isMobileMenuOpen}
         className={`absolute left-0 right-0 top-full z-10 overflow-hidden border-b border-ink/10 bg-paper shadow-lg transition-[max-height] duration-300 ease-in-out md:hidden ${
           isMobileMenuOpen ? "max-h-[480px]" : "max-h-0"
