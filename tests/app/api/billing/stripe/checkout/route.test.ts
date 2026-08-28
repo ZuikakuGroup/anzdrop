@@ -186,7 +186,7 @@ describe("POST /api/billing/stripe/checkout", () => {
       response
     );
     expect(body.success).toBe(false);
-    expect(body.error).toBe("Internal server error");
+    expect(body.error).toBe("サーバー内部でエラーが発生しました");
     expect(body.error).not.toContain("stripe unreachable");
   });
 });

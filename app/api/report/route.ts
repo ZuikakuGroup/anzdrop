@@ -76,7 +76,7 @@ export const POST = withApiHandler(
 
     if (!shareId || !reason) {
       return Response.json(
-        { success: false, error: "Missing shareId or reason" },
+        { success: false, error: "共有IDまたは理由が入力されていません" },
         { status: 400 }
       );
     }
@@ -95,7 +95,7 @@ export const POST = withApiHandler(
         return Response.json(
           {
             success: false,
-            error: "Missing claimantName, contactEmail, or rightType",
+            error: "氏名・団体名、連絡先メールアドレス、権利の種類のいずれかが入力されていません",
           },
           { status: 400 }
         );
@@ -105,7 +105,7 @@ export const POST = withApiHandler(
         return Response.json(
           {
             success: false,
-            error: "Invalid contactEmail",
+            error: "連絡先メールアドレスの形式が正しくありません",
           },
           { status: 400 }
         );
@@ -123,7 +123,7 @@ export const POST = withApiHandler(
         return Response.json(
           {
             success: false,
-            error: "Missing or invalid category",
+            error: "通報の種類が正しく選択されていません",
           },
           { status: 400 }
         );

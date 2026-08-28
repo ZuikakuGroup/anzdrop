@@ -25,7 +25,7 @@ export async function verifyShareOwnership(
   uploadToken: string | undefined
 ): Promise<ShareOwnershipResult> {
   if (!uploadToken) {
-    return { ok: false, status: 400, error: "Missing uploadToken" };
+    return { ok: false, status: 400, error: "アップロードトークンが入力されていません" };
   }
 
   const share = await db
@@ -38,7 +38,7 @@ export async function verifyShareOwnership(
     .first<ShareRow>();
 
   if (!share) {
-    return { ok: false, status: 404, error: "Share not found" };
+    return { ok: false, status: 404, error: "共有が見つかりません" };
   }
 
   const tokenMatches =
@@ -49,15 +49,15 @@ export async function verifyShareOwnership(
     );
 
   if (!tokenMatches) {
-    return { ok: false, status: 403, error: "Invalid uploadToken" };
+    return { ok: false, status: 403, error: "アップロードトークンが正しくありません" };
   }
 
   if (new Date(share.expires_at) <= new Date()) {
-    return { ok: false, status: 410, error: "Share has expired" };
+    return { ok: false, status: 410, error: "共有の有効期限が切れています" };
   }
 
   if (share.suspended_at) {
-    return { ok: false, status: 403, error: "Share is suspended" };
+    return { ok: false, status: 403, error: "共有は一時停止中です" };
   }
 
   return {
@@ -79,11 +79,11 @@ export function checkShareAccessible(share: {
   suspendedAt: string | null;
 }): ShareAccessResult {
   if (new Date(share.expiresAt) <= new Date()) {
-    return { ok: false, status: 410, error: "Share has expired" };
+    return { ok: false, status: 410, error: "共有の有効期限が切れています" };
   }
 
   if (share.suspendedAt) {
-    return { ok: false, status: 403, error: "Share is suspended" };
+    return { ok: false, status: 403, error: "共有は一時停止中です" };
   }
 
   return { ok: true };

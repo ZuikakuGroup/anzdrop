@@ -34,7 +34,7 @@ describe("withApiHandler", () => {
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body).toEqual({ success: false, error: "Internal server error" });
+    expect(body).toEqual({ success: false, error: "サーバー内部でエラーが発生しました" });
   });
 
   it("logs the routeLabel and the original error via console.error", async () => {

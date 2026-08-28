@@ -26,7 +26,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 400,
-      error: "Missing uploadToken",
+      error: "アップロードトークンが入力されていません",
     });
     expect(prepare).not.toHaveBeenCalled();
   });
@@ -48,7 +48,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 404,
-      error: "Share not found",
+      error: "共有が見つかりません",
     });
   });
 
@@ -65,7 +65,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 403,
-      error: "Invalid uploadToken",
+      error: "アップロードトークンが正しくありません",
     });
   });
 
@@ -82,7 +82,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 403,
-      error: "Invalid uploadToken",
+      error: "アップロードトークンが正しくありません",
     });
   });
 
@@ -99,7 +99,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 410,
-      error: "Share has expired",
+      error: "共有の有効期限が切れています",
     });
   });
 
@@ -116,7 +116,7 @@ describe("verifyShareOwnership", () => {
     expect(result).toEqual({
       ok: false,
       status: 403,
-      error: "Share is suspended",
+      error: "共有は一時停止中です",
     });
   });
 
@@ -160,7 +160,7 @@ describe("checkShareAccessible", () => {
     expect(result).toEqual({
       ok: false,
       status: 410,
-      error: "Share has expired",
+      error: "共有の有効期限が切れています",
     });
   });
 
@@ -173,7 +173,7 @@ describe("checkShareAccessible", () => {
     expect(result).toEqual({
       ok: false,
       status: 403,
-      error: "Share is suspended",
+      error: "共有は一時停止中です",
     });
   });
 });

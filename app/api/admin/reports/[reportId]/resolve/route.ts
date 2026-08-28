@@ -32,7 +32,7 @@ export const POST = withApiHandler(
 
     if (!report) {
       return Response.json(
-        { success: false, error: "Report not found" },
+        { success: false, error: "通報が見つかりません" },
         { status: 404 }
       );
     }

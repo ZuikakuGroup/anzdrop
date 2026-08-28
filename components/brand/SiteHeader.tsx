@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import BrandHeader from "./BrandHeader";
+import { ChevronIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
 export default function SiteHeader() {
@@ -74,8 +75,13 @@ export default function SiteHeader() {
           <div ref={menuRef} className="relative">
             <button
               onClick={() => setIsMenuOpen((open) => !open)}
-              className="font-mono text-xs text-ink/60 transition-colors hover:text-ink"
+              className="flex items-center gap-1 rounded px-2 py-1.5 font-mono text-xs text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
             >
+              <ChevronIcon
+                className={`h-3 w-3 shrink-0 transition-transform duration-300 ${
+                  isMenuOpen ? "rotate-180" : ""
+                }`}
+              />
               {accountId}
             </button>
 

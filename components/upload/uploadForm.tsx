@@ -367,7 +367,7 @@ export default function UploadForm() {
       const error =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(error.message);
     } finally {

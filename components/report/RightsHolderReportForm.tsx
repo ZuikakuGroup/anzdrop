@@ -105,7 +105,7 @@ export default function RightsHolderReportForm({
       const err =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(err.message);
     } finally {

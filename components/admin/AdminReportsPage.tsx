@@ -55,7 +55,7 @@ export default function AdminReportsPage() {
       setError("");
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
@@ -81,7 +81,7 @@ export default function AdminReportsPage() {
           const err =
             unknownErr instanceof Error
               ? unknownErr
-              : new Error("Unknown error");
+              : new Error("不明なエラー");
 
           setError(err.message);
         }
@@ -121,7 +121,7 @@ export default function AdminReportsPage() {
       const err =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
@@ -146,7 +146,7 @@ export default function AdminReportsPage() {
       const err =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
@@ -169,7 +169,7 @@ export default function AdminReportsPage() {
       const err =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
@@ -195,7 +195,7 @@ export default function AdminReportsPage() {
       setLookedUpShareId(shareId);
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setLookupError(err.message);
       setLookupResult(null);
@@ -217,7 +217,7 @@ export default function AdminReportsPage() {
       setLookupResult(await fetchShareInfo(lookedUpShareId));
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setLookupError(err.message);
     } finally {
@@ -239,7 +239,7 @@ export default function AdminReportsPage() {
       setLookupResult(await fetchShareInfo(lookedUpShareId));
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setLookupError(err.message);
     } finally {
@@ -264,7 +264,7 @@ export default function AdminReportsPage() {
       const err =
         unknownErr instanceof Error
           ? unknownErr
-          : new Error("Unknown error");
+          : new Error("不明なエラー");
 
       setError(err.message);
     } finally {

@@ -2,6 +2,8 @@
 
 すべてのAPIは `app/api/**/route.ts` に実装されたNext.js App RouterのRoute Handlerで、Cloudflare Workers上で動作します。特記のない限り認証不要です。
 
+エラーレスポンスの `error` フィールドはクライアント側でそのまま表示されうるため、原則として日本語のメッセージを返す(zodスキーマの`{ error: "..." }`も含む)。
+
 各ルートの実装は以下の共通ヘルパーを利用し、定型的なエラーハンドリング・検証・認可チェックを重複させない構成になっています。
 
 - [`lib/api/handler.ts`](../lib/api/handler.ts) の `withApiHandler()`: try/catchと汎用500応答の共通化。

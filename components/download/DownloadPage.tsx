@@ -135,7 +135,7 @@ export default function DownloadPage({
             throw new FriendlyError(SUSPENDED_SHARE_MESSAGE);
           }
 
-          throw new Error(result.error ?? "Download failed");
+          throw new Error(result.error ?? "ダウンロードに失敗しました");
         }
 
         setPreviewAllowed(result.share.previewAllowed);

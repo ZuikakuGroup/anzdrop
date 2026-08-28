@@ -16,7 +16,7 @@ export async function parseJsonBody<Schema extends z.ZodType>(
   const result = schema.safeParse(json);
 
   if (!result.success) {
-    const message = result.error.issues[0]?.message ?? "Invalid request body";
+    const message = result.error.issues[0]?.message ?? "リクエストの内容が正しくありません";
     const responseBody: ApiResponse = { success: false, error: message };
 
     return { ok: false, response: Response.json(responseBody, { status: 400 }) };

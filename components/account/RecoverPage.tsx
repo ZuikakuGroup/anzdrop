@@ -61,7 +61,7 @@ export default function RecoverPage() {
       setNewRecoveryCode(data.recoveryCode);
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
     } finally {

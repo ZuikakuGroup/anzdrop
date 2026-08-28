@@ -70,7 +70,7 @@ export default function SignupPage() {
       setResult({ accountId: data.accountId, recoveryCode: data.recoveryCode });
     } catch (unknownErr) {
       const err =
-        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+        unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
@@ -171,11 +171,6 @@ export default function SignupPage() {
                   spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 font-mono text-base outline-none focus:border-brand sm:text-sm"
                 />
-                <p className="text-[11px] text-ink/40">
-                  半角英数字・ハイフン・アンダースコアで
-                  {MIN_ACCOUNT_ID_LENGTH}〜{MAX_ACCOUNT_ID_LENGTH}
-                  文字
-                </p>
               </div>
 
               <div className="space-y-1">
@@ -193,9 +188,6 @@ export default function SignupPage() {
                   autoComplete="new-password"
                   className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
-                <p className="text-[11px] text-ink/40">
-                  {MIN_PASSWORD_LENGTH}文字以上
-                </p>
               </div>
 
               {turnstileWidget}

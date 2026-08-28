@@ -13,7 +13,7 @@ import {
   type RecoverResponse,
 } from "@/app/api/account/recover/schema";
 
-const INVALID_RECOVERY_ERROR = "Invalid account ID or recovery code";
+const INVALID_RECOVERY_ERROR = "アカウントIDまたはリカバリーコードが正しくありません";
 
 export const POST = withApiHandler(
   "POST /api/account/recover",

@@ -25,7 +25,7 @@ export const POST = withApiHandler(
       typeof hashedOrder !== "string"
     ) {
       return Response.json(
-        { success: false, error: "Malformed payload" },
+        { success: false, error: "リクエストの形式が不正です" },
         { status: 400 }
       );
     }
@@ -38,7 +38,7 @@ export const POST = withApiHandler(
 
     if (!validSignature) {
       return Response.json(
-        { success: false, error: "Invalid signature" },
+        { success: false, error: "署名が正しくありません" },
         { status: 400 }
       );
     }

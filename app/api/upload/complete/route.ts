@@ -54,7 +54,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "Upload session not found",
+          error: "アップロードセッションが見つかりません",
         },
         { status: 404 }
       );
@@ -73,7 +73,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "No uploaded parts found",
+          error: "アップロード済みのパートが見つかりません",
         },
         { status: 400 }
       );
@@ -123,7 +123,7 @@ export const POST = withApiHandler(
       return Response.json(
         {
           success: false,
-          error: "File exceeds the maximum allowed size",
+          error: "ファイルサイズが上限を超えています",
         },
         { status: 413 }
       );

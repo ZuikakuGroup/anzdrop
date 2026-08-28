@@ -21,7 +21,7 @@ export const POST = withApiHandler(
 
     if (!session) {
       return Response.json(
-        { success: false, error: "Login required" },
+        { success: false, error: "ログインが必要です" },
         { status: 401 }
       );
     }
@@ -42,7 +42,7 @@ export const POST = withApiHandler(
 
     if (!account) {
       return Response.json(
-        { success: false, error: "Account not found" },
+        { success: false, error: "アカウントが見つかりません" },
         { status: 404 }
       );
     }
@@ -69,7 +69,7 @@ export const POST = withApiHandler(
 
     if (!checkoutSession.url) {
       return Response.json(
-        { success: false, error: "Failed to create checkout session" },
+        { success: false, error: "決済セッションの作成に失敗しました" },
         { status: 500 }
       );
     }

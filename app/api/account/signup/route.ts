@@ -59,7 +59,7 @@ export const POST = withApiHandler(
 
     if (result.meta.changes !== 1) {
       return Response.json(
-        { success: false, error: "Account ID is already taken" },
+        { success: false, error: "このアカウントIDは既に使用されています" },
         { status: 409 }
       );
     }
