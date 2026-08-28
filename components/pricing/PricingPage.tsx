@@ -56,7 +56,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center gap-2 text-ink/40">
                   <XIcon className="h-4 w-4 shrink-0 text-ink/30" />
-                  Turnstile認証なしで即アップロード開始
+                  Turnstile認証をスキップ
                 </li>
                 <li className="flex items-center gap-2 text-ink/40">
                   <XIcon className="h-4 w-4 shrink-0 text-ink/30" />
@@ -111,7 +111,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckIcon className="h-4 w-4 shrink-0 text-brand" />
-                  Turnstile認証なしで即アップロード開始
+                  Turnstile認証をスキップ
                 </li>
                 <li className="flex items-center gap-2 text-ink/40">
                   <XIcon className="h-4 w-4 shrink-0 text-ink/30" />
@@ -163,7 +163,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckIcon className="h-4 w-4 shrink-0 text-brand" />
-                  Turnstile認証なしで即アップロード開始
+                  Turnstile認証をスキップ
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckIcon className="h-4 w-4 shrink-0 text-brand" />
