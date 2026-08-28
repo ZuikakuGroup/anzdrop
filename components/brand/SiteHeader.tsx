@@ -2,8 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import BrandHeader from "./BrandHeader";
-import { ChevronIcon } from "./ShareIcons";
+import { ChevronIcon, MenuIcon, XIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
+
+const NAV_LINKS = [
+  { href: "/about", label: "Anzdropについて" },
+  { href: "/pricing", label: "料金プラン" },
+];
 
 export default function SiteHeader() {
   const [accountId, setAccountId] = useState<string | null>(null);
@@ -12,6 +17,7 @@ export default function SiteHeader() {
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,21 +62,24 @@ export default function SiteHeader() {
   };
 
   return (
-    <header className="flex h-16 shrink-0 items-center border-b border-ink/10 bg-paper px-6 sm:px-8">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b border-ink/10 bg-paper px-6 sm:px-8">
       <div className="flex flex-1 items-center">
         <BrandHeader />
       </div>
 
-      <nav className="flex flex-1 justify-center text-xs font-bold">
-        <a
-          href="/pricing"
-          className="text-ink/60 transition-colors hover:text-ink"
-        >
-          料金プラン
-        </a>
+      <nav className="hidden flex-1 justify-center gap-6 text-xs font-bold md:flex">
+        {NAV_LINKS.map((link) => (
+          <a
+            key={link.href}
+            href={link.href}
+            className="text-ink/60 transition-colors hover:text-ink"
+          >
+            {link.label}
+          </a>
+        ))}
       </nav>
 
-      <div className="flex flex-1 items-center justify-end gap-4">
+      <div className="hidden flex-1 items-center justify-end gap-4 md:flex">
         {isAuthChecked && (accountId ? (
           <div ref={menuRef} className="relative">
             <button
@@ -120,6 +129,71 @@ export default function SiteHeader() {
           </div>
         ))}
       </div>
+
+      <div className="flex flex-1 justify-end md:hidden">
+        <button
+          onClick={() => setIsMobileMenuOpen((open) => !open)}
+          aria-label={isMobileMenuOpen ? "メニューを閉じる" : "メニューを開く"}
+          className="rounded p-1.5 text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+        >
+          {isMobileMenuOpen ? (
+            <XIcon className="h-5 w-5" />
+          ) : (
+            <MenuIcon className="h-5 w-5" />
+          )}
+        </button>
+      </div>
+
+      {isMobileMenuOpen && (
+        <div className="absolute left-0 right-0 top-full z-10 space-y-4 border-b border-ink/10 bg-paper p-6 shadow-lg md:hidden">
+          <nav className="flex flex-col gap-3 text-sm font-bold">
+            {NAV_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-ink/70 transition-colors hover:text-ink"
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+
+          <div className="space-y-3 border-t border-ink/10 pt-4 text-sm font-bold">
+            {isAuthChecked && (accountId ? (
+              <>
+                <a
+                  href="/mypage/billing"
+                  className="block font-mono text-ink/70 transition-colors hover:text-ink"
+                >
+                  {accountId}
+                </a>
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="block text-left text-ink/70 transition-colors hover:text-ink disabled:opacity-40"
+                >
+                  ログアウト
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <a
+                  href="/mypage/login"
+                  className="text-ink/70 transition-colors hover:text-ink"
+                >
+                  ログイン
+                </a>
+                <a
+                  href="/mypage/signup"
+                  className="inline-block w-fit rounded bg-brand px-3 py-1.5 text-paper transition-colors hover:bg-brand/90"
+                >
+                  アカウント作成
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </header>
   );
 }
