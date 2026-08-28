@@ -9,11 +9,13 @@ import {
   formatDateTime,
   rightTypeLabel,
   shareStatusLabel,
+  type ShareInfo,
 } from "@/lib/admin/reportLabels";
 import {
   deleteReport as deleteReportRequest,
   deleteShare as deleteShareRequest,
   fetchReports,
+  fetchShareInfo,
   resolveReport as resolveReportRequest,
   toggleShareSuspend as toggleShareSuspendRequest,
   type AdminReport,
@@ -37,6 +39,14 @@ export default function AdminReportsPage() {
   const [togglingShareId, setTogglingShareId] = useState("");
   const [confirmingReportId, setConfirmingReportId] = useState("");
   const [deletingReportId, setDeletingReportId] = useState("");
+
+  const [lookupShareId, setLookupShareId] = useState("");
+  const [lookedUpShareId, setLookedUpShareId] = useState("");
+  const [lookupResult, setLookupResult] = useState<ShareInfo | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const [lookupError, setLookupError] = useState("");
+  const [lookupConfirmingDelete, setLookupConfirmingDelete] = useState(false);
+  const [lookupActionPending, setLookupActionPending] = useState(false);
 
   // クリックハンドラなどエフェクト外から呼ぶための、状態更新込みの再読み込み。
   const load = useCallback(async (targetStatus: StatusFilter) => {
@@ -167,6 +177,76 @@ export default function AdminReportsPage() {
     }
   };
 
+  const searchShare = async () => {
+    const shareId = lookupShareId.trim();
+
+    if (!shareId || isLookingUp) {
+      return;
+    }
+
+    setIsLookingUp(true);
+    setLookupError("");
+    setLookupConfirmingDelete(false);
+
+    try {
+      const info = await fetchShareInfo(shareId);
+
+      setLookupResult(info);
+      setLookedUpShareId(shareId);
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+
+      setLookupError(err.message);
+      setLookupResult(null);
+    } finally {
+      setIsLookingUp(false);
+    }
+  };
+
+  const lookupToggleSuspend = async (suspend: boolean) => {
+    if (lookupActionPending) {
+      return;
+    }
+
+    setLookupActionPending(true);
+    setLookupError("");
+
+    try {
+      await toggleShareSuspendRequest(lookedUpShareId, suspend);
+      setLookupResult(await fetchShareInfo(lookedUpShareId));
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+
+      setLookupError(err.message);
+    } finally {
+      setLookupActionPending(false);
+    }
+  };
+
+  const lookupDeleteShare = async () => {
+    if (lookupActionPending) {
+      return;
+    }
+
+    setLookupActionPending(true);
+    setLookupError("");
+
+    try {
+      await deleteShareRequest(lookedUpShareId);
+      setLookupConfirmingDelete(false);
+      setLookupResult(await fetchShareInfo(lookedUpShareId));
+    } catch (unknownErr) {
+      const err =
+        unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
+
+      setLookupError(err.message);
+    } finally {
+      setLookupActionPending(false);
+    }
+  };
+
   const confirmDeleteReport = async (reportId: string) => {
     if (deletingReportId) {
       return;
@@ -205,6 +285,99 @@ export default function AdminReportsPage() {
             <p className="text-xs text-ink/50">
               ユーザーから報告された共有を確認し、対応します
             </p>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-ink/10 bg-paper p-5">
+            <div className="space-y-1">
+              <h2 className="text-sm font-black">共有IDを直接操作する</h2>
+              <p className="text-xs text-ink/50">
+                通報の有無にかかわらず、共有IDを指定して一時停止・削除ができます
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={lookupShareId}
+                onChange={(event) => setLookupShareId(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    searchShare();
+                  }
+                }}
+                placeholder="共有ID"
+                className="w-full max-w-xs rounded border-2 border-ink/20 px-3 py-2 font-mono text-sm outline-none focus:border-brand"
+              />
+              <button
+                onClick={searchShare}
+                disabled={isLookingUp || !lookupShareId.trim()}
+                className="rounded border-2 border-ink/20 px-3 py-2 text-xs font-bold transition-colors hover:bg-ink/[0.06] disabled:opacity-40"
+              >
+                {isLookingUp ? "検索中..." : "検索"}
+              </button>
+            </div>
+
+            {lookupError && (
+              <p className="text-sm font-bold text-brand">{lookupError}</p>
+            )}
+
+            {lookupResult && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ink/10 p-3">
+                <div className="space-y-0.5">
+                  <p className="font-mono text-xs text-ink/50">
+                    共有ID: {lookedUpShareId}
+                  </p>
+                  <p className="text-xs text-ink/70">
+                    {shareStatusLabel(lookupResult)}
+                  </p>
+                </div>
+
+                {lookupResult.exists && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() =>
+                        lookupToggleSuspend(!lookupResult.suspended)
+                      }
+                      disabled={lookupActionPending}
+                      className="rounded border-2 border-ink/20 px-3 py-1.5 text-xs font-bold transition-colors hover:bg-ink/[0.06] disabled:opacity-40"
+                    >
+                      {lookupResult.suspended
+                        ? "一時停止を解除する"
+                        : "一時停止する"}
+                    </button>
+
+                    {lookupConfirmingDelete ? (
+                      <div className="flex items-center gap-2 rounded border-2 border-brand px-2 py-1">
+                        <span className="text-xs font-bold text-brand">
+                          本当に削除しますか？
+                        </span>
+                        <button
+                          onClick={lookupDeleteShare}
+                          disabled={lookupActionPending}
+                          className="rounded bg-brand px-2 py-1 text-xs font-bold text-paper transition-colors hover:bg-brand/90 disabled:opacity-40"
+                        >
+                          削除する
+                        </button>
+                        <button
+                          onClick={() => setLookupConfirmingDelete(false)}
+                          disabled={lookupActionPending}
+                          className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setLookupConfirmingDelete(true)}
+                        className="rounded border-2 border-brand px-3 py-1.5 text-xs font-bold text-brand transition-colors hover:bg-brand/10"
+                      >
+                        共有を削除する
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2">

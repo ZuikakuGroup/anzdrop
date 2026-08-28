@@ -251,6 +251,27 @@ describe("POST /api/report", () => {
     expect(reports[0].share_id).toBe("abc12345");
   });
 
+  it("strips the URL fragment (decryption key) from the shareId field before storing it", async () => {
+    stubTurnstileSuccess();
+    // ダウンロードURLはE2EE鍵をフラグメント(#以降)に含む。共有URLをそのまま
+    // shareIdフィールドに貼り付けても、鍵がDBに保存されてはならない。
+    const fakeKey = "A".repeat(43);
+
+    const response = await postReport({
+      shareId: `https://anzdrop.example.com/d/abc12345#${fakeKey}`,
+      reason: "spam content",
+      category: "spam",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(200);
+
+    const reports = await allReports();
+    expect(reports).toHaveLength(1);
+    expect(reports[0].share_id).toBe("abc12345");
+    expect(reports[0].share_id).not.toContain(fakeKey);
+  });
+
   it("truncates a reason longer than 1000 characters when storing it", async () => {
     stubTurnstileSuccess();
     // 43文字以上"a"が連続するとE2EE鍵っぽい文字列とみなされサニタイズで

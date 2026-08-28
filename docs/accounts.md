@@ -17,7 +17,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 - `/mypage/billing`は未ログインだと専用の案内は出さず、`GET /api/account/me`が`{ success: false }`(未ログイン時の401だけでなく、`withApiHandler`による予期しないエラー時の500応答も含む)を返した時点でクライアント側から`/mypage/login`へリダイレクトする(`components/billing/BillingPage.tsx`)。
 - 逆に`/mypage/login`・`/mypage/signup`はログイン済み(`GET /api/account/me`が成功)なら`/mypage/billing`へリダイレクトする(`lib/account/useRedirectIfLoggedIn.ts`)。行き先は暫定で、将来変更の可能性がある。
 - いずれもサーバー側でのリダイレクト(Server Component等)ではなく、マウント後に`GET /api/account/me`を呼んでクライアント側で判定する方式。判定が終わるまでは対象画面の代わりにスピナーを表示する。
-- 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントID(`/mypage/billing`へのリンク)とログアウトボタンを、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
+- 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントIDのプルダウン(クリックで「プラン・お支払い」〈`/mypage/billing`〉と「ログアウト」を表示)を、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
 
 ### ログインのロックアウト(総当たり対策)
 
@@ -53,6 +53,8 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 ### Bitcoin(OpenNode、「期間チャージ」方式)
 
 Bitcoinはカードのような自動引き落としができないため、「N日分の利用権を都度購入する」方式にしている。
+
+> **現在、OpenNode側の審査待ちのため、`/mypage/billing`の「ビットコインで支払う」ボタンは一時的にグレーアウトしている**(`components/billing/BillingPage.tsx`)。バックエンド(`POST /api/billing/btc/charge`・Webhook)自体は実装済みで、審査完了後にボタンの`disabled`を外すだけで有効化できる。
 
 - `POST /api/billing/btc/charge`はリクエストボディの`plan`(`"standard"`または`"premium"`)に応じた金額(`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`/`_PREMIUM`)でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする。どのプラン向けの支払いかは`btc_payments.plan`列に記録しておき、Webhook確定時に読み戻して`accounts.plan`へ反映する(OpenNodeのWebhook本文にはプラン種別の情報が含まれないため)。
 - OpenNodeのWebhook(`POST /api/billing/btc/webhook`)は`application/x-www-form-urlencoded`で届く(JSONではない)。署名検証は別のWebhookシークレットではなく、**charge作成に使ったAPIキー自体をHMAC鍵として使う**(`hashed_order = HMAC-SHA256(apiKey, chargeId)`、[`lib/opennode.ts`](../lib/opennode.ts))。

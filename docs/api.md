@@ -151,6 +151,10 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 通報を削除する。誤送信・スパム的な通報などを一覧から完全に取り除く用途。既に削除済みの通報に対しても冪等に成功扱い。対応済みにする(`resolve`)とは異なり、行自体をDBから削除する。
 
+### `GET /api/admin/shares/[shareId]`
+
+通報の有無にかかわらず、共有IDを直接指定して現況(`share.exists`/`share.expired`/`share.suspended`/`share.fileCount`)を取得する。`/admin`画面の「共有IDを直接操作する」欄から使う、読み取り専用ルートのためOrigin検証は行わない。
+
 ### `DELETE /api/admin/shares/[shareId]`
 
 共有をR2/D1から完全に削除する(`lib/cleanup.ts` の `deleteShare()` を利用)。既に削除済みの共有に対しても冪等に成功扱い。

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BrandHeader from "./BrandHeader";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
@@ -10,6 +10,8 @@ export default function SiteHeader() {
   // ちらつくのを防ぐため、確認が終わるまでどちらも表示しない。
   const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/account/me")
@@ -22,6 +24,21 @@ export default function SiteHeader() {
       .catch(() => {})
       .finally(() => setIsAuthChecked(true));
   }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
 
   const handleLogout = async () => {
     if (isLoggingOut) {
@@ -38,35 +55,47 @@ export default function SiteHeader() {
   };
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-ink/10 bg-paper px-6 sm:px-8">
-      <div className="flex items-center gap-6">
+    <header className="flex h-16 shrink-0 items-center border-b border-ink/10 bg-paper px-6 sm:px-8">
+      <div className="flex flex-1 items-center">
         <BrandHeader />
-        <nav className="text-xs font-bold">
-          <a
-            href="/pricing"
-            className="text-ink/60 transition-colors hover:text-ink"
-          >
-            料金プラン
-          </a>
-        </nav>
       </div>
 
-      <div className="flex items-center gap-4">
+      <nav className="flex flex-1 justify-center text-xs font-bold">
+        <a
+          href="/pricing"
+          className="text-ink/60 transition-colors hover:text-ink"
+        >
+          料金プラン
+        </a>
+      </nav>
+
+      <div className="flex flex-1 items-center justify-end gap-4">
         {isAuthChecked && (accountId ? (
-          <div className="flex items-center gap-2">
-            <a
-              href="/mypage/billing"
+          <div ref={menuRef} className="relative">
+            <button
+              onClick={() => setIsMenuOpen((open) => !open)}
               className="font-mono text-xs text-ink/60 transition-colors hover:text-ink"
             >
               {accountId}
-            </a>
-            <button
-              onClick={handleLogout}
-              disabled={isLoggingOut}
-              className="rounded border border-ink/20 px-2 py-1 text-[11px] font-bold text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-40"
-            >
-              ログアウト
             </button>
+
+            {isMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-40 rounded border border-ink/10 bg-paper py-1 shadow-lg">
+                <a
+                  href="/mypage/billing"
+                  className="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+                >
+                  プラン・お支払い
+                </a>
+                <button
+                  onClick={handleLogout}
+                  disabled={isLoggingOut}
+                  className="block w-full px-3 py-2 text-left text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-40"
+                >
+                  ログアウト
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 text-xs font-bold">
