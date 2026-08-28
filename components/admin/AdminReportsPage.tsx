@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
+import AdminNav from "@/components/admin/AdminNav";
 import {
   categoryLabel,
   formatDateTime,
@@ -278,6 +279,8 @@ export default function AdminReportsPage() {
 
       <main className="flex flex-1 justify-center p-4">
         <div className="w-full max-w-2xl space-y-6 py-8">
+          <AdminNav active="reports" />
+
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               通報の管理

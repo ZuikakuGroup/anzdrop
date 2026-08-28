@@ -14,6 +14,10 @@ export default function SiteFooter({ reportShareId }: SiteFooterProps) {
       <a href={reportHref} className="hover:text-ink/70 hover:underline">
         問題を報告
       </a>
+      <span aria-hidden="true">·</span>
+      <a href="/contact" className="hover:text-ink/70 hover:underline">
+        お問い合わせ
+      </a>
     </footer>
   );
 }

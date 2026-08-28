@@ -91,6 +91,7 @@ const ALL_TABLES = [
   "uploads",
   "files",
   "reports",
+  "contacts",
   "shares",
   "btc_payments",
   "stripe_events",
