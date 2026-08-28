@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -11,6 +12,7 @@ import PasswordInput from "@/components/brand/PasswordInput";
 import type { LoginResponse } from "@/app/api/account/login/schema";
 
 export default function LoginPage() {
+  const router = useRouter();
   const canRenderForm = useRedirectIfLoggedIn("/mypage/billing");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
@@ -51,7 +53,7 @@ export default function LoginPage() {
         throw new Error(!data.success ? data.error : "ログインに失敗しました。");
       }
 
-      window.location.href = "/mypage/billing";
+      router.push("/mypage/billing");
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
