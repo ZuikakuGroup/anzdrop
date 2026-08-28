@@ -41,6 +41,7 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
 | `/mypage/billing`(`app/mypage/billing/page.tsx`) | プラン確認・Stripe/Bitcoin決済導線 |
 | `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは未実装で「近日公開」表示のみ(実装はIssue #5でトラッキング) |
+| `/about`(`app/about/page.tsx`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
 
 API側の詳細は [`api.md`](./api.md) を参照。
 
