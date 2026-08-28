@@ -15,10 +15,8 @@ const ENV = {
   CF_ACCESS_AUD: "test-aud",
 } as unknown as CloudflareEnv;
 
-function requestWith(headers: Record<string, string>): Request {
-  return new Request("https://example.com/api/admin/reports", {
-    headers,
-  });
+function headersWith(headers: Record<string, string>): Headers {
+  return new Headers(headers);
 }
 
 describe("verifyAccessJwt", () => {
@@ -28,7 +26,7 @@ describe("verifyAccessJwt", () => {
   });
 
   it("returns null without calling jose when the header/cookie is missing", async () => {
-    const result = await verifyAccessJwt(requestWith({}), ENV);
+    const result = await verifyAccessJwt(headersWith({}), ENV);
 
     expect(result).toBeNull();
     expect(jwtVerify).not.toHaveBeenCalled();
@@ -36,9 +34,9 @@ describe("verifyAccessJwt", () => {
   });
 
   it("returns null without calling jose when the required env vars are missing", async () => {
-    const request = requestWith({ "Cf-Access-Jwt-Assertion": "some-token" });
+    const headers = headersWith({ "Cf-Access-Jwt-Assertion": "some-token" });
 
-    const result = await verifyAccessJwt(request, {} as unknown as CloudflareEnv);
+    const result = await verifyAccessJwt(headers, {} as unknown as CloudflareEnv);
 
     expect(result).toBeNull();
     expect(jwtVerify).not.toHaveBeenCalled();
@@ -49,9 +47,9 @@ describe("verifyAccessJwt", () => {
       payload: { email: "admin@example.com" },
     });
 
-    const request = requestWith({ "Cf-Access-Jwt-Assertion": "valid-token" });
+    const headers = headersWith({ "Cf-Access-Jwt-Assertion": "valid-token" });
 
-    const result = await verifyAccessJwt(request, ENV);
+    const result = await verifyAccessJwt(headers, ENV);
 
     expect(result).toEqual({ email: "admin@example.com" });
     expect(jwtVerify).toHaveBeenCalledWith(
@@ -72,11 +70,11 @@ describe("verifyAccessJwt", () => {
       payload: { email: "admin@example.com" },
     });
 
-    const request = requestWith({
+    const headers = headersWith({
       cookie: "other=1; CF_Authorization=cookie-token; another=2",
     });
 
-    const result = await verifyAccessJwt(request, ENV);
+    const result = await verifyAccessJwt(headers, ENV);
 
     expect(result).toEqual({ email: "admin@example.com" });
     expect(jwtVerify).toHaveBeenCalledWith(
@@ -89,9 +87,9 @@ describe("verifyAccessJwt", () => {
   it("returns null when the token fails verification (invalid/expired)", async () => {
     jwtVerify.mockRejectedValueOnce(new Error("signature verification failed"));
 
-    const request = requestWith({ "Cf-Access-Jwt-Assertion": "bad-token" });
+    const headers = headersWith({ "Cf-Access-Jwt-Assertion": "bad-token" });
 
-    const result = await verifyAccessJwt(request, ENV);
+    const result = await verifyAccessJwt(headers, ENV);
 
     expect(result).toBeNull();
   });
@@ -99,9 +97,9 @@ describe("verifyAccessJwt", () => {
   it("returns null when the verified payload has no email claim", async () => {
     jwtVerify.mockResolvedValueOnce({ payload: {} });
 
-    const request = requestWith({ "Cf-Access-Jwt-Assertion": "valid-token" });
+    const headers = headersWith({ "Cf-Access-Jwt-Assertion": "valid-token" });
 
-    const result = await verifyAccessJwt(request, ENV);
+    const result = await verifyAccessJwt(headers, ENV);
 
     expect(result).toBeNull();
   });

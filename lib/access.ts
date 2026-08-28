@@ -32,12 +32,12 @@ function getJwks(teamDomain: string): ReturnType<typeof createRemoteJWKSet> {
 // 拒否できるようにする多層防御。あくまで補助であり、主たる関門は
 // Cloudflare Access自体(Zero Trustダッシュボード側の設定)。
 export async function verifyAccessJwt(
-  request: Request,
+  headers: Headers,
   env: CloudflareEnv
 ): Promise<AccessIdentity | null> {
   const token =
-    request.headers.get(ACCESS_JWT_HEADER) ??
-    extractCookie(request.headers.get("cookie"), ACCESS_JWT_COOKIE);
+    headers.get(ACCESS_JWT_HEADER) ??
+    extractCookie(headers.get("cookie"), ACCESS_JWT_COOKIE);
 
   if (!token) {
     return null;

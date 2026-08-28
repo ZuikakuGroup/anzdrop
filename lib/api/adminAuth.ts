@@ -19,7 +19,7 @@ export async function requireAdmin(
 ): Promise<AdminAuthResult> {
   const { verifyOrigin = true } = options;
 
-  const identity = await verifyAccessJwt(request, env);
+  const identity = await verifyAccessJwt(request.headers, env);
 
   if (!identity) {
     return {
