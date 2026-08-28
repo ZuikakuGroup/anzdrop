@@ -38,8 +38,8 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
 | `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
-| `/signup`・`/login`・`/account/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
-| `/billing`(`app/billing/page.tsx`) | プラン確認・Stripe/Bitcoin決済導線 |
+| `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
+| `/mypage/billing`(`app/mypage/billing/page.tsx`) | プラン確認・Stripe/Bitcoin決済導線 |
 | `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは未実装で「近日公開」表示のみ(実装はIssue #5でトラッキング) |
 
 API側の詳細は [`api.md`](./api.md) を参照。

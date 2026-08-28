@@ -18,7 +18,7 @@ import type { SignupResponse } from "@/app/api/account/signup/schema";
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
-  const canRenderForm = useRedirectIfLoggedIn("/billing");
+  const canRenderForm = useRedirectIfLoggedIn("/mypage/billing");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -145,7 +145,7 @@ export default function SignupPage() {
               </button>
 
               <a
-                href="/login"
+                href="/mypage/login"
                 className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
               >
                 ログインへ進む
@@ -214,7 +214,7 @@ export default function SignupPage() {
 
               <p className="text-center text-xs text-ink/50">
                 すでにアカウントをお持ちの場合は{" "}
-                <a href="/login" className="font-bold text-brand hover:underline">
+                <a href="/mypage/login" className="font-bold text-brand hover:underline">
                   ログイン
                 </a>
               </p>
