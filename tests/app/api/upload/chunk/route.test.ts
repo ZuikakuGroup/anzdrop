@@ -178,6 +178,29 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(413);
   });
 
+  it("rejects a non-first part larger than the packed chunk size, even within the leading file-salt allowance (the salt is only ever on part 1)", async () => {
+    // partNumber 2を有効な範囲にするため、declaredFileSizeを大きめにする。
+    const { uploadSessionId, uploadToken } = await startUpload(
+      16 * 1024 * 1024
+    );
+
+    // part 1の上限(PACKED_CHUNK_SIZE + FILE_SALT_LENGTH)には収まるが、
+    // part 2以降に許されるPACKED_CHUNK_SIZEは超えているサイズ。
+    const oversizedForNonFirstPart = new Uint8Array(
+      8 * 1024 * 1024 + 12 + 16 + 1
+    );
+    const response = await postChunk(
+      {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "2",
+        "Anzdrop-Upload-Token": uploadToken,
+      },
+      oversizedForNonFirstPart
+    );
+
+    expect(response.status).toBe(413);
+  });
+
   it("stores the uploaded part with its part number and etag", async () => {
     const { uploadSessionId, uploadToken } = await startUpload();
 
