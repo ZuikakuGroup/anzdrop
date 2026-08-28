@@ -95,7 +95,7 @@ export default function RecoverPage() {
                 </p>
               </div>
               <a
-                href="/login"
+                href="/mypage/login"
                 className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
               >
                 ログインへ進む

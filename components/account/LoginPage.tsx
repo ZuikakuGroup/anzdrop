@@ -11,7 +11,7 @@ import PasswordInput from "@/components/brand/PasswordInput";
 import type { LoginResponse } from "@/app/api/account/login/schema";
 
 export default function LoginPage() {
-  const canRenderForm = useRedirectIfLoggedIn("/billing");
+  const canRenderForm = useRedirectIfLoggedIn("/mypage/billing");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +51,7 @@ export default function LoginPage() {
         throw new Error(!data.success ? data.error : "ログインに失敗しました。");
       }
 
-      window.location.href = "/billing";
+      window.location.href = "/mypage/billing";
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("Unknown error");
@@ -128,13 +128,13 @@ export default function LoginPage() {
 
               <div className="flex justify-between text-xs text-ink/50">
                 <a
-                  href="/signup"
+                  href="/mypage/signup"
                   className="font-bold text-brand hover:underline"
                 >
                   アカウント作成
                 </a>
                 <a
-                  href="/account/recover"
+                  href="/mypage/recover"
                   className="font-bold text-brand hover:underline"
                 >
                   パスワードを忘れた
