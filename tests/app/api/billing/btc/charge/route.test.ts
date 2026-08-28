@@ -175,6 +175,9 @@ describe("POST /api/billing/btc/charge", () => {
     expect(requestBody.callback_url).toBe(
       "http://localhost/api/billing/btc/webhook"
     );
+    expect(requestBody.success_url).toBe(
+      "http://localhost/mypage/billing?checkout=success"
+    );
   });
 
   it("sends the premium USD amount when plan=premium", async () => {

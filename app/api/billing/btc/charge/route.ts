@@ -46,7 +46,7 @@ export const POST = withApiHandler(
       orderId: paymentId,
       description: `Anzdrop ${PLAN_LABELS[plan]} (${env.OPENNODE_BTC_DAYS_PER_CHARGE} days)`,
       callbackUrl: `${origin}/api/billing/btc/webhook`,
-      successUrl: `${origin}/billing?checkout=success`,
+      successUrl: `${origin}/mypage/billing?checkout=success`,
       apiKey: env.OPENNODE_API_KEY,
     });
 

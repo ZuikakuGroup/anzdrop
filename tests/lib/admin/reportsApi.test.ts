@@ -3,6 +3,7 @@ import {
   deleteReport,
   deleteShare,
   fetchReports,
+  fetchShareInfo,
   resolveReport,
   toggleShareSuspend,
   type AdminReport,
@@ -173,6 +174,56 @@ describe("toggleShareSuspend", () => {
     await expect(toggleShareSuspend("s1", true)).rejects.toThrow(
       "更新に失敗しました。"
     );
+  });
+});
+
+describe("fetchShareInfo", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("GETs the share endpoint and returns the share info on success", async () => {
+    const share = { exists: true, expired: false, suspended: false, fileCount: 3 };
+    const fetchSpy = vi.fn(async (url: string) => {
+      expect(url).toBe("/api/admin/shares/s1");
+      return jsonResponse({ success: true, share });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(fetchShareInfo("s1")).resolves.toEqual(share);
+  });
+
+  it("URL-encodes the shareId", async () => {
+    const fetchSpy = vi.fn(async (url: string) => {
+      expect(url).toBe("/api/admin/shares/a%2Fb");
+      return jsonResponse({
+        success: true,
+        share: { exists: false, expired: false, suspended: false, fileCount: 0 },
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await fetchShareInfo("a/b");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws the server's error message when the request fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: false, error: "Unauthorized" }, 403))
+    );
+
+    await expect(fetchShareInfo("s1")).rejects.toThrow("Unauthorized");
+  });
+
+  it("throws a generic fallback message when the server omits an error message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ success: false }, 500))
+    );
+
+    await expect(fetchShareInfo("s1")).rejects.toThrow("読み込みに失敗しました。");
   });
 });
 

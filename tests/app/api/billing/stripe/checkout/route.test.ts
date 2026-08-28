@@ -117,6 +117,8 @@ describe("POST /api/billing/stripe/checkout", () => {
           metadata: { accountId, plan: "standard" },
         },
         customer: undefined,
+        success_url: "http://localhost/mypage/billing?checkout=success",
+        cancel_url: "http://localhost/mypage/billing?checkout=cancelled",
       })
     );
   });

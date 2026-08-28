@@ -60,6 +60,14 @@ async function deleteShareRoute(
   );
 }
 
+async function getShareRoute(shareId: string): Promise<Response> {
+  const { GET } = await import("@/app/api/admin/shares/[shareId]/route");
+
+  return GET(new Request(`http://localhost/api/admin/shares/${shareId}`), {
+    params: Promise.resolve({ shareId }),
+  });
+}
+
 async function insertShare(id: string) {
   await env.DB.prepare(
     `INSERT INTO shares (id, created_at, expires_at) VALUES (?, ?, ?)`
@@ -205,5 +213,90 @@ describe("DELETE /api/admin/shares/[shareId]", () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
+  });
+});
+
+describe("GET /api/admin/shares/[shareId]", () => {
+  it("returns 403 when the caller is not an authorized admin", async () => {
+    vi.mocked(verifyAccessJwt).mockResolvedValue(null);
+
+    const response = await getShareRoute("share-1");
+
+    expect(response.status).toBe(403);
+  });
+
+  it("returns exists: false for a shareId with no matching share", async () => {
+    authorize();
+
+    const response = await getShareRoute("no-such-share");
+    const body = (await response.json()) as {
+      success: boolean;
+      share: { exists: boolean; expired: boolean; suspended: boolean; fileCount: number };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.share).toEqual({
+      exists: false,
+      expired: false,
+      suspended: false,
+      fileCount: 0,
+    });
+  });
+
+  it("reports an existing, non-suspended share with its file count", async () => {
+    authorize();
+    const shareId = "share-active";
+    await insertShare(shareId);
+    await insertFile(shareId, `files/${shareId}/file-1`);
+    await insertFile(shareId, `files/${shareId}/file-2`);
+
+    const response = await getShareRoute(shareId);
+    const body = (await response.json()) as {
+      share: { exists: boolean; expired: boolean; suspended: boolean; fileCount: number };
+    };
+
+    expect(body.share).toEqual({
+      exists: true,
+      expired: false,
+      suspended: false,
+      fileCount: 2,
+    });
+  });
+
+  it("reports a suspended share as suspended", async () => {
+    authorize();
+    const shareId = "share-suspended";
+    await insertShare(shareId);
+    await env.DB.prepare(`UPDATE shares SET suspended_at = ? WHERE id = ?`)
+      .bind(new Date().toISOString(), shareId)
+      .run();
+
+    const response = await getShareRoute(shareId);
+    const body = (await response.json()) as {
+      share: { suspended: boolean };
+    };
+
+    expect(body.share.suspended).toBe(true);
+  });
+
+  it("reports an expired share as expired", async () => {
+    authorize();
+    const shareId = "share-expired";
+    await env.DB.prepare(
+      `INSERT INTO shares (id, created_at, expires_at) VALUES (?, ?, ?)`
+    )
+      .bind(
+        shareId,
+        new Date(Date.now() - 120_000).toISOString(),
+        new Date(Date.now() - 60_000).toISOString()
+      )
+      .run();
+
+    const response = await getShareRoute(shareId);
+    const body = (await response.json()) as {
+      share: { expired: boolean };
+    };
+
+    expect(body.share.expired).toBe(true);
   });
 });

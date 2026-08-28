@@ -63,8 +63,8 @@ export const POST = withApiHandler(
       subscription_data: {
         metadata: { accountId: session.accountId, plan: parsed.data.plan },
       },
-      success_url: `${origin}/billing?checkout=success`,
-      cancel_url: `${origin}/billing?checkout=cancelled`,
+      success_url: `${origin}/mypage/billing?checkout=success`,
+      cancel_url: `${origin}/mypage/billing?checkout=cancelled`,
     });
 
     if (!checkoutSession.url) {

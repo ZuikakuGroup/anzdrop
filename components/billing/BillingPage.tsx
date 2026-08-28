@@ -182,17 +182,14 @@ export default function BillingPage() {
 
                 <button
                   onClick={startBtcCharge}
-                  disabled={isLoadingAction !== null}
+                  disabled
                   className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3.5 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
                 >
-                  {isLoadingAction === "btc" && (
-                    <Spinner className="h-4 w-4 text-ink" />
-                  )}
-                  ビットコインで支払う
+                  ビットコインで支払う(準備中)
                 </button>
 
                 <p className="text-center text-xs text-ink/50">
-                  ビットコイン決済は自動更新されません。期限が来たら都度お支払いください。
+                  ビットコイン決済は現在準備中のため、しばらくお待ちください。
                 </p>
               </div>
 

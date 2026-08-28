@@ -77,6 +77,23 @@ export async function toggleShareSuspend(
   }
 }
 
+type ShareInfoResponse = {
+  success: boolean;
+  share?: ShareInfo;
+  error?: string;
+};
+
+export async function fetchShareInfo(shareId: string): Promise<ShareInfo> {
+  const response = await fetch(`/api/admin/shares/${encodeURIComponent(shareId)}`);
+  const result: ShareInfoResponse = await response.json();
+
+  if (!response.ok || !result.success || !result.share) {
+    throw new Error(result.error ?? "読み込みに失敗しました。");
+  }
+
+  return result.share;
+}
+
 export async function deleteReport(reportId: string): Promise<void> {
   const response = await fetch(`/api/admin/reports/${reportId}`, {
     method: "DELETE",
