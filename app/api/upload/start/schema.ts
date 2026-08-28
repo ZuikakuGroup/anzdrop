@@ -13,7 +13,7 @@ export const UploadStartRequestSchema = z.object({
     }),
   fileSize: z
     .number({ error: "ファイルサイズが入力されていません" })
-    .positive({ error: "ファイルサイズが入力されていません" }),
+    .positive({ error: "ファイルサイズは正の数で指定してください" }),
   shareId: z.string().optional(),
   uploadToken: z.string().optional(),
   wrappedKey: z.string().optional(),
