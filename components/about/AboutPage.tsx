@@ -72,7 +72,7 @@ export default function AboutPage() {
               className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 text-brand/10"
             />
             <h1 className="relative text-2xl font-black leading-snug tracking-normal sm:text-3xl">
-              Anzdropについて
+              Anzdropとは
             </h1>
             <p className="relative max-w-md text-sm leading-relaxed text-ink/60">
               アカウントIDとパスワードだけで、必要な分だけご利用いただけます。

@@ -6,7 +6,7 @@ import { ChevronIcon, MenuIcon, XIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
 const NAV_LINKS = [
-  { href: "/about", label: "Anzdropについて" },
+  { href: "/about", label: "Anzdropとは" },
   { href: "/pricing", label: "料金プラン" },
 ];
 
