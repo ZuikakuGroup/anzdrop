@@ -2,12 +2,15 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
 
 # mainへのpushはdeploy.ymlが同じチェックを行うため、ここではpull_requestのみで
 # トリガーする(以前はpushにも反応していたが、PRを開いた直後はpushイベントと
 # pull_requestイベントが同じコミットに対して両方発火し、後発のイベントが前の
 # 実行をキャンセルすることでPRのチェック一覧に紛らわしい失敗表示が残っていた)。
 # 同一PRへの連続pushでの二重実行を避けるため、concurrencyは維持する。
+# merge_groupはMerge Queueが作る一時ブランチに対するイベントで、これが無いと
+# 必須ステータスチェックがそのブランチ上で永久に報告されずキューが進まない。
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
