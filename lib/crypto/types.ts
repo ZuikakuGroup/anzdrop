@@ -10,6 +10,11 @@ export const PBKDF2_ITERATIONS = 600_000;
 
 export const GCM_TAG_LENGTH = 16;
 
+// ファイルごとに1回だけ生成する、AAD用のランダムなsalt長。秘匿する必要は
+// なく(暗号文の先頭に平文のまま埋め込む)、同じ鍵を使い回す共有内の
+// 別ファイルとのチャンク差し替えを検知できるようにするためのもの。
+export const FILE_SALT_LENGTH = 16;
+
 // IV + 暗号文(平文と同サイズ) + GCMタグ、を1パケットとしたときの最大サイズ
 export const PACKED_CHUNK_SIZE = CHUNK_SIZE + IV_LENGTH + GCM_TAG_LENGTH;
 

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { getPlaintextSizeFromCiphertextSize, packChunk, unpackChunk } from "@/lib/crypto/packet";
 import { encryptChunk } from "@/lib/crypto/encrypt";
 import { generateKey } from "@/lib/crypto/key";
+import { iterateEncryptedChunks } from "@/lib/crypto/stream";
 import {
   CHUNK_SIZE,
+  FILE_SALT_LENGTH,
   GCM_TAG_LENGTH,
   IV_LENGTH,
   PACKED_CHUNK_SIZE,
@@ -102,20 +104,26 @@ describe("packChunk / unpackChunk", () => {
 
 describe("getPlaintextSizeFromCiphertextSize", () => {
   const OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH;
+  // iterateEncryptedChunksがアップロードするオブジェクトは、先頭に
+  // FILE_SALT_LENGTHバイトのファイルsaltを含む(このヘルパーはそれを
+  // 加味した想定ciphertextSizeを組み立てる)。
+  const withSalt = (size: number) => size + FILE_SALT_LENGTH;
 
   it("recovers the plaintext size for a single small packet", () => {
-    expect(getPlaintextSizeFromCiphertextSize(37 + OVERHEAD)).toBe(37);
+    expect(getPlaintextSizeFromCiphertextSize(withSalt(37 + OVERHEAD))).toBe(
+      37
+    );
   });
 
   it("recovers the plaintext size for exactly one full CHUNK_SIZE packet (no trailing remainder)", () => {
-    expect(getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE)).toBe(
-      CHUNK_SIZE
-    );
+    expect(
+      getPlaintextSizeFromCiphertextSize(withSalt(PACKED_CHUNK_SIZE))
+    ).toBe(CHUNK_SIZE);
   });
 
   it("recovers the plaintext size across a CHUNK_SIZE boundary (full chunk + partial trailing chunk)", () => {
     const remainder = 12345;
-    const ciphertextSize = PACKED_CHUNK_SIZE + remainder + OVERHEAD;
+    const ciphertextSize = withSalt(PACKED_CHUNK_SIZE + remainder + OVERHEAD);
 
     expect(getPlaintextSizeFromCiphertextSize(ciphertextSize)).toBe(
       CHUNK_SIZE + remainder
@@ -123,27 +131,55 @@ describe("getPlaintextSizeFromCiphertextSize", () => {
   });
 
   it("recovers the plaintext size for exactly two full CHUNK_SIZE packets (no trailing remainder)", () => {
-    expect(getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE * 2)).toBe(
-      CHUNK_SIZE * 2
-    );
+    expect(
+      getPlaintextSizeFromCiphertextSize(withSalt(PACKED_CHUNK_SIZE * 2))
+    ).toBe(CHUNK_SIZE * 2);
+  });
+
+  it("throws for a ciphertext size smaller than the leading file-salt itself (corrupted/tampered size)", () => {
+    expect(() =>
+      getPlaintextSizeFromCiphertextSize(FILE_SALT_LENGTH - 1)
+    ).toThrow();
   });
 
   it("throws for a ciphertext size that cannot correspond to any valid packet stream (corrupted/tampered size)", () => {
     // 28バイトのオーバーヘッドに満たない(かつ0でもない)半端な余りは、
     // どんな平文サイズをパケット化しても生じ得ない。
-    expect(() => getPlaintextSizeFromCiphertextSize(OVERHEAD)).toThrow();
-    expect(() => getPlaintextSizeFromCiphertextSize(10)).toThrow();
+    expect(() => getPlaintextSizeFromCiphertextSize(withSalt(OVERHEAD))).toThrow();
+    expect(() => getPlaintextSizeFromCiphertextSize(withSalt(10))).toThrow();
     expect(() =>
-      getPlaintextSizeFromCiphertextSize(PACKED_CHUNK_SIZE + OVERHEAD)
+      getPlaintextSizeFromCiphertextSize(withSalt(PACKED_CHUNK_SIZE + OVERHEAD))
     ).toThrow();
   });
 
-  it("agrees with the real encrypt+pack pipeline for an actual encrypted chunk", async () => {
+  it("agrees with the real encrypt+pack pipeline for a single-packet chunk (no file-salt prefix)", async () => {
     const key = await generateKey();
     const plaintext = new Uint8Array(777).fill(9);
     const packed = packChunk(await encryptChunk(plaintext, key));
 
-    expect(getPlaintextSizeFromCiphertextSize(packed.byteLength)).toBe(
+    // このテストはpackChunk/encryptChunk単体の出力(saltなし)を直接扱う
+    // ため、getPlaintextSizeFromCiphertextSizeが前提とするsalt分を
+    // 呼び出し側で補って渡す。
+    expect(
+      getPlaintextSizeFromCiphertextSize(withSalt(packed.byteLength))
+    ).toBe(plaintext.byteLength);
+  });
+
+  it("agrees with the real upload pipeline (iterateEncryptedChunks) end-to-end, including the file-salt prefix", async () => {
+    const plaintext = new Uint8Array(777).fill(9);
+    const file = new File([plaintext], "x.bin");
+    const key = await generateKey();
+
+    const packets: Uint8Array[] = [];
+    for await (const packet of iterateEncryptedChunks(file, key)) {
+      packets.push(packet);
+    }
+    const totalCiphertextSize = packets.reduce(
+      (sum, p) => sum + p.byteLength,
+      0
+    );
+
+    expect(getPlaintextSizeFromCiphertextSize(totalCiphertextSize)).toBe(
       plaintext.byteLength
     );
   });

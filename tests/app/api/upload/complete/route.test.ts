@@ -16,7 +16,28 @@ import {
   type TestEnv,
 } from "@/test/env";
 import type { Retention } from "@/lib/retention";
-import { generateKey, encryptChunk, packChunk } from "@/lib/crypto";
+import { generateKey, iterateEncryptedChunks } from "@/lib/crypto";
+
+// iterateEncryptedChunks(実際にクライアントが送信するのと同じ形式:先頭に
+// ファイルsaltを含む)で単一ファイルを暗号化し、その唯一のパケットを返す。
+// このヘルパーはCHUNK_SIZE未満の単一パケットのテストデータ専用のため、
+// 万一テストデータがCHUNK_SIZEを超えて複数パケットに分かれた場合は、
+// 呼び出し側が2つ目以降を黙って無視してしまわないようここで検知する。
+async function encryptAsSingleFile(
+  content: Uint8Array<ArrayBuffer>,
+  key: CryptoKey
+): Promise<Uint8Array> {
+  const file = new File([content], "content.bin");
+  const packets: Uint8Array[] = [];
+
+  for await (const packet of iterateEncryptedChunks(file, key)) {
+    packets.push(packet);
+  }
+
+  expect(packets.length).toBe(1);
+
+  return packets[0];
+}
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -158,7 +179,7 @@ describe("POST /api/upload/complete", () => {
     );
     const content = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
     const key = await generateKey();
-    const packed = packChunk(await encryptChunk(content, key));
+    const packed = await encryptAsSingleFile(content, key);
     await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
@@ -206,7 +227,7 @@ describe("POST /api/upload/complete", () => {
       1024
     );
     const key = await generateKey();
-    const packed = packChunk(await encryptChunk(new Uint8Array([42]), key));
+    const packed = await encryptAsSingleFile(new Uint8Array([42]), key);
     await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
     const response = await postComplete({ uploadSessionId });
@@ -230,7 +251,7 @@ describe("POST /api/upload/complete", () => {
     const plaintext = new Uint8Array(FIVE_MIB + 5);
     plaintext.fill(0xaa);
     const key = await generateKey();
-    const packed = packChunk(await encryptChunk(plaintext, key));
+    const packed = await encryptAsSingleFile(plaintext, key);
     const partA = packed.slice(0, FIVE_MIB);
     const partB = packed.slice(FIVE_MIB);
 

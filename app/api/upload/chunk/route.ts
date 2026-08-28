@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
+import { FILE_SALT_LENGTH, PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import { withApiHandler } from "@/lib/api/handler";
 import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
@@ -63,8 +63,15 @@ export const POST = withApiHandler(
 
     // クライアントは平文をCHUNK_SIZE(8MiB)ごとに区切ってから暗号化・アップロード
     // するため、パート1件あたりの上限はPACKED_CHUNK_SIZE(IV・GCMタグ込み)を
-    // 超えない。これを超える場合は不正なリクエストとして拒否する。
-    if (body.byteLength > PACKED_CHUNK_SIZE) {
+    // 超えない。ただしファイルsaltが先頭に付与される最初のパートだけは、
+    // その分(FILE_SALT_LENGTH)だけ上限が大きくなる。これを超える場合は
+    // 不正なリクエストとして拒否する。
+    const maxBodySize =
+      partNumber === 1
+        ? PACKED_CHUNK_SIZE + FILE_SALT_LENGTH
+        : PACKED_CHUNK_SIZE;
+
+    if (body.byteLength > maxBodySize) {
       return Response.json(
         {
           success: false,
