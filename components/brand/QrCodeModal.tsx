@@ -52,7 +52,7 @@ export default function QrCodeModal({ url, isOpen, onClose }: QrCodeModalProps) 
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-xs"
       onClick={onClose}
     >
       <div
@@ -68,7 +68,7 @@ export default function QrCodeModal({ url, isOpen, onClose }: QrCodeModalProps) 
           <XIcon className="h-3.5 w-3.5" />
         </button>
         <div
-          className="h-56 w-56 [&_svg]:h-full [&_svg]:w-full"
+          className="h-[min(56vw,14rem)] w-[min(56vw,14rem)] [&_svg]:h-full [&_svg]:w-full"
           dangerouslySetInnerHTML={{ __html: svgMarkup }}
         />
       </div>
