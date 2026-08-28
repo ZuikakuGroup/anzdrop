@@ -60,6 +60,16 @@ export const POST = withApiHandler(
       );
     }
 
+    // メールアドレスは本文などの自由記述と異なり、切り詰めると別のアドレスに
+    // 化けてしまう(=検証済みの値と保存される値が食い違う)ため、上限超過は
+    // 黙って切り詰めず拒否する。
+    if (email.length > MAX_EMAIL_LENGTH) {
+      return Response.json(
+        { success: false, error: "メールアドレスが長すぎます" },
+        { status: 400 }
+      );
+    }
+
     await env.DB.prepare(
       `
         INSERT INTO contacts (id, name, email, subject, message, created_at)
@@ -69,7 +79,7 @@ export const POST = withApiHandler(
       .bind(
         crypto.randomUUID(),
         name ? name.slice(0, MAX_NAME_LENGTH) : null,
-        email.slice(0, MAX_EMAIL_LENGTH),
+        email,
         subject.slice(0, MAX_SUBJECT_LENGTH),
         message.slice(0, MAX_MESSAGE_LENGTH),
         new Date().toISOString()

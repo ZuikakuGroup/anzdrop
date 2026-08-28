@@ -147,6 +147,24 @@ describe("POST /api/contact", () => {
     expect(await allContacts()).toHaveLength(0);
   });
 
+  it("returns 400 (not a silently truncated 200) when a format-valid email exceeds 200 characters", async () => {
+    stubTurnstileSuccess();
+    // メールアドレスは本文などと違い切り詰めると別のアドレスになってしまうため、
+    // 200文字を超える場合は(形式として有効でも)保存せず拒否する。
+    const longEmail = `${"a".repeat(195)}@ex.com`;
+    expect(longEmail.length).toBeGreaterThan(200);
+
+    const response = await postContact({
+      email: longEmail,
+      subject: "質問です",
+      message: "使い方について質問があります",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await allContacts()).toHaveLength(0);
+  });
+
   it("inserts a contact row with a null name when name is omitted", async () => {
     stubTurnstileSuccess();
 

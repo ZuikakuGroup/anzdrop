@@ -6,11 +6,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
-
-type ContactResponse = {
-  success: boolean;
-  error?: string;
-};
+import type { ContactResponse } from "@/app/api/contact/schema";
 
 export default function ContactForm() {
   const [name, setName] = useState("");
@@ -56,7 +52,7 @@ export default function ContactForm() {
       const result = (await response.json()) as ContactResponse;
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "送信に失敗しました。");
+        throw new Error(!result.success ? result.error : "送信に失敗しました。");
       }
 
       setSubmitted(true);
@@ -102,104 +98,101 @@ export default function ContactForm() {
             </p>
           </div>
 
-          <div className="grid min-h-[480px]">
-            <div
-              className={`col-start-1 row-start-1 space-y-4 ${
-                submitted ? "invisible" : ""
-              }`}
-              aria-hidden={submitted}
-              suppressHydrationWarning
-            >
-              <div className="space-y-1">
-                <label
-                  htmlFor="contact-name"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  お名前(任意)
-                </label>
-                <input
-                  id="contact-name"
-                  type="text"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="contact-email"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  メールアドレス
-                </label>
-                <input
-                  id="contact-email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="contact-subject"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  件名
-                </label>
-                <input
-                  id="contact-subject"
-                  type="text"
-                  value={subject}
-                  onChange={(event) => setSubject(event.target.value)}
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="contact-message"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  本文
-                </label>
-                <textarea
-                  id="contact-message"
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  rows={5}
-                  className="w-full resize-none rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              {turnstileWidget}
-
-              <button
-                onClick={submit}
-                disabled={isSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+          <div className="min-h-[480px]">
+            {submitted ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex h-[480px] flex-col items-center justify-center gap-2 rounded border-2 border-brand p-4 text-center"
               >
-                {isSubmitting ? "送信中..." : "送信する"}
-              </button>
+                <p className="text-sm font-bold">
+                  お問い合わせありがとうございます。確認いたします。
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4" suppressHydrationWarning>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="contact-name"
+                    className="text-xs font-bold text-ink/50"
+                  >
+                    お名前(任意)
+                  </label>
+                  <input
+                    id="contact-name"
+                    type="text"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                  />
+                </div>
 
-              <p className="min-h-[20px] text-sm font-bold text-brand">
-                {error}
-              </p>
-            </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="contact-email"
+                    className="text-xs font-bold text-ink/50"
+                  >
+                    メールアドレス
+                  </label>
+                  <input
+                    id="contact-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                  />
+                </div>
 
-            <div
-              className={`col-start-1 row-start-1 flex flex-col items-center justify-center gap-2 rounded border-2 border-brand p-4 text-center ${
-                submitted ? "" : "invisible"
-              }`}
-              aria-hidden={!submitted}
-            >
-              <p className="text-sm font-bold">
-                お問い合わせありがとうございます。確認いたします。
-              </p>
-            </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="contact-subject"
+                    className="text-xs font-bold text-ink/50"
+                  >
+                    件名
+                  </label>
+                  <input
+                    id="contact-subject"
+                    type="text"
+                    value={subject}
+                    onChange={(event) => setSubject(event.target.value)}
+                    className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label
+                    htmlFor="contact-message"
+                    className="text-xs font-bold text-ink/50"
+                  >
+                    本文
+                  </label>
+                  <textarea
+                    id="contact-message"
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    rows={5}
+                    // app/api/contact/route.tsのMAX_MESSAGE_LENGTHと合わせる。
+                    maxLength={2000}
+                    className="w-full resize-none rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
+                  />
+                </div>
+
+                {turnstileWidget}
+
+                <button
+                  onClick={submit}
+                  disabled={isSubmitting}
+                  className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+                >
+                  {isSubmitting ? "送信中..." : "送信する"}
+                </button>
+
+                <p className="min-h-[20px] text-sm font-bold text-brand">
+                  {error}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </main>

@@ -21,4 +21,12 @@ describe("isValidEmail", () => {
   it("rejects an empty string", () => {
     expect(isValidEmail("")).toBe(false);
   });
+
+  it("rejects an empty domain label before the first dot", () => {
+    expect(isValidEmail("user@.example.com")).toBe(false);
+  });
+
+  it("rejects consecutive dots in the domain", () => {
+    expect(isValidEmail("user@example..com")).toBe(false);
+  });
 });

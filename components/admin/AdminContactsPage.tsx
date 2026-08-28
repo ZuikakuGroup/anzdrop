@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
@@ -29,17 +29,43 @@ export default function AdminContactsPage() {
   const [confirmingContactId, setConfirmingContactId] = useState("");
   const [deletingContactId, setDeletingContactId] = useState("");
 
-  const load = useCallback(async (targetStatus: StatusFilter) => {
+  // 対応済み・削除操作後の再読み込みは非同期(操作のリクエスト分だけ遅れる)
+  // ため、その完了を待つ間に管理者が別のステータスタブへ切り替えている
+  // ことがある。その場合、操作開始時点のstatusで再読み込みした結果を
+  // そのまま反映すると、選択中のタブと異なる一覧で上書きしてしまう。
+  // 常に「今どのタブが選ばれているか」をstatusRefで確認し、取得完了時に
+  // タブが変わっていなければ反映する。
+  const statusRef = useRef(status);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  const load = useCallback(async () => {
+    const targetStatus = statusRef.current;
+
     try {
-      setContacts(await fetchContacts(targetStatus));
+      const contacts = await fetchContacts(targetStatus);
+
+      if (statusRef.current !== targetStatus) {
+        return;
+      }
+
+      setContacts(contacts);
       setError("");
     } catch (unknownErr) {
+      if (statusRef.current !== targetStatus) {
+        return;
+      }
+
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
     } finally {
-      setIsLoading(false);
+      if (statusRef.current === targetStatus) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -93,7 +119,7 @@ export default function AdminContactsPage() {
 
     try {
       await resolveContactRequest(contactId);
-      await load(status);
+      await load();
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
@@ -116,7 +142,7 @@ export default function AdminContactsPage() {
       await deleteContactRequest(contactId);
 
       setConfirmingContactId("");
-      await load(status);
+      await load();
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
