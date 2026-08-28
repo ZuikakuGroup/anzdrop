@@ -52,7 +52,7 @@
 
 ## Cloudflare Access(管理画面の保護)
 
-`/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`)でもJWT検証による多層防御を行っている。
+`/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`の`verifyAccessJwt()`)でもJWT検証による多層防御を行っている。`/api/admin/**`(JSON API)は未検証時に`403`を返すが、`/admin`ページ自体(`app/admin/page.tsx`)は管理画面の存在を明かさないよう`404`(`notFound()`)を返す。
 
 新しい環境でセットアップする場合の概略:
 
