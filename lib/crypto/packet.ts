@@ -1,5 +1,6 @@
 import {
   CHUNK_SIZE,
+  FILE_SALT_LENGTH,
   GCM_TAG_LENGTH,
   IV_LENGTH,
   PACKED_CHUNK_SIZE,
@@ -52,12 +53,23 @@ export function unpackChunk(
 // パケット数さえ求まれば平文サイズを一意に復元できる。クライアント申告の
 // サイズを一切信用せずに平文サイズを検証したい場面(アップロード完了時の
 // サイズ再検証、ダウンロード時の欠損検出)で使う。
+//
+// この関数は「新規にアップロードが完了したファイル」だけに使う想定で、
+// iterateEncryptedChunks(lib/crypto/stream.ts)が先頭に埋め込む
+// FILE_SALT_LENGTHバイトのsaltを含む前提で計算する(AAD保護導入前に
+// アップロード済みの、saltを含まない既存ファイルのsizeは、当時この関数で
+// 計算されてD1に保存済みのため再計算されず、この変更の影響を受けない)。
 export function getPlaintextSizeFromCiphertextSize(
   ciphertextSize: number
 ): number {
+  if (ciphertextSize < FILE_SALT_LENGTH) {
+    throw new Error("Invalid ciphertext size.");
+  }
+
+  const packetStreamSize = ciphertextSize - FILE_SALT_LENGTH;
   const packetOverhead = IV_LENGTH + GCM_TAG_LENGTH;
-  const fullPackets = Math.floor(ciphertextSize / PACKED_CHUNK_SIZE);
-  const remainder = ciphertextSize - fullPackets * PACKED_CHUNK_SIZE;
+  const fullPackets = Math.floor(packetStreamSize / PACKED_CHUNK_SIZE);
+  const remainder = packetStreamSize - fullPackets * PACKED_CHUNK_SIZE;
 
   if (remainder === 0) {
     return fullPackets * CHUNK_SIZE;

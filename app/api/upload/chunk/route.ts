@@ -1,5 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
+import { FILE_SALT_LENGTH, PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import { withApiHandler } from "@/lib/api/handler";
 import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
@@ -9,6 +9,10 @@ import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
 // 1パートとして送るが、この制約を満たすためにより細かく分割する余地も
 // 考慮し、declaredFileSizeから許容するパート数の上限をこの最小粒度で見積もる。
 const R2_MULTIPART_MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
+
+// クライアントは各ファイルの最初のパートにだけ、AAD用のファイル固有salt
+// (FILE_SALT_LENGTH)を先頭に付与して送る(lib/crypto/stream.tsの
+// iterateEncryptedChunks参照)ため、上限にもこの分を加えておく。
 
 export const POST = withApiHandler(
   "POST /api/upload/chunk",
@@ -64,7 +68,7 @@ export const POST = withApiHandler(
     // クライアントは平文をCHUNK_SIZE(8MiB)ごとに区切ってから暗号化・アップロード
     // するため、パート1件あたりの上限はPACKED_CHUNK_SIZE(IV・GCMタグ込み)を
     // 超えない。これを超える場合は不正なリクエストとして拒否する。
-    if (body.byteLength > PACKED_CHUNK_SIZE) {
+    if (body.byteLength > PACKED_CHUNK_SIZE + FILE_SALT_LENGTH) {
       return Response.json(
         {
           success: false,

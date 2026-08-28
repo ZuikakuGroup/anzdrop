@@ -160,10 +160,12 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(400);
   });
 
-  it("rejects a single chunk larger than the packed chunk size", async () => {
+  it("rejects a single chunk larger than the packed chunk size (plus the leading file-salt allowance)", async () => {
     const { uploadSessionId, uploadToken } = await startUpload();
 
-    const oversized = new Uint8Array(8 * 1024 * 1024 + 12 + 16 + 1);
+    // 8MiBチャンク + IV(12) + GCMタグ(16) + 先頭パートのみ許容されるファイル
+    // salt(16, lib/crypto/types.tsのFILE_SALT_LENGTH) を超える1バイト。
+    const oversized = new Uint8Array(8 * 1024 * 1024 + 12 + 16 + 16 + 1);
     const response = await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,

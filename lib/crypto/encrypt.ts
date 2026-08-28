@@ -1,10 +1,13 @@
 import { generateIV } from "./key";
 import type { EncryptionResult } from "./types";
 
-// 1チャンクをAES-256-GCMで暗号化する
+// 1チャンクをAES-256-GCMで暗号化する。aadを渡すと、GCMの認証タグの計算に
+// AAD(Additional Authenticated Data)としてバインドされる(送受信はされず、
+// 復号側も同じ入力から独立に再計算して照合する)。
 export async function encryptChunk(
   plaintext: Uint8Array,
-  key: CryptoKey
+  key: CryptoKey,
+  aad?: Uint8Array
 ): Promise<EncryptionResult> {
   const iv = generateIV();
 
@@ -14,6 +17,7 @@ export async function encryptChunk(
     {
       name: "AES-GCM",
       iv,
+      ...(aad ? { additionalData: aad as BufferSource } : {}),
     },
     key,
     plaintext as BufferSource

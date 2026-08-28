@@ -1,5 +1,6 @@
 import {
   AES_KEY_LENGTH,
+  FILE_SALT_LENGTH,
   IV_LENGTH,
   PBKDF2_ITERATIONS,
   PBKDF2_SALT_LENGTH,
@@ -48,6 +49,14 @@ export function generateIV(): Uint8Array<ArrayBuffer> {
 // PBKDF2用ソルトを生成する
 export function generateSalt(): Uint8Array<ArrayBuffer> {
   const salt = new Uint8Array(PBKDF2_SALT_LENGTH);
+  crypto.getRandomValues(salt);
+
+  return salt;
+}
+
+// ファイルごとのAAD用saltを生成する(秘匿不要、チャンクのAADに含める)
+export function generateFileSalt(): Uint8Array<ArrayBuffer> {
+  const salt = new Uint8Array(FILE_SALT_LENGTH);
   crypto.getRandomValues(salt);
 
   return salt;
