@@ -112,12 +112,12 @@
 
 - レスポンス: `{ success: true, accountId, plan: "free"|"standard"|"premium", planExpiresAt: string|null }`
 
-### `POST /api/billing/stripe/checkout`
+### `POST /api/billing/stripe/subscription`
 
-ログイン必須。Stripe Checkout Session(`mode: "subscription"`)を作成する。
+ログイン必須。指定プランのStripe Subscriptionを`payment_behavior: "default_incomplete"`で作成し、支払い確定用の`client_secret`(Invoiceの`confirmation_secret`)を返す。クライアントはこの`clientSecret`でStripe Elements(Payment Element)をマウントし、自サイト内のフォームで決済を確定する(ホスト型Checkoutへのリダイレクトはしない)。
 
 - リクエスト: `{ plan: "standard"|"premium" }`
-- レスポンス: `{ success: true, url }`。クライアントはこのURLへリダイレクトするだけでよい(Stripe.js不要)。
+- レスポンス: `{ success: true, clientSecret }`
 
 ### `POST /api/billing/stripe/webhook`
 

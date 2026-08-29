@@ -23,7 +23,6 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 const mockConstructEventAsync = vi.fn();
-const mockSubscriptionsRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -34,7 +33,6 @@ vi.mock("stripe", () => {
       return {};
     }
     webhooks = { constructEventAsync: mockConstructEventAsync };
-    subscriptions = { retrieve: mockSubscriptionsRetrieve };
     constructor() {}
   }
 
@@ -54,7 +52,6 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
   mockConstructEventAsync.mockReset();
-  mockSubscriptionsRetrieve.mockReset();
 });
 
 async function postWebhook(body: string, signature = "valid-signature") {
@@ -110,103 +107,9 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(response.status).toBe(400);
   });
 
-  it("processes checkout.session.completed and activates the premium plan for the premium price id", async () => {
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
-    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_1", "checkout.session.completed", {
-        client_reference_id: accountId,
-        customer: "cus_new",
-        subscription: "sub_new",
-      })
-    );
-    mockSubscriptionsRetrieve.mockResolvedValue(
-      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
-    );
-
-    const response = await postWebhook("{}");
-
-    expect(response.status).toBe(200);
-
-    const account = await getAccount(accountId);
-    expect(account?.plan).toBe("premium");
-    expect(account?.stripe_customer_id).toBe("cus_new");
-    expect(account?.stripe_subscription_id).toBe("sub_new");
-    expect(new Date(account!.plan_expires_at!).getTime()).toBe(
-      periodEndUnix * 1000
-    );
-  });
-
-  it("processes checkout.session.completed and activates the standard plan for the standard price id", async () => {
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
-    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_1b", "checkout.session.completed", {
-        client_reference_id: accountId,
-        customer: "cus_std",
-        subscription: "sub_std",
-      })
-    );
-    mockSubscriptionsRetrieve.mockResolvedValue(
-      subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix)
-    );
-
-    const response = await postWebhook("{}");
-
-    expect(response.status).toBe(200);
-
-    const account = await getAccount(accountId);
-    expect(account?.plan).toBe("standard");
-  });
-
-  it("does not modify any account when checkout.session.completed is missing required ids", async () => {
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
-
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_2", "checkout.session.completed", {
-        client_reference_id: null,
-        customer: "cus_x",
-        subscription: "sub_x",
-      })
-    );
-
-    const response = await postWebhook("{}");
-
-    expect(response.status).toBe(200);
-    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
-
-    const account = await getAccount(accountId);
-    expect(account?.plan).toBe("free");
-  });
-
-  it("does not modify the account when the subscription's price id is unrecognized (defensive)", async () => {
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
-    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_unknown_price", "checkout.session.completed", {
-        client_reference_id: accountId,
-        customer: "cus_unknown",
-        subscription: "sub_unknown",
-      })
-    );
-    mockSubscriptionsRetrieve.mockResolvedValue(
-      subscriptionWithPrice("price_totally_unrelated", periodEndUnix)
-    );
-
-    const response = await postWebhook("{}");
-
-    expect(response.status).toBe(200);
-    const account = await getAccount(accountId);
-    expect(account?.plan).toBe("free");
-    expect(account?.stripe_customer_id).toBeNull();
-  });
-
-  it("processes customer.subscription.updated for an active subscription", async () => {
+  it("processes customer.subscription.updated for an active subscription (initial activation and renewals alike)", async () => {
     const { accountId } = await insertTestAccount(env, {
-      plan: "premium",
+      plan: "free",
       stripeSubscriptionId: "sub_existing",
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
@@ -225,6 +128,65 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("premium");
+    expect(new Date(account!.plan_expires_at!).getTime()).toBe(
+      periodEndUnix * 1000
+    );
+  });
+
+  it("does not update any account when no row has a matching stripe_subscription_id", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_no_match", "customer.subscription.updated", {
+        id: "sub_never_registered",
+        status: "active",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("free");
+  });
+
+  it("recovers via metadata.accountId when accounts.stripe_subscription_id was overwritten by a later subscription attempt", async () => {
+    // 同じアカウントが2回"POST /api/billing/stripe/subscription"を呼ぶと
+    // (2つのタブで契約を開始する等)、accounts.stripe_subscription_idは
+    // 後に呼ばれた方のSubscription IDで上書きされる。その状態で先に
+    // 作成した(古い)方のSubscriptionで実際に支払いが確定した場合でも、
+    // metadata.accountIdを手がかりにプランが反映されることを確認する。
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      stripeSubscriptionId: "sub_stale",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    // 別のSubscription作成(2つ目のタブ等を想定)がaccountsの
+    // stripe_subscription_idを上書きした状況を再現する。
+    await env.DB.prepare(
+      `UPDATE accounts SET stripe_subscription_id = ? WHERE id = ?`
+    )
+      .bind("sub_newer_attempt", accountId)
+      .run();
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_fallback", "customer.subscription.updated", {
+        id: "sub_stale",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
+    expect(account?.stripe_subscription_id).toBe("sub_stale");
     expect(new Date(account!.plan_expires_at!).getTime()).toBe(
       periodEndUnix * 1000
     );
@@ -344,29 +306,37 @@ describe("POST /api/billing/stripe/webhook", () => {
   });
 
   it("does not reprocess a duplicate event id (idempotency)", async () => {
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      stripeSubscriptionId: "sub_dup",
+    });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    const event = fakeEvent("evt_dup", "checkout.session.completed", {
-      client_reference_id: accountId,
-      customer: "cus_dup",
-      subscription: "sub_dup",
+    const event = fakeEvent("evt_dup", "customer.subscription.updated", {
+      id: "sub_dup",
+      status: "active",
+      ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
     });
     mockConstructEventAsync.mockResolvedValue(event);
-    mockSubscriptionsRetrieve.mockResolvedValue(
-      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
-    );
 
     const first = await postWebhook("{}");
     expect(first.status).toBe(200);
-    expect(mockSubscriptionsRetrieve).toHaveBeenCalledTimes(1);
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
 
     const second = await postWebhook("{}");
     expect(second.status).toBe(200);
     const secondBody = await readJson<{ note: string }>(second);
     expect(secondBody.note).toBe("duplicate event");
-    // 2回目はイベント処理自体が走らないため、Stripe APIを再度叩かない。
-    expect(mockSubscriptionsRetrieve).toHaveBeenCalledTimes(1);
+
+    // 同じイベントIDでの処理済みマークが重複して増えていないこと。
+    const eventRows = await env.DB.prepare(
+      `SELECT COUNT(*) as count FROM stripe_events WHERE id = ?`
+    )
+      .bind(event.id)
+      .first<{ count: number }>();
+    expect(eventRows?.count).toBe(1);
   });
 
   it("does not permanently mark an event as processed if handling it throws, so a Stripe retry can still succeed", async () => {
@@ -375,41 +345,60 @@ describe("POST /api/billing/stripe/webhook", () => {
     // 「処理済み」のまま残り、Stripeが同じイベントIDで再送してきても
     // 二度とプランが反映されなくなっていた(顧客は決済済みなのに
     // アップグレードされない)。この回帰を防ぐテスト。
-    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      stripeSubscriptionId: "sub_retry",
+    });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    const event = fakeEvent("evt_transient_failure", "checkout.session.completed", {
-      client_reference_id: accountId,
-      customer: "cus_retry",
-      subscription: "sub_retry",
-    });
+    const event = fakeEvent(
+      "evt_transient_failure",
+      "customer.subscription.updated",
+      {
+        id: "sub_retry",
+        status: "active",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      }
+    );
     mockConstructEventAsync.mockResolvedValue(event);
 
-    // 1回目: Stripe APIが一時的に失敗する状況を再現する。
-    mockSubscriptionsRetrieve.mockRejectedValueOnce(
-      new Error("temporary Stripe API failure")
-    );
+    // applyEvent内のUPDATEが本物のDBエラーで失敗する状況(例: D1側の一時的な
+    // 障害)を、accountsテーブルを一時的にリネームすることで再現する
+    // (Stripe APIへの外部呼び出しが無くなったため、失敗点はDB層のみになる。
+    // RENAME TOは既存の行データを保持したままテーブル名だけを変えるので、
+    // 元に戻せば通常どおり動作する)。
+    await env.DB.prepare(
+      `ALTER TABLE accounts RENAME TO accounts_test_outage`
+    ).run();
 
-    const first = await postWebhook("{}");
-    expect(first.status).toBe(500);
+    // ここから先のアサーションが失敗しても、accountsテーブル名を必ず元に
+    // 戻す(戻さないと、以後のテストがすべて「no such table: accounts」で
+    // 壊れてしまう)。
+    let eventRow: unknown;
+
+    try {
+      const first = await postWebhook("{}");
+      expect(first.status).toBe(500);
+
+      // イベントが「処理済み」のまま残っていないこと(accountsに触れずに確認できる)。
+      eventRow = await env.DB.prepare(
+        `SELECT id FROM stripe_events WHERE id = ?`
+      )
+        .bind(event.id)
+        .first();
+    } finally {
+      await env.DB.prepare(
+        `ALTER TABLE accounts_test_outage RENAME TO accounts`
+      ).run();
+    }
+
+    expect(eventRow).toBeNull();
 
     const accountAfterFailure = await getAccount(accountId);
     expect(accountAfterFailure?.plan).toBe("free");
 
-    // イベントが「処理済み」のまま残っていないこと。
-    const eventRow = await env.DB.prepare(
-      `SELECT id FROM stripe_events WHERE id = ?`
-    )
-      .bind(event.id)
-      .first();
-    expect(eventRow).toBeNull();
-
     // 2回目(Stripeからの再送を模したもの): 今度は成功する状況で、
     // 同じイベントIDでも正しく処理され、プランが反映されること。
-    mockSubscriptionsRetrieve.mockResolvedValue(
-      subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix)
-    );
-
     const retried = await postWebhook("{}");
     expect(retried.status).toBe(200);
     const retriedBody = await readJson<{ note?: string }>(retried);
@@ -417,6 +406,5 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     const accountAfterRetry = await getAccount(accountId);
     expect(accountAfterRetry?.plan).toBe("premium");
-    expect(accountAfterRetry?.stripe_customer_id).toBe("cus_retry");
   });
 });

@@ -15,7 +15,7 @@ npm install
 
 | ファイル | 用途 | 主な変数 |
 | --- | --- | --- |
-| `.env.local`(gitignore対象) | Next.jsのビルド/実行時にクライアント側へ埋め込む値 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` |
+| `.env.local`(gitignore対象) | Next.jsのビルド/実行時にクライアント側へ埋め込む値 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
 | `.dev.vars`(gitignore対象) | ローカルのWorkers実行時シークレット(wranglerが読む) | `TURNSTILE_SECRET_KEY` |
 
 いずれもリポジトリには含まれないため、各自 [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) でサイトキー・シークレットキーを発行して設定する(開発用にはテスト用の常時成功/失敗キーも利用可能)。

@@ -55,56 +55,12 @@ async function markEventAsProcessedOnce(
 
 async function applyEvent(
   event: Stripe.Event,
-  stripe: Stripe,
   env: CloudflareEnv
 ): Promise<void> {
   switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const accountId = session.client_reference_id;
-      const customerId =
-        typeof session.customer === "string" ? session.customer : null;
-      const subscriptionId =
-        typeof session.subscription === "string"
-          ? session.subscription
-          : null;
-
-      if (!accountId || !customerId || !subscriptionId) {
-        break;
-      }
-
-      const subscription = await stripe.subscriptions.retrieve(
-        subscriptionId
-      );
-      const periodEnd = getSubscriptionPeriodEnd(subscription);
-      const plan = planFromSubscription(subscription, env);
-
-      if (!periodEnd || !plan) {
-        break;
-      }
-
-      await env.DB.prepare(
-        `
-        UPDATE accounts
-        SET plan = ?,
-            plan_expires_at = ?,
-            stripe_customer_id = ?,
-            stripe_subscription_id = ?
-        WHERE id = ?
-      `
-      )
-        .bind(
-          plan,
-          unixSecondsToIso(periodEnd),
-          customerId,
-          subscriptionId,
-          accountId
-        )
-        .run();
-
-      break;
-    }
-
+    // Subscriptionは"POST /api/billing/stripe/subscription"側でPaymentElement
+    // 用に直接作成する(Checkout Sessionは使わない)ため、初回有効化も含めて
+    // 状態遷移はすべてこのイベント(incomplete→active等)で検知する。
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
       const isActive =
@@ -114,7 +70,7 @@ async function applyEvent(
       const plan = planFromSubscription(subscription, env);
 
       if (isActive && periodEnd && plan) {
-        await env.DB.prepare(
+        const result = await env.DB.prepare(
           `
           UPDATE accounts
           SET plan = ?, plan_expires_at = ?
@@ -123,6 +79,38 @@ async function applyEvent(
         )
           .bind(plan, unixSecondsToIso(periodEnd), subscription.id)
           .run();
+
+        // accounts.stripe_subscription_idと一致する行が無かった場合の
+        // フォールバック。同じアカウントが日をまたがず複数回
+        // "POST /api/billing/stripe/subscription"を呼ぶと(例: 2つのタブで
+        // それぞれ契約を開始する、支払い後の応答待ちの間にもう一度試す等)、
+        // accounts.stripe_subscription_idは最後に呼ばれたSubscriptionのIDで
+        // 上書きされる。その状態で先に作成した(古い)方のSubscriptionで
+        // 実際に支払いが確定すると、上のUPDATEはどの行にもマッチせず、
+        // 顧客は課金されたのにプランが反映されないままになってしまう。
+        // Subscription作成時にmetadataへ書き込んでいるaccountId
+        // (Stripe側にのみ保持される、支払い確定の事実と紐づくID)を
+        // 手がかりに、該当アカウントへ反映し直す。
+        if (result.meta.changes === 0) {
+          const accountId = subscription.metadata?.accountId;
+
+          if (typeof accountId === "string" && accountId) {
+            await env.DB.prepare(
+              `
+              UPDATE accounts
+              SET plan = ?, plan_expires_at = ?, stripe_subscription_id = ?
+              WHERE id = ?
+            `
+            )
+              .bind(
+                plan,
+                unixSecondsToIso(periodEnd),
+                subscription.id,
+                accountId
+              )
+              .run();
+          }
+        }
       }
 
       break;
@@ -193,7 +181,7 @@ export const POST = withApiHandler(
     }
 
     try {
-      await applyEvent(event, stripe, env);
+      await applyEvent(event, env);
     } catch (error) {
       // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
       // ままにすると、Stripeが同じイベントIDで再送してきても

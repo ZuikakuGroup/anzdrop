@@ -44,8 +44,10 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 ### Stripe(カード、自動更新サブスクリプション)
 
-- `POST /api/billing/stripe/checkout`はリクエストボディの`plan`(`"standard"`または`"premium"`)を見て、対応するPrice(`STRIPE_PRICE_ID_STANDARD`/`STRIPE_PRICE_ID_PREMIUM`)でCheckout Session(`mode: "subscription"`)を作成し、返ってきたURLへリダイレクトするだけ(Stripe.jsは使わない)。
-- `POST /api/billing/stripe/webhook`が`checkout.session.completed`(初回有効化)・`customer.subscription.updated`(更新のたびに有効期限を同期)・`customer.subscription.deleted`(即時ダウングレード)を処理する。どのプランを付与するかは、Webhookのmetadataではなく**Subscriptionの実際のPrice ID**(`subscription.items.data[0].price.id`)を見て判定する(`planFromSubscription()`)。これはStripeカスタマーポータル等で後からプランが変更された場合にも自動追従できるようにするための設計で、未知のPrice IDの場合は何も更新しない(意図しないプラン活性化を防ぐ防御的な扱い)。
+- 決済フォームはStripeのホスト型Checkoutへリダイレクトせず、自サイト内に埋め込んだStripe Elements(Payment Element、`components/billing/StripePaymentForm.tsx`)で完結する。カード番号などの機微情報はブラウザ上のStripe.js経由で直接Stripeへ送られ、自前サーバーを経由・保存することはない(PCI DSSのSAQ Aスコープを維持する設計)。
+- `POST /api/billing/stripe/subscription`はリクエストボディの`plan`(`"standard"`または`"premium"`)を見て、対応するPrice(`STRIPE_PRICE_ID_STANDARD`/`STRIPE_PRICE_ID_PREMIUM`)でSubscriptionを`payment_behavior: "default_incomplete"`かつ`payment_method_types: ["card"]`で作成し、支払い確定用の`client_secret`(`latest_invoice.confirmation_secret.client_secret`。Stripeの新しいAPIバージョンではInvoiceが複数の支払い試行を持てるため、`payment_intent`ではなくこちらを使う)を返す(Checkout Sessionは使わない)。メールアドレスを収集しない方針のため、初回はメール等の個人情報を含まない空のCustomerを作成する。作成した`stripe_customer_id`/`stripe_subscription_id`は、支払い確定前のこの時点で`accounts`テーブルへ書き込んでおく(Webhookが`customer.subscription.updated`で初回有効化を検知できるようにするため)。
+- クライアント側は`StripePaymentForm`が返ってきた`client_secret`で`<Elements>`/`<PaymentElement>`をマウントし、送信時に`stripe.confirmPayment({ redirect: "if_required" })`で決済を確定する。カード決済の3Dセキュア等の追加認証は通常ページ内モーダルで完結し、フルページ遷移は発生しない。
+- `POST /api/billing/stripe/webhook`が`customer.subscription.updated`(初回有効化・更新時の有効期限同期の両方を兼ねる)・`customer.subscription.deleted`(即時ダウングレード)を処理する。どのプランを付与するかは、Webhookのmetadataではなく**Subscriptionの実際のPrice ID**(`subscription.items.data[0].price.id`)を見て判定する(`planFromSubscription()`)。これはStripeカスタマーポータル等で後からプランが変更された場合にも自動追従できるようにするための設計で、未知のPrice IDの場合は何も更新しない(意図しないプラン活性化を防ぐ防御的な扱い)。支払いが確定しないまま放置された`incomplete`のSubscriptionは、Stripe側が自動的に期限切れにする(サーバー側でのクリーンアップは不要)。プラン反映は`accounts.stripe_subscription_id`とイベントのSubscription IDが一致する行を対象とするが、同じアカウントが日をまたがず複数回`POST /api/billing/stripe/subscription`を呼ぶと(例: 複数タブでそれぞれ契約を開始する)、この列は最後の呼び出しのSubscription IDで上書きされる。その状態で先に作成した方のSubscriptionで支払いが確定した場合に備え、`stripe_subscription_id`が一致する行が無ければSubscriptionの`metadata.accountId`を手がかりに該当アカウントへ反映し直すフォールバックを持つ(顧客が実際に課金されたのにプランが反映されない事態を避けるため)。
 - Cloudflare WorkersにはNodeの`crypto`モジュールが無いため、SDKの`Stripe.createFetchHttpClient()`(HTTPクライアント)と`Stripe.createSubtleCryptoProvider()`(Webhook署名検証)を明示的に指定している。
 - Stripeの新しいAPIバージョンでは請求期間(`current_period_end`)がSubscription直下ではなく各SubscriptionItemに付く。このアプリは1サブスクリプションにつき1アイテムのみ使うため、先頭アイテムの値を使う(`getSubscriptionPeriodEnd()`)。
 - 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに処理済みイベントIDを記録する。
@@ -71,7 +73,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 詳細は[`api.md`](./api.md)を参照。
 
 - `POST /api/account/signup` / `login` / `logout` / `recover` / `GET /api/account/me`
-- `POST /api/billing/stripe/checkout` / `POST /api/billing/stripe/webhook`
+- `POST /api/billing/stripe/subscription` / `POST /api/billing/stripe/webhook`
 - `POST /api/billing/btc/charge` / `POST /api/billing/btc/webhook`
 
 ## 新規テーブル

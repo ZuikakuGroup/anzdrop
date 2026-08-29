@@ -16,6 +16,8 @@
   "dependencies": {
     "@cloudflare/workers-types": "^4.20260617.1",
     "@opennextjs/cloudflare": "^1.19.11",
+    "@stripe/react-stripe-js": "^6.8.2",
+    "@stripe/stripe-js": "^9.14.0",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
     "nanoid": "^6.0.1",
