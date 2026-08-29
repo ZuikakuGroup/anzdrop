@@ -181,6 +181,25 @@ export function MenuIcon({ className = "" }: IconProps) {
   );
 }
 
+export function ArrowUpRightIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M7 17L17 7M9 7h8v8"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 export function LineIcon({ className = "" }: IconProps) {
   return (
     <svg

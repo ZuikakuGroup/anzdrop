@@ -77,6 +77,18 @@
 
 詳細な通報カテゴリ・モデレーション運用は [`moderation.md`](./moderation.md) を参照。
 
+## お問い合わせ
+
+### `POST /api/contact`
+
+特定の共有に紐づかない一般的な問い合わせを受け付ける。認証不要だが、`turnstileToken` によるTurnstile検証が必須。
+
+- リクエスト: `{ name?, email, subject, message, turnstileToken }`(`name`のみ任意)
+- `email` はメール形式チェックあり(不正/未指定は400)。`subject`・`message` も必須。
+- レスポンス: `{ success: true }` または `{ success: false, error }`
+
+不正なファイルの通報・権利侵害の申し立ては専用の `POST /api/report` を使う(上記「通報」セクション参照)。
+
 ## アカウント・有料プラン
 
 詳細な設計は [`accounts.md`](./accounts.md) を参照。メールアドレスは収集しない。
@@ -168,6 +180,18 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ### `DELETE /api/admin/reports/[reportId]`
 
 通報を削除する。誤送信・スパム的な通報などを一覧から完全に取り除く用途。既に削除済みの通報に対しても冪等に成功扱い。対応済みにする(`resolve`)とは異なり、行自体をDBから削除する。
+
+### `GET /api/admin/contacts?status=open|resolved|all`
+
+お問い合わせ一覧を取得する。`status` 省略時は `"open"`(未対応)。`reports`と異なり共有には紐づかないため、共有の現況は含まない。
+
+### `POST /api/admin/contacts/[contactId]/resolve`
+
+お問い合わせを対応済み(`resolved_at`設定)にする。
+
+### `DELETE /api/admin/contacts/[contactId]`
+
+お問い合わせを削除する。既に削除済みのお問い合わせに対しても冪等に成功扱い。
 
 ### `GET /api/admin/shares/[shareId]`
 
