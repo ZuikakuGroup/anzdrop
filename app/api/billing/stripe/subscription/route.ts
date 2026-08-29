@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
+import { isDeadSubscriptionStatus } from "@/lib/stripe-subscription";
 import {
   SubscriptionRequestSchema,
   type SubscriptionResponse,
@@ -12,6 +13,17 @@ const STRIPE_PRICE_ID_BY_PLAN = {
   standard: "STRIPE_PRICE_ID_STANDARD",
   premium: "STRIPE_PRICE_ID_PREMIUM",
 } as const;
+
+// Stripe SDKの例外はHTTPステータスを statusCode で持つ。該当リソースが
+// 既に存在しない(404)ケースだけを他の失敗(429・5xx・タイムアウト等の
+// 一時障害)と区別するために使う。
+function getStripeErrorStatusCode(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "statusCode" in error) {
+    const statusCode = (error as { statusCode?: unknown }).statusCode;
+    return typeof statusCode === "number" ? statusCode : undefined;
+  }
+  return undefined;
+}
 
 export const POST = withApiHandler(
   "POST /api/billing/stripe/subscription",
@@ -99,22 +111,44 @@ export const POST = withApiHandler(
         ) {
           try {
             await stripe.subscriptions.cancel(account.stripe_subscription_id);
-          } catch {
-            // キャンセル自体が失敗しても(Stripe側で既に期限切れ済み等)、
-            // 新規作成は妨げない(ベストエフォート)。
+          } catch (cancelError) {
+            // キャンセルが失敗しても新規作成へ進んでよいのは、旧Subscriptionが
+            // もう課金対象になり得ないことを確認できた場合だけ。
+            //  - 404: 既にStripe側から消えている。
+            //  - retrieve し直して終端ステータス(incomplete_expired 等): retrieve
+            //    と cancel の間にStripeの自動失効が走ったレース。cancel は 404 では
+            //    なく 400 を返すため、ステータスで判定する。
+            // 429・5xx・タイムアウト等の一時障害では、旧 "incomplete" の
+            // client_secret(約23時間有効)が生きたまま2本目を作ってしまう
+            // おそれがあるため、新規作成へ進まず失敗させる。
+            if (getStripeErrorStatusCode(cancelError) !== 404) {
+              let stillBillable = true;
+              try {
+                const recheck = await stripe.subscriptions.retrieve(
+                  account.stripe_subscription_id
+                );
+                stillBillable = !isDeadSubscriptionStatus(recheck.status);
+              } catch (recheckError) {
+                if (getStripeErrorStatusCode(recheckError) === 404) {
+                  stillBillable = false;
+                } else {
+                  throw recheckError;
+                }
+              }
+
+              if (stillBillable) {
+                throw cancelError;
+              }
+            }
           }
         }
       } catch (error) {
-        // 404(該当Subscriptionが既に存在しない。削除済み等)の場合のみ
-        // 新規作成を妨げない。それ以外(Stripe側の一時的な障害等)まで
+        // retrieve の失敗、および上のキャンセル処理が再throwした一時障害が
+        // ここに来る。404(該当Subscriptionが既に存在しない。削除済み等)の
+        // 場合のみ新規作成を妨げない。それ以外(Stripe側の一時的な障害等)まで
         // ここで握りつぶすと、実際には有効なSubscriptionがあるにも
         // かかわらず二重にSubscriptionを作成してしまいかねない。
-        const statusCode =
-          error && typeof error === "object" && "statusCode" in error
-            ? (error as { statusCode?: unknown }).statusCode
-            : undefined;
-
-        if (statusCode !== 404) {
+        if (getStripeErrorStatusCode(error) !== 404) {
           throw error;
         }
       }

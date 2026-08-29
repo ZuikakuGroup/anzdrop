@@ -324,7 +324,7 @@ describe("POST /api/billing/stripe/subscription", () => {
     ).toBeLessThan(mockSubscriptionsCreate.mock.invocationCallOrder[0]);
   });
 
-  it("still creates a new subscription even if cancelling the abandoned incomplete one fails (best-effort cleanup)", async () => {
+  it("still creates a new subscription when cancelling the abandoned incomplete one returns 404 (already gone on Stripe)", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
       stripeSubscriptionId: "sub_abandoned_gone",
@@ -332,7 +332,10 @@ describe("POST /api/billing/stripe/subscription", () => {
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
     mockSubscriptionsCancel.mockRejectedValue(
-      new Error("already expired by Stripe")
+      Object.assign(new Error("No such subscription"), {
+        statusCode: 404,
+        code: "resource_missing",
+      })
     );
     mockSubscriptionsCreate.mockResolvedValue(
       subscriptionWithClientSecret("sub_retry_new_2", "seti_retry_secret_2")
@@ -342,6 +345,82 @@ describe("POST /api/billing/stripe/subscription", () => {
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_retry_new_2");
+  });
+
+  it("does not create a new subscription when cancelling the abandoned incomplete one fails transiently (not a 404)", async () => {
+    // キャンセルが429・5xx・タイムアウト等で失敗した場合、旧Subscriptionの
+    // client_secretは約23時間有効なまま残るため、新規作成へ進むと2本が
+    // 同時に課金対象になりうる。この場合は新規作成せず失敗させる。
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_abandoned_transient",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
+    mockSubscriptionsCancel.mockRejectedValue(
+      Object.assign(new Error("rate limited"), { statusCode: 429 })
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(500);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+    // 旧Subscriptionの追跡は外さない(課金対象を見失わないため)。
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_abandoned_transient");
+  });
+
+  it("still creates a new subscription when cancel fails but the old subscription has since become terminal (retrieve/cancel race)", async () => {
+    // retrieve が "incomplete" を返した後、cancel を呼ぶまでの間に Stripe の
+    // 自動失効が走ると、subscription は削除されず "incomplete_expired" になる。
+    // この状態への cancel は 404 ではなく 400 を返すが、もう課金対象では
+    // ないため新規作成を妨げるべきではない。
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_race_expired",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve
+      .mockResolvedValueOnce({ status: "incomplete" })
+      .mockResolvedValueOnce({ status: "incomplete_expired" });
+    mockSubscriptionsCancel.mockRejectedValue(
+      Object.assign(new Error("subscription is in a terminal state"), {
+        statusCode: 400,
+      })
+    );
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_after_race", "seti_after_race")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCreate).toHaveBeenCalled();
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_after_race");
+  });
+
+  it("does not create a new subscription when cancel fails and the old subscription is still billable", async () => {
+    // cancel が一時障害で失敗し、retrieve し直しても依然 "incomplete"(課金対象に
+    // なり得る)の場合は、新規作成へ進まず失敗させる。
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_still_incomplete",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
+    mockSubscriptionsCancel.mockRejectedValue(
+      Object.assign(new Error("service unavailable"), { statusCode: 503 })
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(500);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_still_incomplete");
   });
 
   it("allows creating a new subscription when the previously registered subscription no longer exists on Stripe (404)", async () => {
