@@ -95,20 +95,40 @@ async function applyEvent(
           const accountId = subscription.metadata?.accountId;
 
           if (typeof accountId === "string" && accountId) {
-            await env.DB.prepare(
-              `
-              UPDATE accounts
-              SET plan = ?, plan_expires_at = ?, stripe_subscription_id = ?
-              WHERE id = ?
-            `
+            const newExpiresAt = unixSecondsToIso(periodEnd);
+            const currentAccount = await env.DB.prepare(
+              `SELECT plan_expires_at FROM accounts WHERE id = ?`
             )
-              .bind(
-                plan,
-                unixSecondsToIso(periodEnd),
-                subscription.id,
-                accountId
+              .bind(accountId)
+              .first<{ plan_expires_at: string | null }>();
+
+            // このフォールバック自体が「古いイベントを後から処理した」
+            // ケースである可能性もあるため、既存の有効期限より後退する
+            // 反映は行わない(既に別の有効なSubscriptionでより新しい
+            // 有効期限が設定済みの状態を、古い情報で上書きしないための保険)。
+            const currentExpiresAt = currentAccount?.plan_expires_at;
+            const isSafeToApply =
+              !currentExpiresAt ||
+              new Date(newExpiresAt).getTime() >=
+                new Date(currentExpiresAt).getTime();
+
+            if (isSafeToApply) {
+              await env.DB.prepare(
+                `
+                UPDATE accounts
+                SET plan = ?, plan_expires_at = ?, stripe_subscription_id = ?
+                WHERE id = ?
+              `
               )
-              .run();
+                .bind(plan, newExpiresAt, subscription.id, accountId)
+                .run();
+            } else {
+              console.warn(
+                `stripe webhook: skipped fallback update for account ${accountId} ` +
+                  `because it would move plan_expires_at backward ` +
+                  `(current=${currentExpiresAt}, new=${newExpiresAt})`
+              );
+            }
           }
         }
       }

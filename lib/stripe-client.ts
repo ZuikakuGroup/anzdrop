@@ -9,7 +9,12 @@ let stripePromise: Promise<Stripe | null> | null = null;
 // アプリ全体で一度だけ呼び出した結果のPromiseを使い回す(Stripe公式の推奨パターン)。
 export function getStripe(): Promise<Stripe | null> {
   if (!stripePromise) {
-    stripePromise = loadStripe(STRIPE_PUBLISHABLE_KEY);
+    // 公開可能キー未設定(環境変数の設定漏れ)のままloadStripe()を呼ぶと、
+    // Stripe.js側で例外になりPromiseがrejectされてしまう。呼び出し側は
+    // 既に「stripeがnull」の状態を正常系として扱っているため、その形に揃える。
+    stripePromise = STRIPE_PUBLISHABLE_KEY
+      ? loadStripe(STRIPE_PUBLISHABLE_KEY)
+      : Promise.resolve(null);
   }
 
   return stripePromise;

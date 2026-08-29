@@ -192,6 +192,42 @@ describe("POST /api/billing/stripe/webhook", () => {
     );
   });
 
+  it("skips the metadata.accountId fallback when it would move plan_expires_at backward", async () => {
+    // フォールバック自体が、既に別の有効なSubscriptionでより新しい有効期限が
+    // 設定済みの状態を、古いイベントの情報で後退させてしまわないことを確認する。
+    const laterExpiry = new Date(
+      Date.now() + 60 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: laterExpiry,
+      stripeSubscriptionId: "sub_newer_valid",
+    });
+    // 現在の有効期限より前になる、古いSubscriptionからのイベント。
+    const earlierPeriodEndUnix =
+      Math.floor(Date.now() / 1000) + 10 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_stale_fallback", "customer.subscription.updated", {
+        id: "sub_older_stale",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          earlierPeriodEndUnix
+        ),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // 何も上書きされていないこと(有効期限も、紐づくSubscription IDも)。
+    expect(account?.plan_expires_at).toBe(laterExpiry);
+    expect(account?.stripe_subscription_id).toBe("sub_newer_valid");
+  });
+
   it("downgrades from premium to standard when the subscription's price changes to the standard price", async () => {
     const { accountId } = await insertTestAccount(env, {
       plan: "premium",

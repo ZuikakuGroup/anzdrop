@@ -26,7 +26,7 @@
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Turnstile検証用のシークレットキー |
 | `SESSION_SECRET` | アカウントのログインセッションJWTの署名鍵(HS256)。詳細は[`accounts.md`](./accounts.md) |
-| `STRIPE_SECRET_KEY` | Stripe APIキー(Checkout Session作成・Webhook内でのSubscription参照に使用) |
+| `STRIPE_SECRET_KEY` | Stripe APIキー(Customer/Subscription作成・Webhook署名検証に使用) |
 | `STRIPE_WEBHOOK_SECRET` | `/api/billing/stripe/webhook` の署名検証用シークレット(Stripeダッシュボードで作成したWebhookエンドポイントごとに発行される) |
 | `OPENNODE_API_KEY` | OpenNode APIキー。charge作成とWebhook署名検証(HMAC鍵)の両方に使う |
 

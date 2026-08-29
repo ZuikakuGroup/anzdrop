@@ -90,12 +90,14 @@ function PayButton({ returnUrl, onSuccess, onCancel }: PayButtonProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement options={PAYMENT_ELEMENT_OPTIONS} />
 
-      <p className="min-h-[20px] text-sm font-bold text-brand">{error}</p>
+      <p role="alert" className="min-h-[20px] text-sm font-bold text-brand">
+        {error}
+      </p>
 
       <div className="space-y-2">
         <button
           type="submit"
-          disabled={!stripe || isSubmitting}
+          disabled={!stripe || !elements || isSubmitting}
           className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
         >
           {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}

@@ -25,6 +25,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 const mockCustomersCreate = vi.fn();
 const mockSubscriptionsCreate = vi.fn();
+const mockSubscriptionsRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -32,7 +33,10 @@ vi.mock("stripe", () => {
       return {};
     }
     customers = { create: mockCustomersCreate };
-    subscriptions = { create: mockSubscriptionsCreate };
+    subscriptions = {
+      create: mockSubscriptionsCreate,
+      retrieve: mockSubscriptionsRetrieve,
+    };
     constructor() {}
   }
 
@@ -53,6 +57,7 @@ beforeEach(async () => {
   await clearAllTables(env);
   mockCustomersCreate.mockReset();
   mockSubscriptionsCreate.mockReset();
+  mockSubscriptionsRetrieve.mockReset();
 });
 
 function subscriptionWithClientSecret(
@@ -222,6 +227,90 @@ describe("POST /api/billing/stripe/subscription", () => {
     // 決済が確定できる状態ではないため、DBへも反映しない。
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBeNull();
+  });
+
+  it("returns 409 without creating a new subscription when the account already has an active subscription", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_already_active",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(409);
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
+      "sub_already_active"
+    );
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+
+    const body = await readJson<{ success: boolean }>(response);
+    expect(body.success).toBe(false);
+  });
+
+  it("returns 409 when the existing subscription is trialing", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_trialing",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "trialing" });
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(409);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("allows creating a new subscription when the existing one is not active/trialing (e.g. abandoned incomplete)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_abandoned",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_retry_new", "seti_retry_secret")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCreate).toHaveBeenCalled();
+  });
+
+  it("allows creating a new subscription when the previously registered subscription no longer exists on Stripe", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_gone",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockRejectedValue(
+      new Error("No such subscription")
+    );
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_fresh", "seti_fresh_secret")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCreate).toHaveBeenCalled();
+  });
+
+  it("persists a newly created Stripe customer id even if the subsequent subscription creation fails (avoids an orphaned Customer on retry)", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockCustomersCreate.mockResolvedValue({ id: "cus_orphan_guard" });
+    mockSubscriptionsCreate.mockRejectedValue(new Error("stripe down"));
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(500);
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_customer_id).toBe("cus_orphan_guard");
   });
 
   it("returns a generic 500 (without leaking internal error details) when the Stripe API call throws", async () => {

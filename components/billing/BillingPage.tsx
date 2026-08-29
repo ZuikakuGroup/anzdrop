@@ -164,6 +164,7 @@ export default function BillingPage({
 
   const handlePaymentCancel = () => {
     setStripePayment(null);
+    setNotice("");
   };
 
   const startBtcCharge = async () => {

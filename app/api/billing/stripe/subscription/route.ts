@@ -35,10 +35,13 @@ export const POST = withApiHandler(
     const priceId = env[STRIPE_PRICE_ID_BY_PLAN[parsed.data.plan]];
 
     const account = await env.DB.prepare(
-      `SELECT stripe_customer_id FROM accounts WHERE id = ? LIMIT 1`
+      `SELECT stripe_customer_id, stripe_subscription_id FROM accounts WHERE id = ? LIMIT 1`
     )
       .bind(session.accountId)
-      .first<{ stripe_customer_id: string | null }>();
+      .first<{
+        stripe_customer_id: string | null;
+        stripe_subscription_id: string | null;
+      }>();
 
     if (!account) {
       return Response.json(
@@ -53,10 +56,46 @@ export const POST = withApiHandler(
       httpClient: Stripe.createFetchHttpClient(),
     });
 
+    // 既に有効(active/trialing)なSubscriptionを持つ状態で新規作成を許すと、
+    // 二重に課金対象のSubscriptionが残ってしまう。この呼び出し自体には
+    // プラン変更・アップグレードの機能はまだ無いため、既に有効な場合は
+    // ここで止める(プラン変更が必要な場合は別途サポート対応)。
+    if (account.stripe_subscription_id) {
+      try {
+        const existing = await stripe.subscriptions.retrieve(
+          account.stripe_subscription_id
+        );
+
+        if (existing.status === "active" || existing.status === "trialing") {
+          return Response.json(
+            {
+              success: false,
+              error:
+                "既に有効なプランのお支払いが設定されています。プランの変更が必要な場合はお問い合わせください。",
+            },
+            { status: 409 }
+          );
+        }
+      } catch {
+        // 参照先が既に存在しない(削除済み等)場合は、新規作成を妨げない。
+      }
+    }
+
     // このアプリはメールアドレスを収集しないため、Customerには紐づける
     // 個人情報を渡さない(支払い方法とStripe側の顧客IDだけを保持する)。
-    const customerId =
-      account.stripe_customer_id ?? (await stripe.customers.create()).id;
+    let customerId = account.stripe_customer_id;
+
+    if (!customerId) {
+      customerId = (await stripe.customers.create()).id;
+
+      // subscriptions.create()がこの後失敗しても、作成済みのCustomerが
+      // 未記録の孤児にならないよう、ここで一度確定させておく。
+      await env.DB.prepare(
+        `UPDATE accounts SET stripe_customer_id = ? WHERE id = ?`
+      )
+        .bind(customerId, session.accountId)
+        .run();
+    }
 
     // payment_behavior: "default_incomplete"により、Subscriptionは
     // "incomplete"状態で作成され、クライアント側でPaymentElement経由の
@@ -95,6 +134,7 @@ export const POST = withApiHandler(
     // customer.subscription.updated Webhookが"active"への遷移をこの
     // stripe_subscription_idで突き合わせて検知できるよう、支払い確定前の
     // この時点で書き込んでおく(plan/plan_expires_atはまだ変更しない)。
+    // stripe_customer_idは既に確定済みだが、念のため同じUPDATEで再度合わせておく。
     await env.DB.prepare(
       `UPDATE accounts SET stripe_customer_id = ?, stripe_subscription_id = ? WHERE id = ?`
     )
