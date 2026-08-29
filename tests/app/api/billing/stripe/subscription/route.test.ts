@@ -418,4 +418,87 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(body.error).toBe("サーバー内部でエラーが発生しました");
     expect(body.error).not.toContain("stripe unreachable");
   });
+
+  it("does not check any existing subscription when the account has a customer id but no subscription id", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_first", "seti_first_secret")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+    expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
+  });
+
+  it("creates a new subscription without a cancel call when the registered one is already 'canceled' (terminal)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_canceled",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "canceled" });
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_after_canceled", "seti_after_canceled")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    // canceled は incomplete/unpaid と違い、明示的なキャンセルは不要。
+    expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
+    expect(mockSubscriptionsCreate).toHaveBeenCalled();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_after_canceled");
+  });
+
+  it("creates a new subscription without a cancel call when the registered one is 'incomplete_expired'", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_incomplete_expired",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      status: "incomplete_expired",
+    });
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_after_expired", "seti_after_expired")
+    );
+
+    const response = await postSubscription(cookie, { plan: "premium" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
+    expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [{ price: env.STRIPE_PRICE_ID_PREMIUM }],
+      })
+    );
+  });
+
+  it("creates the Stripe customer with no personal data and links both ids for a premium checkout", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockCustomersCreate.mockResolvedValue({ id: "cus_consistent" });
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_consistent", "seti_consistent")
+    );
+
+    await postSubscription(cookie, { plan: "premium" });
+
+    // メールアドレス等の個人情報を Customer に渡さない(引数なしで作成)。
+    expect(mockCustomersCreate).toHaveBeenCalledWith();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_customer_id).toBe("cus_consistent");
+    expect(account?.stripe_subscription_id).toBe("sub_consistent");
+    expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ customer: "cus_consistent" })
+    );
+  });
 });

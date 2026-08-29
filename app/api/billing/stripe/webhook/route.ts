@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
+import { downgradeExpiredCardPlan } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
@@ -39,14 +40,30 @@ async function applyEvent(
       const plan = planFromSubscription(subscription, env);
 
       if (isActive && periodEnd && plan) {
+        const newExpiresAt = unixSecondsToIso(periodEnd);
+
+        // plan(Price ID由来)は常に実態へ合わせるが、plan_expires_atは
+        // 後退させない。イベントが順不同で届いて古い請求期間末を持つものを
+        // 後から処理した場合や、Bitcoinの「期間チャージ」でカードの請求期間より
+        // 先まで有効期限が積まれている場合に、より手前の日付で上書きして
+        // 課金済みの期間を失わせないための保険(sync側の同じガードと揃える)。
+        // SQLiteのmax()はNULL引数があるとNULLを返すため、既存値がNULLの
+        // ケースはcoalesceで新しい値へ寄せてから比較する。plan_expires_atは
+        // 全経路がtoISOString()の固定フォーマットで書くため、文字列の
+        // 辞書順比較がそのまま時刻の前後比較になる。
+        //
+        // なお plan 列は順不同イベントでは一時的に巻き戻りうる(古いイベントの
+        // Price IDで上書きされる)が、次のイベント / sync で実態へ復旧する。
+        // 課金済み期間(plan_expires_at)ほど保護の必要が高くないため非対称にしている。
         const result = await env.DB.prepare(
           `
           UPDATE accounts
-          SET plan = ?, plan_expires_at = ?
+          SET plan = ?,
+              plan_expires_at = max(coalesce(plan_expires_at, ?), ?)
           WHERE stripe_subscription_id = ?
         `
         )
-          .bind(plan, unixSecondsToIso(periodEnd), subscription.id)
+          .bind(plan, newExpiresAt, newExpiresAt, subscription.id)
           .run();
 
         // accounts.stripe_subscription_idと一致する行が無かった場合の
@@ -64,7 +81,6 @@ async function applyEvent(
           const accountId = subscription.metadata?.accountId;
 
           if (typeof accountId === "string" && accountId) {
-            const newExpiresAt = unixSecondsToIso(periodEnd);
             const currentAccount = await env.DB.prepare(
               `SELECT plan_expires_at, stripe_subscription_id FROM accounts WHERE id = ?`
             )
@@ -150,16 +166,9 @@ async function applyEvent(
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
 
-      // 即時ダウングレード。stripe_subscription_idは失効済みなので消しておく。
-      await env.DB.prepare(
-        `
-        UPDATE accounts
-        SET plan_expires_at = ?, stripe_subscription_id = NULL
-        WHERE stripe_subscription_id = ?
-      `
-      )
-        .bind(new Date().toISOString(), subscription.id)
-        .run();
+      // 即時ダウングレード(plan_expires_atを現在時刻へ、追跡用IDを外す)。
+      // ただしBitcoinの期間チャージで先まで前払いされている分は残す。
+      await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
 
       break;
     }

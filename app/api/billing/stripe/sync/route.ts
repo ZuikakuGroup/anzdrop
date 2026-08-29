@@ -2,7 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
-import { getAccountPlanInfo } from "@/lib/plan";
+import { downgradeExpiredCardPlan, getAccountPlanInfo } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
@@ -155,22 +155,15 @@ async function reconcileFromStripe(
   } else if (isDeadSubscriptionStatus(subscription.status)) {
     // canceled / incomplete_expired / unpaid。Webhook の
     // customer.subscription.deleted と同じ「即時ダウングレード」を行う
-    // (plan_expires_at を現在時刻に、stripe_subscription_id を外す)。
+    // (plan_expires_at を現在時刻に、stripe_subscription_id を外す。ただし
+    // Bitcoin の期間チャージで先まで前払いされている分は残す)。
     // 期間末解約の通常フローでは、Stripe が canceled にする時点で既に
     // 期間末に達しているため実質的な差は無い。一方サポートからの即時解約
     // (返金・不正対応)の場合は、この即時ダウングレードが意図どおり。
     // ここで plan_expires_at を触らずポインタだけ外すと、後から届いた
     // deleted Webhook が突き合わせる行を失い、即時ダウングレードが
     // 恒久的に不発になってしまう。
-    await env.DB.prepare(
-      `
-      UPDATE accounts
-      SET plan_expires_at = ?, stripe_subscription_id = NULL
-      WHERE id = ? AND stripe_subscription_id = ?
-    `
-    )
-      .bind(new Date().toISOString(), accountId, subscriptionId)
-      .run();
+    await downgradeExpiredCardPlan(env, { accountId, subscriptionId });
   }
 
   // incomplete / past_due 等の中間状態は accounts を触らない

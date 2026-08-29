@@ -277,6 +277,42 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.subscription).toBeNull();
   });
 
+  it("keeps a Bitcoin-prepaid future period when sync sees a dead (canceled) subscription", async () => {
+    const btcPaidUntil = new Date(daysFromNowUnix(50) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: btcPaidUntil,
+      stripeSubscriptionId: "sub_canceled_with_btc",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_sync_switch",
+        btcPaidUntil,
+        new Date().toISOString()
+      )
+      .run();
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription("canceled", env.STRIPE_PRICE_ID_PREMIUM, daysFromNowUnix(-1))
+    );
+
+    const response = await postSync(cookie);
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    // Bitcoin 前払いの期限は残る。実効プランも premium のまま。
+    expect(account?.plan_expires_at).toBe(btcPaidUntil);
+
+    const body = await readJson<{ plan: string }>(response);
+    expect(body.plan).toBe("premium");
+  });
+
   it("stops tracking a subscription that no longer exists on Stripe (404) without erroring, and keeps the paid period", async () => {
     const paidUntil = new Date(daysFromNowUnix(5) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
@@ -368,5 +404,140 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(account?.stripe_subscription_id).toBe("sub_past_due");
     expect(account?.plan).toBe("standard");
     expect(account?.plan_expires_at).toBe(expiresAt);
+  });
+
+  it("reflects a trialing subscription (free trial) as an active paid plan", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      planExpiresAt: null,
+      stripeSubscriptionId: "sub_trialing",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    const periodEnd = daysFromNowUnix(14);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription("trialing", env.STRIPE_PRICE_ID_PREMIUM, periodEnd)
+    );
+
+    const response = await postSync(cookie);
+
+    const body = await readJson<{
+      plan: string;
+      subscription: { state: string } | null;
+    }>(response);
+    expect(body.plan).toBe("premium");
+    expect(body.subscription?.state).toBe("active");
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(
+      new Date(periodEnd * 1000).toISOString()
+    );
+  });
+
+  it("immediately downgrades on an 'unpaid' subscription (terminal dunning) just like 'canceled'", async () => {
+    const paidUntil = new Date(daysFromNowUnix(12) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_unpaid",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription("unpaid", env.STRIPE_PRICE_ID_PREMIUM, daysFromNowUnix(12))
+    );
+
+    const before = Date.now();
+    const response = await postSync(cookie);
+    const after = Date.now();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    const newExpiry = new Date(account?.plan_expires_at ?? 0).getTime();
+    expect(newExpiry).toBeGreaterThanOrEqual(before - 1000);
+    expect(newExpiry).toBeLessThanOrEqual(after + 1000);
+    expect(newExpiry).toBeLessThan(new Date(paidUntil).getTime());
+
+    const body = await readJson<{ plan: string; subscription: unknown }>(
+      response
+    );
+    expect(body.plan).toBe("free");
+    expect(body.subscription).toBeNull();
+  });
+
+  it("immediately downgrades on an 'incomplete_expired' subscription (initial payment never confirmed)", async () => {
+    const paidUntil = new Date(daysFromNowUnix(3) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_incomplete_expired",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription(
+        "incomplete_expired",
+        env.STRIPE_PRICE_ID_STANDARD,
+        daysFromNowUnix(-1)
+      )
+    );
+
+    const before = Date.now();
+    const response = await postSync(cookie);
+    const after = Date.now();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    const newExpiry = new Date(account?.plan_expires_at ?? 0).getTime();
+    expect(newExpiry).toBeGreaterThanOrEqual(before - 1000);
+    expect(newExpiry).toBeLessThanOrEqual(after + 1000);
+    expect(newExpiry).toBeLessThan(new Date(paidUntil).getTime());
+
+    const body = await readJson<{ plan: string }>(response);
+    expect(body.plan).toBe("free");
+  });
+
+  it("reports 'canceling' for a trialing subscription that is set to cancel at period end", async () => {
+    const periodEnd = daysFromNowUnix(10);
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: new Date(periodEnd * 1000).toISOString(),
+      stripeSubscriptionId: "sub_trial_canceling",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription("trialing", env.STRIPE_PRICE_ID_PREMIUM, periodEnd, true)
+    );
+
+    const response = await postSync(cookie);
+
+    const body = await readJson<{
+      plan: string;
+      subscription: { state: string } | null;
+    }>(response);
+    expect(body.plan).toBe("premium");
+    expect(body.subscription?.state).toBe("canceling");
+  });
+
+  it("leaves an intermediate (incomplete) subscription tracked and untouched", async () => {
+    const expiresAt = new Date(daysFromNowUnix(2) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: expiresAt,
+      stripeSubscriptionId: "sub_incomplete",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription("incomplete", env.STRIPE_PRICE_ID_STANDARD, daysFromNowUnix(2))
+    );
+
+    const response = await postSync(cookie);
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_incomplete");
+    expect(account?.plan).toBe("standard");
+    expect(account?.plan_expires_at).toBe(expiresAt);
+
+    // active/trialing 以外なので、画面表示用の要約は null(契約フロー扱い)。
+    const body = await readJson<{ subscription: unknown }>(response);
+    expect(body.subscription).toBeNull();
   });
 });

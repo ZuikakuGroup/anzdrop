@@ -139,6 +139,95 @@ describe("POST /api/billing/stripe/webhook", () => {
     );
   });
 
+  it("moves plan_expires_at forward on renewal (later period end)", async () => {
+    const oldExpiry = new Date(
+      Date.now() + 5 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: oldExpiry,
+      stripeSubscriptionId: "sub_renew",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 35 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_renew", "customer.subscription.updated", {
+        id: "sub_renew",
+        status: "active",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    await postWebhook("{}");
+
+    const account = await getAccount(accountId);
+    expect(new Date(account!.plan_expires_at!).getTime()).toBe(
+      periodEndUnix * 1000
+    );
+  });
+
+  it("does not move plan_expires_at backward when the event carries an earlier period end than what is already stored, but still follows the plan", async () => {
+    // 順不同でイベントが届く / Bitcoin の期間チャージでカードの請求期間より
+    // 先まで有効期限が積まれている等のケースで、より手前の日付で上書きして
+    // 課金済みの期間を失わせないこと(主経路のガード)。
+    const laterExpiry = new Date(
+      Date.now() + 60 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: laterExpiry,
+      stripeSubscriptionId: "sub_out_of_order",
+    });
+    const earlierPeriodEndUnix =
+      Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_out_of_order", "customer.subscription.updated", {
+        id: "sub_out_of_order",
+        status: "active",
+        // 価格は premium に変わっている(プランは実態へ追従させるべき)。
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          earlierPeriodEndUnix
+        ),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // 有効期限は後退していない。
+    expect(account?.plan_expires_at).toBe(laterExpiry);
+    // プランは実態(premium)へ追従している。
+    expect(account?.plan).toBe("premium");
+  });
+
+  it("sets plan_expires_at from the event when the account has no stored expiry yet (first activation)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      planExpiresAt: null,
+      stripeSubscriptionId: "sub_first_activation",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_first", "customer.subscription.updated", {
+        id: "sub_first_activation",
+        status: "active",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
+      })
+    );
+
+    await postWebhook("{}");
+
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("standard");
+    expect(new Date(account!.plan_expires_at!).getTime()).toBe(
+      periodEndUnix * 1000
+    );
+  });
+
   it("does not update any account when no row has a matching stripe_subscription_id", async () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
@@ -436,6 +525,102 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(expiresAtMs).toBeLessThanOrEqual(after);
   });
 
+  it("keeps a Bitcoin-prepaid future period on customer.subscription.deleted instead of expiring immediately", async () => {
+    // カード期間末解約 → その後 Bitcoin で前払い → カード期間末に deleted が届く、
+    // という切り替え順序。deleted の即時ダウングレードで Bitcoin 前払い分を
+    // 消してはいけない。
+    const btcPaidUntil = new Date(
+      Date.now() + 45 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: btcPaidUntil,
+      stripeSubscriptionId: "sub_switched_to_btc",
+    });
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_switch",
+        btcPaidUntil,
+        new Date().toISOString()
+      )
+      .run();
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_deleted_btc", "customer.subscription.deleted", {
+        id: "sub_switched_to_btc",
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    // Bitcoin 前払いの期限はそのまま。
+    expect(account?.plan_expires_at).toBe(btcPaidUntil);
+  });
+
+  it("still expires immediately on customer.subscription.deleted when the only Bitcoin payment is already spent or still pending", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: new Date(
+        Date.now() + 20 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      stripeSubscriptionId: "sub_no_live_btc",
+    });
+    // 過去に消費済みの paid な支払い(期限は過去)。
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_old",
+        new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+        new Date().toISOString()
+      )
+      .run();
+    // 未確定(pending)の支払い(先の期限が入っていても効かせない)。
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'pending', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_pending",
+        new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+        new Date().toISOString()
+      )
+      .run();
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_deleted_no_live_btc", "customer.subscription.deleted", {
+        id: "sub_no_live_btc",
+      })
+    );
+
+    const before = Date.now();
+    await postWebhook("{}");
+    const after = Date.now();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("free");
+    const expiresAtMs = new Date(account!.plan_expires_at!).getTime();
+    expect(expiresAtMs).toBeGreaterThanOrEqual(before - 1000);
+    expect(expiresAtMs).toBeLessThanOrEqual(after + 1000);
+  });
+
   it("acknowledges unhandled event types without making any DB change", async () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
 
@@ -551,5 +736,154 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     const accountAfterRetry = await getAccount(accountId);
     expect(accountAfterRetry?.plan).toBe("premium");
+  });
+
+  it("activates the plan for a trialing subscription (free trial), not only 'active'", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      stripeSubscriptionId: "sub_trial",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 14 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_trialing", "customer.subscription.updated", {
+        id: "sub_trial",
+        status: "trialing",
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("standard");
+    expect(new Date(account!.plan_expires_at!).getTime()).toBe(
+      periodEndUnix * 1000
+    );
+  });
+
+  it("does not touch the account when an active subscription carries no billing period (no items)", async () => {
+    const originalExpiry = new Date(
+      Date.now() + 5 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: originalExpiry,
+      stripeSubscriptionId: "sub_no_period",
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_no_period", "customer.subscription.updated", {
+        id: "sub_no_period",
+        status: "active",
+        items: { data: [] },
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(originalExpiry);
+  });
+
+  it("acknowledges customer.subscription.deleted for an unknown subscription id without affecting other accounts", async () => {
+    const otherExpiry = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: otherExpiry,
+      stripeSubscriptionId: "sub_unrelated_still_active",
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_deleted_unknown", "customer.subscription.deleted", {
+        id: "sub_never_seen_here",
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_unrelated_still_active");
+    expect(account?.plan_expires_at).toBe(otherExpiry);
+  });
+
+  it("does not fall back via metadata.accountId when the referenced account no longer exists, and leaves unrelated accounts untouched", async () => {
+    // 初回 UPDATE がどの行にもマッチせず(該当 stripe_subscription_id 無し)、
+    // metadata.accountId も既に存在しないアカウントを指している場合、
+    // 例外を投げずに 200 で終わり、無関係なアカウントにも一切触れないこと。
+    const bystanderExpiry = new Date(
+      Date.now() + 25 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId: bystanderId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: bystanderExpiry,
+      stripeSubscriptionId: "sub_bystander",
+    });
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_ghost_account", "customer.subscription.updated", {
+        id: "sub_for_deleted_account",
+        status: "active",
+        metadata: { accountId: "acct-that-was-deleted", plan: "premium" },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    // 現在ポインタを持たない(削除済み)アカウントなので衝突チェックも走らない。
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+
+    const bystander = await getAccount(bystanderId);
+    expect(bystander?.plan).toBe("standard");
+    expect(bystander?.plan_expires_at).toBe(bystanderExpiry);
+    expect(bystander?.stripe_subscription_id).toBe("sub_bystander");
+  });
+
+  it("skips the metadata.accountId fallback when the currently-linked subscription is trialing (not only 'active')", async () => {
+    // 衝突チェック(webhook/route.ts)は active だけでなく trialing も
+    // 「まだ生きている別サブスク」として扱う。trialing を落とす回帰を防ぐ。
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: new Date(
+        Date.now() + 10 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      stripeSubscriptionId: "sub_other_trialing",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "trialing" });
+
+    const laterPeriodEndUnix =
+      Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_conflict_trialing", "customer.subscription.updated", {
+        id: "sub_new_attempt",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          laterPeriodEndUnix
+        ),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith("sub_other_trialing");
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_other_trialing");
+    expect(new Date(account!.plan_expires_at!).getTime()).toBeLessThan(
+      laterPeriodEndUnix * 1000
+    );
   });
 });

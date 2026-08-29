@@ -248,4 +248,77 @@ describe("POST /api/billing/stripe/cancellation", () => {
     expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
     expect(await getSubscriptionId(accountId)).toBe("sub_maybe");
   });
+
+  it("allows scheduling cancellation for a trialing subscription", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      stripeSubscriptionId: "sub_trialing",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    const trialing = { ...activeSubscription(false), status: "trialing" };
+    mockSubscriptionsRetrieve.mockResolvedValue(trialing);
+    mockSubscriptionsUpdate.mockResolvedValue({
+      ...activeSubscription(true),
+      status: "trialing",
+    });
+
+    const response = await postCancellation(cookie, {
+      cancelAtPeriodEnd: true,
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsUpdate).toHaveBeenCalledWith("sub_trialing", {
+      cancel_at_period_end: true,
+    });
+
+    // trialing も active 扱いで要約が返ること(toSubscriptionSummary)。
+    const body = await readJson<{
+      success: boolean;
+      subscription: { state: string } | null;
+    }>(response);
+    expect(body.success).toBe(true);
+    expect(body.subscription?.state).toBe("canceling");
+  });
+
+  it("returns 409 for a past_due subscription (dunning in progress is not a cancelable state here)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeSubscriptionId: "sub_past_due",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      status: "past_due",
+      cancel_at_period_end: false,
+      items: { data: [] },
+    });
+
+    const response = await postCancellation(cookie, {
+      cancelAtPeriodEnd: true,
+    });
+
+    expect(response.status).toBe(409);
+    expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic 500 (and keeps the pointer) when the Stripe update call fails", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      stripeSubscriptionId: "sub_update_fails",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(activeSubscription(false));
+    mockSubscriptionsUpdate.mockRejectedValue(
+      new Error("stripe unreachable: internal detail")
+    );
+
+    const response = await postCancellation(cookie, {
+      cancelAtPeriodEnd: true,
+    });
+
+    expect(response.status).toBe(500);
+    const body = await readJson<{ success: boolean; error: string }>(response);
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("サーバー内部でエラーが発生しました");
+    expect(body.error).not.toContain("stripe unreachable");
+    expect(await getSubscriptionId(accountId)).toBe("sub_update_fails");
+  });
 });
