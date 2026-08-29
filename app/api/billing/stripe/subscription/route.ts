@@ -76,6 +76,20 @@ export const POST = withApiHandler(
             { status: 409 }
           );
         }
+
+        // "incomplete"(前回の試行が支払い未確定のまま放置されている)の
+        // 場合、そのSubscriptionのclient_secretはStripe側の自動期限切れ
+        // (約23時間後)まで有効なまま残る。ここで明示的にキャンセルせず
+        // 新しいSubscriptionを作ると、古い方のclient_secretを使って後から
+        // 支払いが確定してしまい、2つのSubscriptionが両方有効化されうる。
+        if (existing.status === "incomplete") {
+          try {
+            await stripe.subscriptions.cancel(account.stripe_subscription_id);
+          } catch {
+            // キャンセル自体が失敗しても(Stripe側で既に期限切れ済み等)、
+            // 新規作成は妨げない(ベストエフォート)。
+          }
+        }
       } catch (error) {
         // 404(該当Subscriptionが既に存在しない。削除済み等)の場合のみ
         // 新規作成を妨げない。それ以外(Stripe側の一時的な障害等)まで

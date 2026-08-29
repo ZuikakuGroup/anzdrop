@@ -127,8 +127,21 @@ async function applyEvent(
 
                 conflictsWithActiveSubscription =
                   other.status === "active" || other.status === "trialing";
-              } catch {
-                // 参照先が既に存在しない場合は衝突とみなさない。
+              } catch (error) {
+                // 404(該当Subscriptionが既に存在しない)の場合のみ衝突なしと
+                // みなす。それ以外(レート制限等の一時的な障害)まで握りつぶすと、
+                // 実際には有効な「別の」Subscriptionを見落として誤って
+                // 上書きしてしまいかねない。この場合はイベント全体を失敗させ、
+                // 「処理済み」マークも取り消して(POST側の共通処理)、
+                // Stripeの再送に賭ける。
+                const statusCode =
+                  error && typeof error === "object" && "statusCode" in error
+                    ? (error as { statusCode?: unknown }).statusCode
+                    : undefined;
+
+                if (statusCode !== 404) {
+                  throw error;
+                }
               }
             }
 

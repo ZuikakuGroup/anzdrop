@@ -26,6 +26,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 const mockCustomersCreate = vi.fn();
 const mockSubscriptionsCreate = vi.fn();
 const mockSubscriptionsRetrieve = vi.fn();
+const mockSubscriptionsCancel = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -36,6 +37,7 @@ vi.mock("stripe", () => {
     subscriptions = {
       create: mockSubscriptionsCreate,
       retrieve: mockSubscriptionsRetrieve,
+      cancel: mockSubscriptionsCancel,
     };
     constructor() {}
   }
@@ -58,6 +60,7 @@ beforeEach(async () => {
   mockCustomersCreate.mockReset();
   mockSubscriptionsCreate.mockReset();
   mockSubscriptionsRetrieve.mockReset();
+  mockSubscriptionsCancel.mockReset();
 });
 
 function subscriptionWithClientSecret(
@@ -263,15 +266,40 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
   });
 
-  it("allows creating a new subscription when the existing one is not active/trialing (e.g. abandoned incomplete)", async () => {
+  it("cancels the abandoned incomplete subscription before creating a new one (so its old client_secret can no longer be used)", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
       stripeSubscriptionId: "sub_abandoned",
     });
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
+    mockSubscriptionsCancel.mockResolvedValue({});
     mockSubscriptionsCreate.mockResolvedValue(
       subscriptionWithClientSecret("sub_retry_new", "seti_retry_secret")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCancel).toHaveBeenCalledWith("sub_abandoned");
+    // キャンセルは新規作成より前に行われること。
+    expect(
+      mockSubscriptionsCancel.mock.invocationCallOrder[0]
+    ).toBeLessThan(mockSubscriptionsCreate.mock.invocationCallOrder[0]);
+  });
+
+  it("still creates a new subscription even if cancelling the abandoned incomplete one fails (best-effort cleanup)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_abandoned_gone",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "incomplete" });
+    mockSubscriptionsCancel.mockRejectedValue(
+      new Error("already expired by Stripe")
+    );
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_retry_new_2", "seti_retry_secret_2")
     );
 
     const response = await postSubscription(cookie, { plan: "standard" });

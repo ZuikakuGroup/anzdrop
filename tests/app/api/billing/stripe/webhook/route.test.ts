@@ -250,6 +250,57 @@ describe("POST /api/billing/stripe/webhook", () => {
     );
   });
 
+  it("fails the whole webhook (and keeps the account unchanged) when checking the conflicting subscription fails transiently (not a 404)", async () => {
+    // 衝突チェックのstripe.subscriptions.retrieve()がレート制限等で一時的に
+    // 失敗した場合、「衝突なし」と誤認して上書きしてはならない。イベント
+    // 全体を失敗させ(withApiHandlerの汎用500)、Stripeの再送に賭ける。
+    const originalExpiry = new Date(
+      Date.now() + 10 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: originalExpiry,
+      stripeSubscriptionId: "sub_other_unknown_state",
+    });
+    mockSubscriptionsRetrieve.mockRejectedValue(
+      Object.assign(new Error("rate limited"), { statusCode: 429 })
+    );
+
+    const laterPeriodEndUnix =
+      Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
+    const event = fakeEvent(
+      "evt_conflict_check_failure",
+      "customer.subscription.updated",
+      {
+        id: "sub_new_attempt",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          laterPeriodEndUnix
+        ),
+      }
+    );
+    mockConstructEventAsync.mockResolvedValue(event);
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(500);
+
+    // アカウントは一切変更されていないこと。
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBe("sub_other_unknown_state");
+    expect(account?.plan_expires_at).toBe(originalExpiry);
+
+    // 「処理済み」マークも取り消され、Stripeの再送を受け付けられること。
+    const eventRow = await env.DB.prepare(
+      `SELECT id FROM stripe_events WHERE id = ?`
+    )
+      .bind(event.id)
+      .first();
+    expect(eventRow).toBeNull();
+  });
+
   it("skips the metadata.accountId fallback when it would move plan_expires_at backward", async () => {
     // フォールバック自体が、既に別の有効なSubscriptionでより新しい有効期限が
     // 設定済みの状態を、古いイベントの情報で後退させてしまわないことを確認する。
