@@ -1,5 +1,5 @@
 import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
-import type { Retention } from "@/lib/retention";
+import { RETENTION_DAYS, type Retention } from "@/lib/retention";
 
 export type Plan = "free" | "standard" | "premium";
 
@@ -62,6 +62,19 @@ export const PLAN_RANK: Record<Plan, number> = {
 
 export function getMaxFileSizeBytes(plan: Plan): number {
   return PLAN_LIMITS[plan].maxFileSizeBytes;
+}
+
+// そのプランで選べる最長の保存期間(日数)。"once"はダウンロード後即削除の
+// 安全弁として7日が入っているだけで、ユーザーが「保存期間」として選ぶものでは
+// ないため除外する。free=7 / standard=15 / premium=30。/mypageのプラン内容表示で使う。
+export function getMaxRetentionDays(plan: Plan): number {
+  return Math.max(
+    ...PLAN_LIMITS[plan].allowedRetentions
+      .filter((retention): retention is Exclude<Retention, "once"> =>
+        retention !== "once"
+      )
+      .map((retention) => RETENTION_DAYS[retention])
+  );
 }
 
 export function isRetentionAllowedForPlan(

@@ -125,9 +125,11 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 ### `POST /api/billing/stripe/sync`
 
-ログイン必須。`customer.subscription.updated` / `deleted` のWebhookが一時的に届かなかった場合の保険。アカウントに紐づく`stripe_subscription_id`のSubscriptionをStripeから取り直し、`accounts.plan` / `plan_expires_at`をStripe側の実態へ合わせ直す(Webhookと同じ列・同じ判定を使い、新しい情報の保存はしない)。`/mypage/billing`の初回表示時と、カード決済確定直後のポーリングでクライアントから呼ばれる。Stripeで契約したことが無いアカウントはStripe APIを呼ばず現在値を返す。あわせて画面表示用の現在のサブスクリプション要約も返す。
+ログイン必須。`customer.subscription.updated` / `deleted` のWebhookが一時的に届かなかった場合の保険。アカウントに紐づく`stripe_subscription_id`のSubscriptionをStripeから取り直し、`accounts.plan` / `plan_expires_at`をStripe側の実態へ合わせ直す(Webhookと同じ列・同じ判定を使い、新しい情報の保存はしない)。`/mypage`と`/mypage/billing`の初回表示時、およびカード決済確定直後のポーリングでクライアントから呼ばれる(クライアント側の呼び出し・401/500ハンドリングは`lib/account/planStatus.ts`に集約)。Stripeで契約したことが無いアカウントはStripe APIを呼ばず現在値を返す。あわせて画面表示用の現在のサブスクリプション要約も返す。
 
-- レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling", currentPeriodEnd: string|null }`または`null`(契約が無い/有効でない)。`"canceling"`は期間末で終了予定(自動更新停止済み)を表す。
+- レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)を表す。
+  - `null`になるのは、契約が無い / Subscriptionが`active`・`trialing`でない(`incomplete`・`past_due`・`canceled`等) / Stripe取得が404(削除済み)のとき。
+  - ただしStripe取得が404以外で失敗(レート制限・障害)した場合は、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。このときも`accounts`は書き換えない。
 
 ### `POST /api/billing/stripe/cancellation`
 

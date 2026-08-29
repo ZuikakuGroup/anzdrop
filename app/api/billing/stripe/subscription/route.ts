@@ -66,15 +66,14 @@ export const POST = withApiHandler(
           account.stripe_subscription_id
         );
 
-        // active/trialing はもちろん、past_due/unpaid(更新の支払いに失敗して
-        // dunning 中)も「まだ生きている Subscription」なので、ここで新規作成を
+        // active/trialing はもちろん、past_due(更新の支払いに失敗して dunning
+        // リトライ中)も「まだ生きている Subscription」なので、ここで新規作成を
         // 許すと dunning 回復時に2本が同時に課金対象になる。プラン変更・支払い
         // 方法の更新はまだ self-service では無いためサポート対応に寄せる。
         if (
           existing.status === "active" ||
           existing.status === "trialing" ||
-          existing.status === "past_due" ||
-          existing.status === "unpaid"
+          existing.status === "past_due"
         ) {
           return Response.json(
             {
@@ -86,12 +85,18 @@ export const POST = withApiHandler(
           );
         }
 
-        // "incomplete"(前回の試行が支払い未確定のまま放置されている)の
-        // 場合、そのSubscriptionのclient_secretはStripe側の自動期限切れ
-        // (約23時間後)まで有効なまま残る。ここで明示的にキャンセルせず
-        // 新しいSubscriptionを作ると、古い方のclient_secretを使って後から
-        // 支払いが確定してしまい、2つのSubscriptionが両方有効化されうる。
-        if (existing.status === "incomplete") {
+        // "incomplete"(初回の支払いが未確定のまま放置されている)と "unpaid"
+        // (更新の dunning を尽くしても支払われず終端になったが、Stripe 側では
+        // キャンセルされず残っている)は、どちらも新規作成の前に明示的に
+        // キャンセルする。前者は古い client_secret が Stripe の自動期限切れ
+        // (約23時間後)まで有効なまま残り、古い方で支払いが確定すると2本が
+        // 有効化されうる。後者は sync 側も isDeadSubscriptionStatus で終端扱いに
+        // して stripe_subscription_id を外すため、ここでキャンセルしないと
+        // 追跡できない Subscription が Stripe に残ってしまう(扱いを sync と揃える)。
+        if (
+          existing.status === "incomplete" ||
+          existing.status === "unpaid"
+        ) {
           try {
             await stripe.subscriptions.cancel(account.stripe_subscription_id);
           } catch {

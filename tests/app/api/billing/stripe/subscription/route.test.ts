@@ -266,23 +266,41 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
   });
 
-  it.each(["past_due", "unpaid"])(
-    "returns 409 without creating a new subscription when the existing one is %s (still billable, dunning)",
-    async (status) => {
-      const { accountId } = await insertTestAccount(env, {
-        stripeCustomerId: "cus_existing",
-        stripeSubscriptionId: "sub_dunning",
-      });
-      const cookie = await sessionCookieHeader(env, accountId);
-      mockSubscriptionsRetrieve.mockResolvedValue({ status });
+  it("returns 409 without creating a new subscription when the existing one is past_due (dunning still retrying)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_past_due",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "past_due" });
 
-      const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "standard" });
 
-      expect(response.status).toBe(409);
-      expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
-      expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
-    }
-  );
+    expect(response.status).toBe(409);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+    expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels a terminal 'unpaid' subscription before creating a new one (kept consistent with the sync route's dead-status handling)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_unpaid",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "unpaid" });
+    mockSubscriptionsCancel.mockResolvedValue({});
+    mockSubscriptionsCreate.mockResolvedValue(
+      subscriptionWithClientSecret("sub_after_unpaid", "seti_after_unpaid")
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsCancel).toHaveBeenCalledWith("sub_unpaid");
+    expect(
+      mockSubscriptionsCancel.mock.invocationCallOrder[0]
+    ).toBeLessThan(mockSubscriptionsCreate.mock.invocationCallOrder[0]);
+  });
 
   it("cancels the abandoned incomplete subscription before creating a new one (so its old client_secret can no longer be used)", async () => {
     const { accountId } = await insertTestAccount(env, {

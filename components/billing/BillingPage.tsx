@@ -5,7 +5,6 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
 import StripePaymentForm from "@/components/billing/StripePaymentForm";
-import type { StripeSyncResponse } from "@/app/api/billing/stripe/sync/schema";
 import type { SubscriptionResponse } from "@/app/api/billing/stripe/subscription/schema";
 import type { CancellationResponse } from "@/app/api/billing/stripe/cancellation/schema";
 import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
@@ -13,18 +12,11 @@ import {
   PLAN_LABELS,
   PLAN_LIMITS,
   PLAN_MONTHLY_PRICE_JPY,
-  type Plan,
 } from "@/lib/plan";
 import { formatBytes } from "@/lib/format";
 import { getStripe, STRIPE_PUBLISHABLE_KEY } from "@/lib/stripe-client";
 import type { StripeSubscriptionSummary } from "@/lib/stripe-subscription";
-
-type MeData = {
-  accountId: string;
-  plan: Plan;
-  planExpiresAt: string | null;
-  subscription: StripeSubscriptionSummary | null;
-};
+import { loadPlanStatus, type PlanStatus } from "@/lib/account/planStatus";
 
 type PurchasablePlan = "standard" | "premium";
 
@@ -32,12 +24,10 @@ const PURCHASABLE_PLANS: PurchasablePlan[] = ["standard", "premium"];
 
 // Webhook反映はStripeからの非同期通知を待つ必要があるため、決済確定直後は
 // 少し間を空けて数回だけ最新のプランを取り直す(反映が間に合わなくても
-// エラーにはせず、単に古い表示のまま次のポーリングを待つ)。取得先は
-// POST /api/billing/stripe/sync で、Webhookが届いていなくてもStripe側の
-// 実際のSubscription状態を取り直してプランへ反映する。
+// エラーにはせず、単に古い表示のまま次のポーリングを待つ)。取得は
+// loadPlanStatus() = POST /api/billing/stripe/sync で、Webhookが届いて
+// いなくてもStripe側の実際のSubscription状態を取り直してプランへ反映する。
 const PLAN_REFRESH_DELAYS_MS = [1500, 3000, 5000];
-
-const PLAN_SYNC_ENDPOINT = "/api/billing/stripe/sync";
 
 type Props = {
   initialPaymentIntentClientSecret?: string;
@@ -46,7 +36,7 @@ type Props = {
 export default function BillingPage({
   initialPaymentIntentClientSecret,
 }: Props) {
-  const [me, setMe] = useState<MeData | null>(null);
+  const [me, setMe] = useState<PlanStatus | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [isLoadingAction, setIsLoadingAction] = useState<
     "stripe" | "btc" | null
@@ -66,20 +56,12 @@ export default function BillingPage({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const refreshMe = async () => {
-    try {
-      const response = await fetch(PLAN_SYNC_ENDPOINT, { method: "POST" });
-      const data = (await response.json()) as StripeSyncResponse;
+    const result = await loadPlanStatus();
 
-      if (data.success) {
-        setMe({
-          accountId: data.accountId,
-          plan: data.plan,
-          planExpiresAt: data.planExpiresAt,
-          subscription: data.subscription,
-        });
-      }
-    } catch {
-      // ポーリングの失敗は致命的ではないため、次の再取得を待つだけにする。
+    // ポーリング中は成功時だけ表示を更新する。401・エラーはここでは扱わない
+    // (初回ロードで既に判定済み。ポーリングの失敗は次の再取得を待つ)。
+    if (result.kind === "ok") {
+      setMe(result.status);
     }
   };
 
@@ -92,36 +74,21 @@ export default function BillingPage({
   useEffect(() => {
     // 初回表示のこのタイミングでStripe側のSubscription状態も取り直す
     // (Webhook不達で「課金済みなのに未反映」等になっていた場合の是正)。
-    fetch(PLAN_SYNC_ENDPOINT, { method: "POST" })
-      .then(async (response) => {
-        // 401(未ログイン)のときだけログインへ誘導する。500等の
-        // サーバーエラーで誘導すると、/mypage/loginがログイン済みを見て
-        // ここへ戻し、リダイレクトループになる。
-        if (response.status === 401) {
-          window.location.href = "/mypage/login";
-          return;
-        }
+    // 401(未ログイン)のときだけログインへ誘導する。500等のサーバーエラーで
+    // 誘導すると、/mypage/loginがログイン済みを見てここへ戻しループになる。
+    loadPlanStatus().then((result) => {
+      if (result.kind === "unauthenticated") {
+        window.location.href = "/mypage/login";
+        return;
+      }
 
-        if (!response.ok) {
-          setLoadError(true);
-          return;
-        }
+      if (result.kind === "error") {
+        setLoadError(true);
+        return;
+      }
 
-        const data = (await response.json()) as StripeSyncResponse;
-
-        if (!data.success) {
-          setLoadError(true);
-          return;
-        }
-
-        setMe({
-          accountId: data.accountId,
-          plan: data.plan,
-          planExpiresAt: data.planExpiresAt,
-          subscription: data.subscription,
-        });
-      })
-      .catch(() => setLoadError(true));
+      setMe(result.status);
+    });
   }, []);
 
   // カード決済の3Dセキュア等が稀にページ遷移を伴う場合のフォールバック。
@@ -284,6 +251,12 @@ export default function BillingPage({
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               プラン・お支払い
             </h1>
+            <a
+              href="/mypage"
+              className="text-xs font-bold text-brand hover:underline"
+            >
+              ← アカウント概要
+            </a>
           </div>
 
           {loadError ? (
@@ -296,18 +269,6 @@ export default function BillingPage({
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="rounded border-2 border-ink/20 p-4 text-sm">
-                <p className="font-bold">
-                  現在のプラン: {PLAN_LABELS[me.plan]}
-                </p>
-                {me.plan !== "free" && me.planExpiresAt && (
-                  <p className="mt-1 text-xs text-ink/60">
-                    有効期限:{" "}
-                    {new Date(me.planExpiresAt).toLocaleString("ja-JP")}
-                  </p>
-                )}
-              </div>
-
               {notice && (
                 <p className="rounded border-2 border-ink/20 p-3 text-sm font-bold text-ink/70">
                   {notice}

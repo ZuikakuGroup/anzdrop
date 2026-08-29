@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   PLAN_LIMITS,
   getMaxFileSizeBytes,
+  getMaxRetentionDays,
   isRetentionAllowedForPlan,
   isPreviewAllowedForPlan,
   isTurnstileRequiredForPlan,
@@ -25,6 +26,35 @@ describe("getMaxFileSizeBytes", () => {
     expect(getMaxFileSizeBytes("premium")).toBeGreaterThan(
       getMaxFileSizeBytes("standard")
     );
+  });
+});
+
+describe("getMaxRetentionDays", () => {
+  it("returns the longest selectable retention per plan, excluding the 'once' safety valve", () => {
+    expect(getMaxRetentionDays("free")).toBe(7);
+    expect(getMaxRetentionDays("standard")).toBe(15);
+    expect(getMaxRetentionDays("premium")).toBe(30);
+  });
+
+  it("is monotonically non-decreasing from free to standard to premium", () => {
+    expect(getMaxRetentionDays("standard")).toBeGreaterThanOrEqual(
+      getMaxRetentionDays("free")
+    );
+    expect(getMaxRetentionDays("premium")).toBeGreaterThanOrEqual(
+      getMaxRetentionDays("standard")
+    );
+  });
+
+  it("matches the largest non-'once' value actually present in PLAN_LIMITS", () => {
+    for (const plan of ["free", "standard", "premium"] as const) {
+      const nonOnce = PLAN_LIMITS[plan].allowedRetentions.filter(
+        (retention) => retention !== "once"
+      );
+      const expected = Math.max(
+        ...nonOnce.map((retention) => Number(retention.replace("d", "")))
+      );
+      expect(getMaxRetentionDays(plan)).toBe(expected);
+    }
   });
 });
 

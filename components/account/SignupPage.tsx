@@ -18,7 +18,7 @@ import type { SignupResponse } from "@/app/api/account/signup/schema";
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignupPage() {
-  const canRenderForm = useRedirectIfLoggedIn("/mypage/billing");
+  const canRenderForm = useRedirectIfLoggedIn("/mypage");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
