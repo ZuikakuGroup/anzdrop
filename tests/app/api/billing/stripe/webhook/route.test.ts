@@ -23,6 +23,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 const mockConstructEventAsync = vi.fn();
+const mockSubscriptionsRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -33,6 +34,7 @@ vi.mock("stripe", () => {
       return {};
     }
     webhooks = { constructEventAsync: mockConstructEventAsync };
+    subscriptions = { retrieve: mockSubscriptionsRetrieve };
     constructor() {}
   }
 
@@ -52,6 +54,10 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
   mockConstructEventAsync.mockReset();
+  mockSubscriptionsRetrieve.mockReset();
+  // フォールバック経路が「衝突チェック」でstripe.subscriptions.retrieve()を
+  // 呼ぶケースのデフォルト。個々のテストで衝突を検証したい場合は上書きする。
+  mockSubscriptionsRetrieve.mockResolvedValue({ status: "canceled" });
 });
 
 async function postWebhook(body: string, signature = "valid-signature") {
@@ -184,11 +190,63 @@ describe("POST /api/billing/stripe/webhook", () => {
     const response = await postWebhook("{}");
 
     expect(response.status).toBe(200);
+    // 衝突チェックのため、上書き対象になる「別の」Subscriptionを実際に
+    // Stripeへ問い合わせていること(デフォルトモックはactive/trialingでは
+    // ないため、衝突なしと判定されフォールバックが適用される)。
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
+      "sub_newer_attempt"
+    );
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("premium");
     expect(account?.stripe_subscription_id).toBe("sub_stale");
     expect(new Date(account!.plan_expires_at!).getTime()).toBe(
       periodEndUnix * 1000
+    );
+  });
+
+  it("skips the metadata.accountId fallback when accounts.stripe_subscription_id points to a different subscription that is still active on Stripe", async () => {
+    // 有効期限だけを見ると新しい方(このイベント)を採用してよさそうに
+    // 見えても、現在紐づいている別のSubscriptionがStripe上でまだ
+    // active/trialingなら上書きしない(2つのSubscriptionが両方
+    // 課金対象のまま残ってしまうのを防ぐ)。
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: new Date(
+        Date.now() + 10 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      stripeSubscriptionId: "sub_other_still_active",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
+
+    // 現在の有効期限より後になる(=有効期限チェックだけなら通ってしまう)、
+    // 別のSubscriptionから届いたイベント。
+    const laterPeriodEndUnix =
+      Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_conflict", "customer.subscription.updated", {
+        id: "sub_new_attempt",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          laterPeriodEndUnix
+        ),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
+      "sub_other_still_active"
+    );
+
+    const account = await getAccount(accountId);
+    // stripe_subscription_id・有効期限のどちらも上書きされていないこと。
+    expect(account?.stripe_subscription_id).toBe("sub_other_still_active");
+    expect(new Date(account!.plan_expires_at!).getTime()).toBeLessThan(
+      laterPeriodEndUnix * 1000
     );
   });
 

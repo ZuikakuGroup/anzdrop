@@ -55,6 +55,7 @@ async function markEventAsProcessedOnce(
 
 async function applyEvent(
   event: Stripe.Event,
+  stripe: Stripe,
   env: CloudflareEnv
 ): Promise<void> {
   switch (event.type) {
@@ -97,22 +98,51 @@ async function applyEvent(
           if (typeof accountId === "string" && accountId) {
             const newExpiresAt = unixSecondsToIso(periodEnd);
             const currentAccount = await env.DB.prepare(
-              `SELECT plan_expires_at FROM accounts WHERE id = ?`
+              `SELECT plan_expires_at, stripe_subscription_id FROM accounts WHERE id = ?`
             )
               .bind(accountId)
-              .first<{ plan_expires_at: string | null }>();
+              .first<{
+                plan_expires_at: string | null;
+                stripe_subscription_id: string | null;
+              }>();
+
+            const currentSubscriptionId =
+              currentAccount?.stripe_subscription_id ?? null;
+
+            // アカウントが今まさに別のSubscription IDを指していて、それが
+            // Stripe上でまだactive/trialingなら、このフォールバックによる
+            // 上書きは行わない。上書きしてしまうと、その「別の」Subscriptionが
+            // 課金され続けるにもかかわらず追跡できなくなる(2つのSubscription
+            // が両方課金対象のまま残る)ため。
+            let conflictsWithActiveSubscription = false;
+
+            if (
+              currentSubscriptionId &&
+              currentSubscriptionId !== subscription.id
+            ) {
+              try {
+                const other = await stripe.subscriptions.retrieve(
+                  currentSubscriptionId
+                );
+
+                conflictsWithActiveSubscription =
+                  other.status === "active" || other.status === "trialing";
+              } catch {
+                // 参照先が既に存在しない場合は衝突とみなさない。
+              }
+            }
 
             // このフォールバック自体が「古いイベントを後から処理した」
             // ケースである可能性もあるため、既存の有効期限より後退する
             // 反映は行わない(既に別の有効なSubscriptionでより新しい
             // 有効期限が設定済みの状態を、古い情報で上書きしないための保険)。
             const currentExpiresAt = currentAccount?.plan_expires_at;
-            const isSafeToApply =
+            const isExpirySafe =
               !currentExpiresAt ||
               new Date(newExpiresAt).getTime() >=
                 new Date(currentExpiresAt).getTime();
 
-            if (isSafeToApply) {
+            if (!conflictsWithActiveSubscription && isExpirySafe) {
               await env.DB.prepare(
                 `
                 UPDATE accounts
@@ -125,8 +155,8 @@ async function applyEvent(
             } else {
               console.warn(
                 `stripe webhook: skipped fallback update for account ${accountId} ` +
-                  `because it would move plan_expires_at backward ` +
-                  `(current=${currentExpiresAt}, new=${newExpiresAt})`
+                  `(conflictsWithActiveSubscription=${conflictsWithActiveSubscription}, ` +
+                  `expiry current=${currentExpiresAt}, new=${newExpiresAt})`
               );
             }
           }
@@ -201,7 +231,7 @@ export const POST = withApiHandler(
     }
 
     try {
-      await applyEvent(event, env);
+      await applyEvent(event, stripe, env);
     } catch (error) {
       // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
       // ままにすると、Stripeが同じイベントIDで再送してきても

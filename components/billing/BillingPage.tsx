@@ -15,7 +15,7 @@ import {
   type Plan,
 } from "@/lib/plan";
 import { formatBytes } from "@/lib/format";
-import { getStripe } from "@/lib/stripe-client";
+import { getStripe, STRIPE_PUBLISHABLE_KEY } from "@/lib/stripe-client";
 
 type MeData = { accountId: string; plan: Plan; planExpiresAt: string | null };
 
@@ -126,6 +126,17 @@ export default function BillingPage({
   const startStripeSubscription = async () => {
     setError("");
     setNotice("");
+
+    // 公開可能キーが未設定(環境変数の設定漏れ)だと、Subscription自体は
+    // 作成できてもPayment Elementを表示できず、ユーザーが後で行き詰まる。
+    // 決済用のSubscriptionを実際に作ってしまう前に、ここで止める。
+    if (!STRIPE_PUBLISHABLE_KEY) {
+      setError(
+        "決済フォームの設定が完了していません。しばらくしてから再度お試しください。"
+      );
+      return;
+    }
+
     setIsLoadingAction("stripe");
 
     try {

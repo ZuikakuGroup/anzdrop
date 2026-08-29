@@ -76,8 +76,19 @@ export const POST = withApiHandler(
             { status: 409 }
           );
         }
-      } catch {
-        // 参照先が既に存在しない(削除済み等)場合は、新規作成を妨げない。
+      } catch (error) {
+        // 404(該当Subscriptionが既に存在しない。削除済み等)の場合のみ
+        // 新規作成を妨げない。それ以外(Stripe側の一時的な障害等)まで
+        // ここで握りつぶすと、実際には有効なSubscriptionがあるにも
+        // かかわらず二重にSubscriptionを作成してしまいかねない。
+        const statusCode =
+          error && typeof error === "object" && "statusCode" in error
+            ? (error as { statusCode?: unknown }).statusCode
+            : undefined;
+
+        if (statusCode !== 404) {
+          throw error;
+        }
       }
     }
 

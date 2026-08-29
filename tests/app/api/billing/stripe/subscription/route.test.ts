@@ -280,14 +280,17 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
   });
 
-  it("allows creating a new subscription when the previously registered subscription no longer exists on Stripe", async () => {
+  it("allows creating a new subscription when the previously registered subscription no longer exists on Stripe (404)", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
       stripeSubscriptionId: "sub_gone",
     });
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockRejectedValue(
-      new Error("No such subscription")
+      Object.assign(new Error("No such subscription"), {
+        statusCode: 404,
+        code: "resource_missing",
+      })
     );
     mockSubscriptionsCreate.mockResolvedValue(
       subscriptionWithClientSecret("sub_fresh", "seti_fresh_secret")
@@ -297,6 +300,25 @@ describe("POST /api/billing/stripe/subscription", () => {
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
+  });
+
+  it("does not create a new subscription when checking the existing subscription fails transiently (not a 404)", async () => {
+    // Stripe API側の一時的な障害(レート制限・タイムアウト等)を、404以外の
+    // エラーとして再現する。この場合「既存Subscriptionは存在しない」と
+    // 誤認してはならない(有効なSubscriptionを見落として二重作成しかねないため)。
+    const { accountId } = await insertTestAccount(env, {
+      stripeCustomerId: "cus_existing",
+      stripeSubscriptionId: "sub_maybe_active",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockRejectedValue(
+      Object.assign(new Error("rate limited"), { statusCode: 429 })
+    );
+
+    const response = await postSubscription(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(500);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
   });
 
   it("persists a newly created Stripe customer id even if the subsequent subscription creation fails (avoids an orphaned Customer on retry)", async () => {
