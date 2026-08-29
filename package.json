@@ -14,7 +14,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260617.1",
+    "@cloudflare/workers-types": "^5.20260826.1",
     "@opennextjs/cloudflare": "^1.19.11",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
