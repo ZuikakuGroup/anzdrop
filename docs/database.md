@@ -78,6 +78,22 @@
 | `right_type` | TEXT (nullable) | 権利者申し立て時の権利種別: `"copyright"|"trademark"|"portrait"|"other"`(migration 0006) |
 | `category` | TEXT NOT NULL DEFAULT `'other'` | 通報カテゴリ: `"csam"|"malware"|"privacy"|"spam"|"other"|"rights_infringement"`(migration 0007)。詳細は [`moderation.md`](./moderation.md) |
 
+### `contacts`
+
+一般的なお問い合わせ(ファイル共有に紐づかない質問・要望など)。`reports`は`share_id`が必須のため、特定の共有に紐づかない問い合わせには使えず、別テーブルとして新設した(migration 0015)。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `id` | TEXT PK | お問い合わせID |
+| `name` | TEXT (nullable) | 送信者名(任意項目) |
+| `email` | TEXT | 返信先メールアドレス(必須) |
+| `subject` | TEXT | 件名 |
+| `message` | TEXT | 本文(自由記述、最大2000文字) |
+| `created_at` | TEXT | 送信日時 |
+| `resolved_at` | TEXT (nullable) | 対応完了日時 |
+
+`name`・`subject`・`message`は、`reports`と同様に保存前に[`lib/sanitize.ts`](../lib/sanitize.ts)の`sanitizeReportText()`でE2EE復号鍵らしき文字列を除去してから保存する(詳細は[`moderation.md`](./moderation.md)参照)。
+
 ### `accounts`
 
 有料プラン(アカウント制サブスクリプション)。メールアドレスは保存しない。
@@ -143,5 +159,6 @@ migration 0009。
 | `0012_add_login_lockout.sql` | `accounts.failed_login_attempts`/`accounts.locked_until` 追加(アカウントID自由設定化に伴うログイン総当たり対策) |
 | `0013_normalize_paid_plan_to_premium.sql` | Standardプラン新設に伴う`Plan`型3値化(`"free"\|"standard"\|"premium"`)。既存の`accounts.plan = 'paid'`を`'premium'`へ正規化 |
 | `0014_add_btc_payments_plan.sql` | `btc_payments.plan` 追加(Bitcoin決済がどのプラン向けかをWebhook確定時に判定するため) |
+| `0015_add_contacts.sql` | `contacts` テーブル新設(一般的なお問い合わせ) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

@@ -1,6 +1,7 @@
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import DropMark from "@/components/brand/DropMark";
+import { ArrowUpRightIcon } from "@/components/brand/ShareIcons";
 import FaqAccordion from "@/components/about/FaqAccordion";
 
 const FAQ_ITEMS: { question: string; answer: React.ReactNode }[] = [
@@ -111,10 +112,10 @@ export default function AboutPage() {
               href="https://github.com/ZuikakuGroup/anzdrop"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded border-2 border-ink px-4 py-2.5 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03]"
+              className="inline-flex items-center gap-2 rounded border-2 border-ink px-4 py-2.5 text-sm font-medium tracking-wider text-ink transition-colors hover:bg-ink/[0.03]"
             >
               開発に参加する
-              <span aria-hidden="true">↗</span>
+              <ArrowUpRightIcon className="h-4 w-4" />
             </a>
           </section>
 
