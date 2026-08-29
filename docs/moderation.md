@@ -24,6 +24,12 @@ Anzdropは認証なしで誰でもアップロードできる公開サービス�
 
 送信時、`category` はユーザーに選ばせず **サーバー側で自動的に `"rights_infringement"` に固定** される(`app/api/report/route.ts`)。これは一般向けフォームの `category` 選択肢(`csam`/`malware`/`privacy`/`spam`/`other`)には含まれない値で、クライアントから `rights_infringement` を指定しても一般通報のバリデーションには通らない(=なりすまし不可)。
 
+## お問い合わせフォーム(`/contact`, `components/contact/ContactForm.tsx`)
+
+通報・権利侵害の申し立てとは別に、特定の共有に紐づかない一般的な問い合わせ(質問・要望など)を受け付けるフォーム。氏名(任意)・メールアドレス・件名・本文を送信する。`reports`テーブルは`share_id`が必須のため、通報とは別に`contacts`テーブル(migration 0015)へ保存する(詳細は[`database.md`](./database.md#contacts))。
+
+通報フォームと同様にTurnstile検証が必須で、自由記述欄(氏名・件名・本文)は保存前に[`lib/sanitize.ts`](../lib/sanitize.ts)の`sanitizeReportText()`でE2EE復号鍵らしき文字列を除去する(下記「管理画面」セクションで説明している`reports`の`reason`欄と同じ処理)。管理画面は`/admin/contacts`(`components/admin/AdminContactsPage.tsx`)で、`/admin`とは`AdminNav`のタブ切り替えで行き来できる。
+
 ## 優先度付け(CSAM対応)
 
 児童ポルノ等の違法コンテンツ(`category = "csam"`)は特に迅速な対応が必要なため、以下の形で管理画面上の視認性を高めている。
@@ -35,7 +41,7 @@ Anzdropは認証なしで誰でもアップロードできる公開サービス�
 
 ## 管理画面(`/admin`, `components/admin/AdminReportsPage.tsx`)
 
-Cloudflare Access配下([`deployment.md`](./deployment.md#cloudflare-access管理画面の保護)参照)。
+Cloudflare Access配下([`deployment.md`](./deployment.md#cloudflare-access管理画面の保護)参照)。`/admin`(通報)・`/admin/contacts`(お問い合わせ)はそれぞれ独立したページで、両ページ上部の`AdminNav`タブで行き来できる。
 
 - 「共有IDを直接操作する」欄: 通報が来ていない共有でも、共有IDを直接入力して`GET /api/admin/shares/[shareId]`で現況(存在するか/期限切れか/一時停止中か/ファイル数)を取得し、下記の一時停止・削除を行える。通報一覧とは独立した操作で、通報の有無に関わらず使える。
 - 通報一覧を「未対応」「対応済み」「すべて」で絞り込み表示。

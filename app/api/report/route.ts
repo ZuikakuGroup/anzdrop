@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { requireTurnstile } from "@/lib/turnstile";
+import { isValidEmail } from "@/lib/email";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
@@ -42,10 +43,6 @@ function parseCategory(
   return REPORT_CATEGORIES.includes(value as (typeof REPORT_CATEGORIES)[number])
     ? (value as (typeof REPORT_CATEGORIES)[number])
     : null;
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export const POST = withApiHandler(
