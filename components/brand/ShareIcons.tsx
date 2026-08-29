@@ -181,6 +181,58 @@ export function MenuIcon({ className = "" }: IconProps) {
   );
 }
 
+export function CreditCardIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect
+        x={2.5}
+        y={5}
+        width={19}
+        height={14}
+        rx={2.5}
+        stroke="currentColor"
+        strokeWidth={2}
+        fill="none"
+      />
+      <path d="M2.5 10h19" stroke="currentColor" strokeWidth={2} />
+      <rect x={5.5} y={14} width={4} height={2} rx={0.5} fill="currentColor" />
+    </svg>
+  );
+}
+
+export function BitcoinIcon({ className = "" }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+    >
+      <circle
+        cx={12}
+        cy={12}
+        r={9}
+        stroke="currentColor"
+        strokeWidth={2}
+        fill="none"
+      />
+      <text
+        x={12}
+        y={16.2}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={700}
+        fill="currentColor"
+      >
+        ₿
+      </text>
+    </svg>
+  );
+}
+
 export function LineIcon({ className = "" }: IconProps) {
   return (
     <svg
