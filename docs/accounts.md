@@ -14,7 +14,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 ### ログイン状態に応じた画面遷移・ヘッダー表示
 
 - アカウント関連の画面(ログイン・サインアップ・パスワード再設定・プラン確認)は、いずれも`/mypage`配下(`/mypage/login`・`/mypage/signup`・`/mypage/recover`・`/mypage/billing`)にまとめて配置している(`app/mypage/`)。
-- `/mypage/billing`は未ログインだと専用の案内は出さず、`GET /api/account/me`が`{ success: false }`(未ログイン時の401だけでなく、`withApiHandler`による予期しないエラー時の500応答も含む)を返した時点でクライアント側から`/mypage/login`へリダイレクトする(`components/billing/BillingPage.tsx`)。
+- `/mypage/billing`は初回表示時に`POST /api/billing/stripe/sync`(`GET /api/account/me`と同形のプラン情報＋サブスクリプション要約を返す)を呼ぶ。未ログインだと専用の案内は出さず、**401**を返した時点でクライアント側から`/mypage/login`へリダイレクトする。それ以外の失敗(500等)は「読み込みに失敗しました。」表示に留める(`sync`は毎回Stripeを叩くため500がありうる。500でリダイレクトすると`/mypage/login`側がログイン済みを見て`/mypage/billing`へ戻し、ループになる)(`components/billing/BillingPage.tsx`)。
 - 逆に`/mypage/login`・`/mypage/signup`はログイン済み(`GET /api/account/me`が成功)なら`/mypage/billing`へリダイレクトする(`lib/account/useRedirectIfLoggedIn.ts`)。行き先は暫定で、将来変更の可能性がある。
 - いずれもサーバー側でのリダイレクト(Server Component等)ではなく、マウント後に`GET /api/account/me`を呼んでクライアント側で判定する方式。判定が終わるまでは対象画面の代わりにスピナーを表示する。
 - 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントIDのプルダウン(クリックで「プラン・お支払い」〈`/mypage/billing`〉と「ログアウト」を表示)を、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
@@ -48,6 +48,13 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 - `POST /api/billing/stripe/subscription`はリクエストボディの`plan`(`"standard"`または`"premium"`)を見て、対応するPrice(`STRIPE_PRICE_ID_STANDARD`/`STRIPE_PRICE_ID_PREMIUM`)でSubscriptionを`payment_behavior: "default_incomplete"`かつ`payment_method_types: ["card"]`で作成し、支払い確定用の`client_secret`(`latest_invoice.confirmation_secret.client_secret`。Stripeの新しいAPIバージョンではInvoiceが複数の支払い試行を持てるため、`payment_intent`ではなくこちらを使う)を返す(Checkout Sessionは使わない)。メールアドレスを収集しない方針のため、初回はメール等の個人情報を含まない空のCustomerを作成する。作成した`stripe_customer_id`/`stripe_subscription_id`は、支払い確定前のこの時点で`accounts`テーブルへ書き込んでおく(Webhookが`customer.subscription.updated`で初回有効化を検知できるようにするため)。
 - クライアント側は`StripePaymentForm`が返ってきた`client_secret`で`<Elements>`/`<PaymentElement>`をマウントし、送信時に`stripe.confirmPayment({ redirect: "if_required" })`で決済を確定する。カード決済の3Dセキュア等の追加認証は通常ページ内モーダルで完結し、フルページ遷移は発生しない。
 - `POST /api/billing/stripe/webhook`が`customer.subscription.updated`(初回有効化・更新時の有効期限同期の両方を兼ねる)・`customer.subscription.deleted`(即時ダウングレード)を処理する。どのプランを付与するかは、Webhookのmetadataではなく**Subscriptionの実際のPrice ID**(`subscription.items.data[0].price.id`)を見て判定する(`planFromSubscription()`)。これはStripeカスタマーポータル等で後からプランが変更された場合にも自動追従できるようにするための設計で、未知のPrice IDの場合は何も更新しない(意図しないプラン活性化を防ぐ防御的な扱い)。支払いが確定しないまま放置された`incomplete`のSubscriptionは、Stripe側が自動的に期限切れにする(サーバー側でのクリーンアップは不要)。プラン反映は`accounts.stripe_subscription_id`とイベントのSubscription IDが一致する行を対象とするが、同じアカウントが日をまたがず複数回`POST /api/billing/stripe/subscription`を呼ぶと(例: 複数タブでそれぞれ契約を開始する)、この列は最後の呼び出しのSubscription IDで上書きされる。その状態で先に作成した方のSubscriptionで支払いが確定した場合に備え、`stripe_subscription_id`が一致する行が無ければSubscriptionの`metadata.accountId`を手がかりに該当アカウントへ反映し直すフォールバックを持つ(顧客が実際に課金されたのにプランが反映されない事態を避けるため)。
+- Webhookが一時的に届かない・失敗し続けると、「課金されたのにプランが反映されない」「解約済みなのに`stripe_subscription_id`の追跡が残る」状態になりうる。その保険として`POST /api/billing/stripe/sync`を用意している。`/mypage/billing`の初回表示時とカード決済確定直後のポーリングでクライアントから呼ばれ、アカウントの`stripe_subscription_id`のSubscriptionをStripeから取り直して`accounts.plan` / `plan_expires_at`を合わせ直す。判定ロジック(Price IDからのプラン判定・請求期間末の取り出し・有効/終端ステータスの判定)はWebhookと共通で、[`lib/stripe-subscription.ts`](../lib/stripe-subscription.ts)に集約している。
+  - `active`/`trialing`: `plan`は実態のPrice IDへ常に合わせ、`plan_expires_at`は後退させない範囲で期間末へ前進させる(Webhookの`customer.subscription.updated`は無条件に上書きするが、`sync`は任意のタイミングで走るため、Stripe読み取りの一時的な遅延で巻き戻さないようガードする)。
+  - `canceled`/`incomplete_expired`/`unpaid`: Webhookの`customer.subscription.deleted`と同じく`plan_expires_at`を現在時刻にして`stripe_subscription_id`を外す(即時ダウングレード)。ここでポインタだけ外すと、後から届いた`deleted` Webhookが突き合わせる行を失い、サポートからの即時解約(返金・不正対応)が反映されなくなるため。期間末解約の通常フローでは、Stripeが`canceled`にする時点で既に期間末に達しているので差は無い。
+  - `incomplete`/`past_due`等の中間状態: `accounts`は触らない(Webhook / 次回の同期を待つ)。
+  - Stripe到達に失敗しても(404以外)このエンドポイントは失敗させず、DB由来の現在のプラン情報で`success`を返す(ここで500を返すと、請求ページを開いた課金顧客がページを使えなくなる。クライアントは401のみをログイン切れとして扱う)。
+  - 新しい種類の情報をサーバーへ保存するものではない。あわせて画面表示用の現在のサブスクリプション要約(`{ state: "active"|"canceling", currentPeriodEnd }`。`active`/`trialing`以外は`null`)も返す。
+- **解約**は`POST /api/billing/stripe/cancellation`(`{ cancelAtPeriodEnd: boolean }`)で行う。`true`で「期間末での解約」(`cancel_at_period_end: true`。自動更新を停止するだけで、期間中はプランを維持)、`false`でその取り消し(自動更新を再開)。即時解約・日割り返金は行わない。実際のプラン失効は、期間末にStripeが発火する`customer.subscription.deleted`(既存のWebhook処理で`plan_expires_at`を現在時刻に更新し`stripe_subscription_id`を外す)に委ねる。`/mypage/billing`では、`sync`が返す要約が`active`なら「解約する」ボタン(2段階確認)、`canceling`なら「解約を取り消す」ボタンと終了予定日を表示し、この状態のときは新規契約フロー(プラン選択)は出さない。このエンドポイントもサーバーへ新しい情報を保存しない。
 - Cloudflare WorkersにはNodeの`crypto`モジュールが無いため、SDKの`Stripe.createFetchHttpClient()`(HTTPクライアント)と`Stripe.createSubtleCryptoProvider()`(Webhook署名検証)を明示的に指定している。
 - Stripeの新しいAPIバージョンでは請求期間(`current_period_end`)がSubscription直下ではなく各SubscriptionItemに付く。このアプリは1サブスクリプションにつき1アイテムのみ使うため、先頭アイテムの値を使う(`getSubscriptionPeriodEnd()`)。
 - 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに処理済みイベントIDを記録する。
@@ -73,7 +80,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 詳細は[`api.md`](./api.md)を参照。
 
 - `POST /api/account/signup` / `login` / `logout` / `recover` / `GET /api/account/me`
-- `POST /api/billing/stripe/subscription` / `POST /api/billing/stripe/webhook`
+- `POST /api/billing/stripe/subscription` / `POST /api/billing/stripe/webhook` / `POST /api/billing/stripe/sync` / `POST /api/billing/stripe/cancellation`
 - `POST /api/billing/btc/charge` / `POST /api/billing/btc/webhook`
 
 ## 新規テーブル

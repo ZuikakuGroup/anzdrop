@@ -66,7 +66,16 @@ export const POST = withApiHandler(
           account.stripe_subscription_id
         );
 
-        if (existing.status === "active" || existing.status === "trialing") {
+        // active/trialing はもちろん、past_due/unpaid(更新の支払いに失敗して
+        // dunning 中)も「まだ生きている Subscription」なので、ここで新規作成を
+        // 許すと dunning 回復時に2本が同時に課金対象になる。プラン変更・支払い
+        // 方法の更新はまだ self-service では無いためサポート対応に寄せる。
+        if (
+          existing.status === "active" ||
+          existing.status === "trialing" ||
+          existing.status === "past_due" ||
+          existing.status === "unpaid"
+        ) {
           return Response.json(
             {
               success: false,

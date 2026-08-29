@@ -123,6 +123,20 @@
 
 Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名検証する。人間が直接叩くエンドポイントではない。
 
+### `POST /api/billing/stripe/sync`
+
+ログイン必須。`customer.subscription.updated` / `deleted` のWebhookが一時的に届かなかった場合の保険。アカウントに紐づく`stripe_subscription_id`のSubscriptionをStripeから取り直し、`accounts.plan` / `plan_expires_at`をStripe側の実態へ合わせ直す(Webhookと同じ列・同じ判定を使い、新しい情報の保存はしない)。`/mypage/billing`の初回表示時と、カード決済確定直後のポーリングでクライアントから呼ばれる。Stripeで契約したことが無いアカウントはStripe APIを呼ばず現在値を返す。あわせて画面表示用の現在のサブスクリプション要約も返す。
+
+- レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling", currentPeriodEnd: string|null }`または`null`(契約が無い/有効でない)。`"canceling"`は期間末で終了予定(自動更新停止済み)を表す。
+
+### `POST /api/billing/stripe/cancellation`
+
+ログイン必須。カード契約(自動更新サブスク)の期間末での解約と、その取り消し(再開)。`cancel_at_period_end`を切り替えるだけで、即時解約・日割り返金は行わない。実際のプラン失効は期間末にStripeが発火する`customer.subscription.deleted`(既存のWebhook処理)に委ねる。サーバーへ新しい情報は保存しない。
+
+- リクエスト: `{ cancelAtPeriodEnd: boolean }`(`true`=期間末で解約、`false`=解約予約を取り消す)
+- レスポンス: `{ success: true, subscription }`(形は`sync`と同じ)
+- サブスクリプションが無い/`active`・`trialing`でない場合は409、Stripe上で既に存在しない(404)場合は追跡を外して409
+
 ### `POST /api/billing/btc/charge`
 
 ログイン必須。OpenNodeでBitcoin決済のchargeを作成する(「期間チャージ」方式、自動更新なし)。

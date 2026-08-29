@@ -1,42 +1,12 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
-import type { Plan } from "@/lib/plan";
-
-function unixSecondsToIso(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toISOString();
-}
-
-// Stripeの新しいAPIバージョンでは、現在の請求期間の終了時刻は
-// Subscription直下ではなく各SubscriptionItemに付く(複数アイテムがそれぞれ
-// 別サイクルを持てるようになったため)。このアプリは1サブスクリプションに
-// つき1アイテムのみ使うので、先頭アイテムの値をそのまま使う。
-function getSubscriptionPeriodEnd(
-  subscription: Stripe.Subscription
-): number | null {
-  return subscription.items.data[0]?.current_period_end ?? null;
-}
-
-// SubscriptionのPrice IDから、どのプランかを判定する。metadataではなく実際の
-// Price IDを正とすることで、Stripeカスタマーポータル等で後からプランが変更
-// された場合にも自動追従できる。未知のPrice IDはnullを返し、呼び出し元で
-// 更新をスキップする(意図しないプラン活性化を防ぐ防御的な扱い)。
-function planFromSubscription(
-  subscription: Stripe.Subscription,
-  env: CloudflareEnv
-): Plan | null {
-  const priceId = subscription.items.data[0]?.price?.id;
-
-  if (priceId === env.STRIPE_PRICE_ID_STANDARD) {
-    return "standard";
-  }
-
-  if (priceId === env.STRIPE_PRICE_ID_PREMIUM) {
-    return "premium";
-  }
-
-  return null;
-}
+import {
+  getSubscriptionPeriodEnd,
+  isActiveSubscriptionStatus,
+  planFromSubscription,
+  unixSecondsToIso,
+} from "@/lib/stripe-subscription";
 
 // 同一イベントの再送(Stripeはリトライしうる)による二重処理を防ぐ。
 // 初めて見るイベントならtrueを返し、以後の処理を進めてよいことを示す。
@@ -64,9 +34,7 @@ async function applyEvent(
     // 状態遷移はすべてこのイベント(incomplete→active等)で検知する。
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
-      const isActive =
-        subscription.status === "active" ||
-        subscription.status === "trialing";
+      const isActive = isActiveSubscriptionStatus(subscription.status);
       const periodEnd = getSubscriptionPeriodEnd(subscription);
       const plan = planFromSubscription(subscription, env);
 

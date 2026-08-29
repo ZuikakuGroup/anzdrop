@@ -266,6 +266,24 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
   });
 
+  it.each(["past_due", "unpaid"])(
+    "returns 409 without creating a new subscription when the existing one is %s (still billable, dunning)",
+    async (status) => {
+      const { accountId } = await insertTestAccount(env, {
+        stripeCustomerId: "cus_existing",
+        stripeSubscriptionId: "sub_dunning",
+      });
+      const cookie = await sessionCookieHeader(env, accountId);
+      mockSubscriptionsRetrieve.mockResolvedValue({ status });
+
+      const response = await postSubscription(cookie, { plan: "standard" });
+
+      expect(response.status).toBe(409);
+      expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+      expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
+    }
+  );
+
   it("cancels the abandoned incomplete subscription before creating a new one (so its old client_secret can no longer be used)", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
