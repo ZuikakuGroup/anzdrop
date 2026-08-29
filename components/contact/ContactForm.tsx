@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -19,7 +19,9 @@ export default function ContactForm() {
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async () => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     if (isSubmitting || submitted) {
       return;
     }
@@ -110,7 +112,11 @@ export default function ContactForm() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-4" suppressHydrationWarning>
+              <form
+                onSubmit={submit}
+                className="space-y-4"
+                suppressHydrationWarning
+              >
                 <div className="space-y-1">
                   <label
                     htmlFor="contact-name"
@@ -185,17 +191,20 @@ export default function ContactForm() {
                 {turnstileWidget}
 
                 <button
-                  onClick={submit}
+                  type="submit"
                   disabled={isSubmitting}
                   className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
                 >
                   {isSubmitting ? "送信中..." : "送信する"}
                 </button>
 
-                <p className="min-h-[20px] text-sm font-bold text-brand">
+                <p
+                  role="alert"
+                  className="min-h-[20px] text-sm font-bold text-brand"
+                >
                   {error}
                 </p>
-              </div>
+              </form>
             )}
           </div>
         </div>
