@@ -123,6 +123,8 @@ export default function ContactForm() {
                     type="text"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
+                    // app/api/contact/route.tsのMAX_NAME_LENGTHと合わせる。
+                    maxLength={200}
                     className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                   />
                 </div>
@@ -156,6 +158,8 @@ export default function ContactForm() {
                     type="text"
                     value={subject}
                     onChange={(event) => setSubject(event.target.value)}
+                    // app/api/contact/route.tsのMAX_SUBJECT_LENGTHと合わせる。
+                    maxLength={200}
                     className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                   />
                 </div>

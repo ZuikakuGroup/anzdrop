@@ -29,32 +29,36 @@ export default function AdminContactsPage() {
   const [confirmingContactId, setConfirmingContactId] = useState("");
   const [deletingContactId, setDeletingContactId] = useState("");
 
-  // 対応済み・削除操作後の再読み込みは非同期(操作のリクエスト分だけ遅れる)
-  // ため、その完了を待つ間に管理者が別のステータスタブへ切り替えている
-  // ことがある。その場合、操作開始時点のstatusで再読み込みした結果を
-  // そのまま反映すると、選択中のタブと異なる一覧で上書きしてしまう。
-  // 常に「今どのタブが選ばれているか」をstatusRefで確認し、取得完了時に
-  // タブが変わっていなければ反映する。
+  // ステータスタブの切り替えと、対応済み・削除操作後の再読み込み(load)は
+  // どちらも非同期にfetchContactsを呼び出す。これらが重なって発行される
+  // と、古いリクエストの応答が新しいリクエストの応答より後に返ってくる
+  // ことがあり、その場合は新しい結果を古い結果で上書きしてしまう(例:
+  // 削除したはずの項目が再表示される、対応済みにしたはずが未対応に戻る)。
+  // requestIdRefでリクエストごとに発行するIDを管理し、応答が届いた時点で
+  // 自分が最後に発行された(＝最新の)リクエストかどうかを確認してから
+  // 状態に反映する。
   const statusRef = useRef(status);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     const targetStatus = statusRef.current;
 
     try {
       const contacts = await fetchContacts(targetStatus);
 
-      if (statusRef.current !== targetStatus) {
+      if (requestIdRef.current !== requestId) {
         return;
       }
 
       setContacts(contacts);
       setError("");
     } catch (unknownErr) {
-      if (statusRef.current !== targetStatus) {
+      if (requestIdRef.current !== requestId) {
         return;
       }
 
@@ -63,7 +67,7 @@ export default function AdminContactsPage() {
 
       setError(err.message);
     } finally {
-      if (statusRef.current === targetStatus) {
+      if (requestIdRef.current === requestId) {
         setIsLoading(false);
       }
     }
@@ -71,16 +75,17 @@ export default function AdminContactsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const requestId = ++requestIdRef.current;
 
     fetchContacts(status)
       .then((contacts) => {
-        if (!cancelled) {
+        if (!cancelled && requestIdRef.current === requestId) {
           setContacts(contacts);
           setError("");
         }
       })
       .catch((unknownErr: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && requestIdRef.current === requestId) {
           const err =
             unknownErr instanceof Error
               ? unknownErr
@@ -90,7 +95,7 @@ export default function AdminContactsPage() {
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (!cancelled && requestIdRef.current === requestId) {
           setIsLoading(false);
         }
       });
