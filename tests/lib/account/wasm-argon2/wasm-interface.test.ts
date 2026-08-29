@@ -86,7 +86,7 @@ describe("createArgon2Wasm のInstance共有時のメモリ縮小防止", () => 
     ).not.toThrow();
   });
 
-  it("同じかそれ以上のtotalSizeでのsetMemorySize()は、その都度Hash_SetMemorySizeを呼ぶ", async () => {
+  it("より大きいtotalSizeでのsetMemorySize()は、その都度Hash_SetMemorySizeを呼ぶ", async () => {
     const sharedInstance = await WebAssembly.instantiate(argon2Module, {});
     const realExports = sharedInstance.exports as unknown as {
       memory: WebAssembly.Memory;
@@ -110,6 +110,12 @@ describe("createArgon2Wasm のInstance共有時のメモリ縮小防止", () => 
     const second = await createArgon2Wasm(spyExports);
     second.setMemorySize(16 * 1024 + 1024);
 
+    expect(setMemorySizeCalls).toEqual([8 * 1024 + 1024, 16 * 1024 + 1024]);
+
+    // 実装は`totalSize > alreadySizedTo`(厳密に大きい場合)のみ呼ぶため、
+    // 直前と同じtotalSizeを再指定してもHash_SetMemorySizeは呼ばれない。
+    const third = await createArgon2Wasm(spyExports);
+    expect(() => third.setMemorySize(16 * 1024 + 1024)).not.toThrow();
     expect(setMemorySizeCalls).toEqual([8 * 1024 + 1024, 16 * 1024 + 1024]);
   });
 });
