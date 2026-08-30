@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
@@ -22,6 +23,7 @@ type PurchasablePlan = "standard" | "premium";
 const PURCHASABLE_PLANS: PurchasablePlan[] = ["standard", "premium"];
 
 export default function BillingPage() {
+  const router = useRouter();
   const [me, setMe] = useState<MeData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [isLoadingAction, setIsLoadingAction] = useState<
@@ -38,7 +40,7 @@ export default function BillingPage() {
       .then((data) => {
         if (!data.success) {
           // 未ログインなら「ログインが必要です」の専用表示は出さず、そのままログインへ誘導する。
-          window.location.href = "/mypage/login";
+          router.push("/mypage/login");
           return;
         }
 
@@ -49,7 +51,7 @@ export default function BillingPage() {
         });
       })
       .catch(() => setLoadError(true));
-  }, []);
+  }, [router]);
 
   const startStripeCheckout = async () => {
     setError("");
@@ -108,7 +110,7 @@ export default function BillingPage() {
       <SiteHeader />
 
       <main className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
+        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               プラン・お支払い
