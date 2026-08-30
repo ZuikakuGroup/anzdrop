@@ -81,3 +81,28 @@ export function getPlaintextSizeFromCiphertextSize(
 
   return fullPackets * CHUNK_SIZE + (remainder - packetOverhead);
 }
+
+// getPlaintextSizeFromCiphertextSizeの逆。平文サイズから、
+// iterateEncryptedChunks(lib/crypto/stream.ts)が生成する暗号化ストリーム
+// 全体のバイト数を求める。内訳は「先頭のファイルsalt(FILE_SALT_LENGTH) +
+// 平文と同サイズの暗号文 + パケットごとのIV+GCMタグ(固定28バイト)」。
+// 実際にネットワークへ送出されるバイト数を平文サイズから見積もりたい場面
+// (アップロード進捗バーの分母など)で使う。0バイトのファイルは
+// iterateEncryptedChunksがパケットを1つも生成せず(salt も付かず)ストリーム
+// も空になるため、0を返す。
+export function getCiphertextSizeFromPlaintextSize(
+  plaintextSize: number
+): number {
+  if (plaintextSize < 0) {
+    throw new Error("Invalid plaintext size.");
+  }
+
+  if (plaintextSize === 0) {
+    return 0;
+  }
+
+  const packetCount = Math.ceil(plaintextSize / CHUNK_SIZE);
+  const packetOverhead = IV_LENGTH + GCM_TAG_LENGTH;
+
+  return FILE_SALT_LENGTH + plaintextSize + packetCount * packetOverhead;
+}

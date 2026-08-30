@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import BrandHeader from "./BrandHeader";
-import { ChevronIcon, MenuIcon, XIcon } from "./ShareIcons";
+import { ChevronIcon, MenuToggleIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
 const NAV_LINKS = [
@@ -140,18 +140,26 @@ export default function SiteHeader() {
         <button
           onClick={() => setIsMobileMenuOpen((open) => !open)}
           aria-label={isMobileMenuOpen ? "メニューを閉じる" : "メニューを開く"}
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="mobile-menu-panel"
           className="rounded p-1.5 text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
         >
-          {isMobileMenuOpen ? (
-            <XIcon className="h-5 w-5" />
-          ) : (
-            <MenuIcon className="h-5 w-5" />
-          )}
+          <MenuToggleIcon open={isMobileMenuOpen} className="h-5 w-5" />
         </button>
       </div>
 
-      {isMobileMenuOpen && (
-        <div className="absolute left-0 right-0 top-full z-10 space-y-4 border-b border-ink/10 bg-paper p-6 shadow-lg md:hidden">
+      <div
+        id="mobile-menu-panel"
+        inert={!isMobileMenuOpen}
+        className={`absolute left-0 right-0 top-full z-10 overflow-hidden border-b border-ink/10 bg-paper shadow-lg transition-[max-height] duration-300 ease-in-out md:hidden ${
+          isMobileMenuOpen ? "max-h-[480px]" : "max-h-0"
+        }`}
+      >
+        <div
+          className={`space-y-4 p-6 transition-opacity duration-200 ease-in-out ${
+            isMobileMenuOpen ? "opacity-100 delay-100" : "opacity-0"
+          }`}
+        >
           <nav className="flex flex-col gap-3 text-sm font-bold">
             {NAV_LINKS.map((link) => (
               <a
@@ -205,7 +213,7 @@ export default function SiteHeader() {
             ))}
           </div>
         </div>
-      )}
+      </div>
     </header>
   );
 }

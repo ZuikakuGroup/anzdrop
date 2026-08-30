@@ -309,7 +309,7 @@ export default function AdminReportsPage() {
                   }
                 }}
                 placeholder="共有ID"
-                className="w-full max-w-xs rounded border-2 border-ink/20 px-3 py-2 font-mono text-sm outline-none focus:border-brand"
+                className="w-full min-w-0 max-w-xs rounded border-2 border-ink/20 px-3 py-2 font-mono text-sm outline-none focus:border-brand"
               />
               <button
                 onClick={searchShare}

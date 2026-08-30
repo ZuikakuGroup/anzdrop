@@ -7,8 +7,8 @@ import {
   exportKey,
   encodeBase64Url,
   iterateEncryptedChunks,
+  getCiphertextSizeFromPlaintextSize,
 } from "@/lib/crypto";
-import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { bufferAhead } from "@/lib/asyncBuffer";
 import {
   getMaxFileSizeBytes,
@@ -269,12 +269,17 @@ export default function UploadForm() {
           ? await wrapKeyWithPassword(key, password)
           : null;
 
-      const totalChunks = pending.reduce(
+      // 進捗の分母は「実際にネットワークへ送出される暗号化ストリームの
+      // 総バイト数」にする。onBytesUploadedに渡ってくるのは各パートの
+      // 暗号化後のバイト数なので、平文のfile.sizeを分母にすると暗号化
+      // オーバーヘッド(salt + パケットごとのIV/GCMタグ)の分だけ進捗が
+      // 先行し、小さいファイルでは完了前に100%に達してしまう。
+      const totalBytes = pending.reduce(
         (sum, item) =>
-          sum + Math.ceil(item.pendingFile.file.size / CHUNK_SIZE),
+          sum + getCiphertextSizeFromPlaintextSize(item.pendingFile.file.size),
         0
       );
-      let completedChunks = 0;
+      let uploadedBytes = 0;
 
       for (const item of pending) {
         const { path } = item.pendingFile;
@@ -321,11 +326,14 @@ export default function UploadForm() {
           startResult.uploadToken,
           path,
           getUploadConcurrencyForPlan(plan),
-          () => {
-            completedChunks++;
+          (bytes) => {
+            uploadedBytes += bytes;
             setProgress(
-              totalChunks > 0
-                ? Math.round((completedChunks / totalChunks) * 100)
+              totalBytes > 0
+                ? Math.min(
+                    100,
+                    Math.round((uploadedBytes / totalBytes) * 100)
+                  )
                 : 100
             );
           }
@@ -428,7 +436,7 @@ export default function UploadForm() {
       <SiteHeader />
 
       <main className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
+        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               Anzdrop

@@ -181,6 +181,33 @@ export function MenuIcon({ className = "" }: IconProps) {
   );
 }
 
+type MenuToggleIconProps = {
+  open: boolean;
+  className?: string;
+};
+
+export function MenuToggleIcon({ open, className = "" }: MenuToggleIconProps) {
+  return (
+    <span className={`relative flex items-center justify-center ${className}`}>
+      <span
+        className={`absolute h-0.5 w-5 rounded-full bg-current transition-transform duration-300 ease-in-out ${
+          open ? "rotate-45" : "-translate-y-1.5"
+        }`}
+      />
+      <span
+        className={`absolute h-0.5 w-5 rounded-full bg-current transition-opacity duration-200 ease-in-out ${
+          open ? "opacity-0" : "opacity-100"
+        }`}
+      />
+      <span
+        className={`absolute h-0.5 w-5 rounded-full bg-current transition-transform duration-300 ease-in-out ${
+          open ? "-rotate-45" : "translate-y-1.5"
+        }`}
+      />
+    </span>
+  );
+}
+
 export function ArrowUpRightIcon({ className = "" }: IconProps) {
   return (
     <svg

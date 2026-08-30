@@ -26,10 +26,11 @@
 
 ### `POST /api/upload/chunk`
 
-暗号化済みチャンク1つをR2マルチパートアップロードの1パートとして送信する。
+暗号化済みバイト列の一部をR2マルチパートアップロードの1パートとして送信する。
 
-- ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)
-- ボディ: 暗号化済みバイナリ(`application/octet-stream`相当)
+- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
+- ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
+- ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
 - レスポンス: `{ success: true, partNumber }`
 
 ### `POST /api/upload/complete`

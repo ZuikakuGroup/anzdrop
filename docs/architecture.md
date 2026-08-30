@@ -44,6 +44,7 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`) |
 | `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
 | `/about`(`app/about/page.tsx`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
+| `/legal/terms`・`/legal/privacy`・`/legal/tokushoho` | 利用規約・プライバシーポリシー・特定商取引法に基づく表記([`legal.md`](./legal.md)) |
 
 API側の詳細は [`api.md`](./api.md) を参照。
 
@@ -64,7 +65,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。新規共有作成時のみTurnstile検証が必須。
-3. 各暗号化チャンクを `POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信。
+3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
 

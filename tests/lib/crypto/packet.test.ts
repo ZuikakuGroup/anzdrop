@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getPlaintextSizeFromCiphertextSize, packChunk, unpackChunk } from "@/lib/crypto/packet";
+import {
+  getCiphertextSizeFromPlaintextSize,
+  getPlaintextSizeFromCiphertextSize,
+  packChunk,
+  unpackChunk,
+} from "@/lib/crypto/packet";
 import { encryptChunk } from "@/lib/crypto/encrypt";
 import { generateKey } from "@/lib/crypto/key";
 import { iterateEncryptedChunks } from "@/lib/crypto/stream";
@@ -182,5 +187,68 @@ describe("getPlaintextSizeFromCiphertextSize", () => {
     expect(getPlaintextSizeFromCiphertextSize(totalCiphertextSize)).toBe(
       plaintext.byteLength
     );
+  });
+});
+
+describe("getCiphertextSizeFromPlaintextSize", () => {
+  const OVERHEAD = IV_LENGTH + GCM_TAG_LENGTH;
+
+  it("returns 0 for an empty file (iterateEncryptedChunks emits no packets)", () => {
+    expect(getCiphertextSizeFromPlaintextSize(0)).toBe(0);
+  });
+
+  it("adds the file-salt and one packet's overhead for a sub-chunk file", () => {
+    expect(getCiphertextSizeFromPlaintextSize(777)).toBe(
+      FILE_SALT_LENGTH + 777 + OVERHEAD
+    );
+  });
+
+  it("counts one packet's overhead per CHUNK_SIZE, plus a trailing partial packet", () => {
+    expect(
+      getCiphertextSizeFromPlaintextSize(CHUNK_SIZE + 12345)
+    ).toBe(FILE_SALT_LENGTH + CHUNK_SIZE + 12345 + OVERHEAD * 2);
+  });
+
+  it("counts exactly one packet's overhead for a file that is exactly CHUNK_SIZE", () => {
+    expect(getCiphertextSizeFromPlaintextSize(CHUNK_SIZE)).toBe(
+      FILE_SALT_LENGTH + CHUNK_SIZE + OVERHEAD
+    );
+  });
+
+  it("throws for a negative size", () => {
+    expect(() => getCiphertextSizeFromPlaintextSize(-1)).toThrow();
+  });
+
+  it("is the inverse of getPlaintextSizeFromCiphertextSize for non-empty sizes", () => {
+    for (const plaintextSize of [
+      1,
+      777,
+      CHUNK_SIZE - 1,
+      CHUNK_SIZE,
+      CHUNK_SIZE + 1,
+      2 * CHUNK_SIZE + 5,
+    ]) {
+      const ciphertextSize = getCiphertextSizeFromPlaintextSize(plaintextSize);
+      expect(getPlaintextSizeFromCiphertextSize(ciphertextSize)).toBe(
+        plaintextSize
+      );
+    }
+  });
+
+  it("agrees with the real upload pipeline (iterateEncryptedChunks), including the file-salt prefix", async () => {
+    const key = await generateKey();
+
+    for (const plaintextSize of [0, 500, CHUNK_SIZE + 7]) {
+      const file = new File(
+        [new Uint8Array(plaintextSize).fill(9)],
+        "x.bin"
+      );
+      let actual = 0;
+      for await (const packet of iterateEncryptedChunks(file, key)) {
+        actual += packet.byteLength;
+      }
+
+      expect(getCiphertextSizeFromPlaintextSize(plaintextSize)).toBe(actual);
+    }
   });
 });

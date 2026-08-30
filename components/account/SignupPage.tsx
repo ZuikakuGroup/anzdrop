@@ -100,7 +100,7 @@ export default function SignupPage() {
       <SiteHeader />
 
       <main className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-8">
+        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               アカウント作成
