@@ -301,10 +301,16 @@ describe("POST /api/upload/complete", () => {
   // /api/upload/chunk)をそのまま駆動し、chunk が均一サイズのパートに詰め直され、
   // complete・ダウンロード・復号まで通ることを検証する。
   it("uploads a file spanning 3+ uniform R2 parts end-to-end via the real client path (issue #34)", async () => {
-    // 平文をちょうど 2 * UPLOAD_PART_SIZE にすると、暗号化ストリームは
-    // salt(16) + 2パケット(各 +28) = 16MiB + 72B になり、repartitionで
-    // [8MiB, 8MiB, 72B] の3パートに分かれる(非最終パート均一・最終パート極小)。
-    const plaintextSize = 2 * UPLOAD_PART_SIZE;
+    // 平文を 2 * UPLOAD_PART_SIZE + 1 にすると、iterateEncryptedChunks は
+    // 3 パケット(8MiB + 8MiB + 1B の平文それぞれに IV/GCMタグ、先頭は salt 付き)を
+    // 生成する。修正前の「1パケット=1パート」方式では先頭パートだけ salt(16B) の
+    // 分だけ大きくなり、非最終パートが 2 つ(先頭と 2 番目)できて不均一になるため
+    // R2 の complete() が「最終パート以外は同一サイズ」制約に違反して失敗した
+    // (= issue #34 の条件)。ちょうど 2 * UPLOAD_PART_SIZE(2 パケット)だと
+    // 非最終パートが先頭 1 つだけで制約を自明に満たしてしまい、回帰を再現できない。
+    // 修正後は repartition が [8MiB, 8MiB, 残り] の3パートに詰め直す
+    // (非最終パート均一・最終パート極小)。
+    const plaintextSize = 2 * UPLOAD_PART_SIZE + 1;
     const plaintext = new Uint8Array(plaintextSize);
     for (let i = 0; i < plaintextSize; i++) {
       plaintext[i] = (i * 7 + 13) & 0xff;

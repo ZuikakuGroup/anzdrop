@@ -7,6 +7,7 @@ import {
   exportKey,
   encodeBase64Url,
   iterateEncryptedChunks,
+  getCiphertextSizeFromPlaintextSize,
 } from "@/lib/crypto";
 import { bufferAhead } from "@/lib/asyncBuffer";
 import {
@@ -268,8 +269,14 @@ export default function UploadForm() {
           ? await wrapKeyWithPassword(key, password)
           : null;
 
+      // 進捗の分母は「実際にネットワークへ送出される暗号化ストリームの
+      // 総バイト数」にする。onBytesUploadedに渡ってくるのは各パートの
+      // 暗号化後のバイト数なので、平文のfile.sizeを分母にすると暗号化
+      // オーバーヘッド(salt + パケットごとのIV/GCMタグ)の分だけ進捗が
+      // 先行し、小さいファイルでは完了前に100%に達してしまう。
       const totalBytes = pending.reduce(
-        (sum, item) => sum + item.pendingFile.file.size,
+        (sum, item) =>
+          sum + getCiphertextSizeFromPlaintextSize(item.pendingFile.file.size),
         0
       );
       let uploadedBytes = 0;
