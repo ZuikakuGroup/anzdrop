@@ -5,6 +5,7 @@ import {
   loadPlanStatus,
   type PlanStatus,
 } from "@/lib/account/planStatus";
+import { INDEFINITE_PLAN_EXPIRES_AT } from "@/lib/plan";
 
 function baseStatus(overrides: Partial<PlanStatus> = {}): PlanStatus {
   return {
@@ -125,6 +126,22 @@ describe("describeContract", () => {
     expect(view.note).toBe(
       "自動更新はありません。期限が切れる前に更新してください。"
     );
+  });
+
+  it("reports an indefinitely granted plan without an expiry date or renewal nag", () => {
+    const view = describeContract(
+      baseStatus({
+        plan: "premium",
+        planExpiresAt: INDEFINITE_PLAN_EXPIRES_AT,
+        subscription: null,
+      })
+    );
+
+    expect(view).toEqual({
+      stateLabel: "利用中（無期限）",
+      detail: null,
+      note: null,
+    });
   });
 });
 

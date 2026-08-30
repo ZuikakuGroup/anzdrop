@@ -206,3 +206,15 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ### `POST /api/admin/shares/[shareId]/suspend` / `POST /api/admin/shares/[shareId]/unsuspend`
 
 共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗り、`POST /api/upload/start`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。
+
+### `GET /api/admin/accounts/[accountId]`
+
+アカウントIDを指定して現在のプラン状況を取得する。`/admin/accounts` 画面の検索欄から使う、読み取り専用ルートのためOrigin検証は行わない。レスポンスの `account` は `exists`(アカウントの有無)・`storedPlan`(`accounts.plan` の正規化値。期限切れでも有料値のまま)・`effectivePlan`(期限切れを加味した実効プラン)・`planExpiresAt`・`indefinite`(「無期限」の番兵値か)・`hasStripeSubscription`(`accounts.stripe_subscription_id` が設定されているか。Stripe上で実際に `active` かまでは確認しない)。存在しないアカウントIDでも200で `exists: false` を返す。
+
+### `POST /api/admin/accounts/[accountId]`
+
+アカウントIDを指定して Standard / Premium を手動付与する。リクエストボディは `{ plan: "standard" | "premium", expiresAt: string | null }`。`expiresAt` が `null` なら「無期限」(`lib/plan.ts` の `INDEFINITE_PLAN_EXPIRES_AT` を格納)、日時文字列なら「その日時まで有効」。`expiresAt` は解釈可能な日付かつ未来である必要があり、不正・過去なら `400`。存在しないアカウントIDは `404`。`accounts.plan` / `plan_expires_at` を更新するだけで、新しい種類の情報は保存しない。Bitcoin Webhook の「上位プランを格下げしない」ロジックとは異なり、管理者が明示的に指定したプランをそのまま設定する(意図的な格下げも可能)。成功時のレスポンスは `GET` と同じ `account` 形。
+
+### `DELETE /api/admin/accounts/[accountId]`
+
+アカウントを無料プランへ戻す(`accounts.plan = 'free'`・`plan_expires_at = NULL`)。誤付与の取り消し・不正対応向け。存在しないアカウントIDは `404`。`stripe_subscription_id` は外さないため、有効なカード契約があるアカウントでは次回の `sync` / Webhook で再度有効化されうる(その場合はStripe側で解約する)。成功時のレスポンスは `GET` と同じ `account` 形。

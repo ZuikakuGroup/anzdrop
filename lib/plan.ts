@@ -60,6 +60,18 @@ export const PLAN_RANK: Record<Plan, number> = {
   premium: 2,
 };
 
+// /adminからの手動付与で「無期限」を表すための番兵的な有効期限。有料プランは
+// 常にplan_expires_atで期限管理する設計(effectivePlan()が期限切れを自動的に
+// free扱いにする)のため、「無期限」も専用の状態を増やさず、実運用で到達しない
+// 遠い未来の日付をplan_expires_atへ格納することで表現する。
+export const INDEFINITE_PLAN_EXPIRES_AT = "9999-12-31T23:59:59.999Z";
+
+// plan_expires_atが上記の番兵値かどうか。/adminのプラン表示で「無期限」と
+// 具体的な期限日を出し分けるために使う。
+export function isIndefinitePlanExpiry(planExpiresAt: string | null): boolean {
+  return planExpiresAt === INDEFINITE_PLAN_EXPIRES_AT;
+}
+
 export function getMaxFileSizeBytes(plan: Plan): number {
   return PLAN_LIMITS[plan].maxFileSizeBytes;
 }
@@ -105,7 +117,7 @@ export function getUploadConcurrencyForPlan(plan: Plan): number {
 // 仕様上Premium相当の内容(50GB/30日/プレビュー可)だったため"premium"として
 // 扱う(migrations/0013で値自体もpremiumへ書き換えるが、デプロイ順序に対して
 // 安全にするためコード側でも防御的にエイリアスする)。未知の値はfreeへ倒す。
-function normalizeStoredPlan(rawPlan: string): Plan {
+export function normalizeStoredPlan(rawPlan: string): Plan {
   if (rawPlan === "standard" || rawPlan === "premium") {
     return rawPlan;
   }

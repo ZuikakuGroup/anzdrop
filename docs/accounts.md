@@ -85,6 +85,18 @@ Bitcoinはカードのような自動引き落としができないため、「N
 
 メールを収集しない方針のため、有料プランの期限が近い/切れたことをメールで事前通知する手段はない。`/mypage`(マイページ)で現在のプラン・契約状態・次回更新日/有効期限を表示するだけに留めている。
 
+## 管理者によるプラン手動付与(`/admin/accounts`)
+
+決済を経由せず、運営がアカウントIDを指定して Standard / Premium を付与できる管理画面を `/admin/accounts` に用意している(サポート対応・補償・動作確認など)。他の `/admin` 画面と同じく Cloudflare Access + `requireAdmin()` で保護する。
+
+- 付与・取り消しは既存の `accounts.plan` / `accounts.plan_expires_at` を更新するだけで、**新しい種類の情報はサーバーへ保存しない**(誰がいつ付与したかの操作ログも残さない)。
+- 有効期限は「終了日を指定」か「無期限」のいずれか。無期限は専用の状態を増やさず、`lib/plan.ts` の `INDEFINITE_PLAN_EXPIRES_AT`(実運用で到達しない遠い未来の日付)を `plan_expires_at` へ格納して表現する(`isIndefinitePlanExpiry()` で表示を出し分ける)。`effectivePlan()` の期限切れ判定はそのまま働く。
+- Bitcoin Webhook の「既にアクティブな上位プランを安価なプランの支払いで格下げしない」ロジックとは異なり、管理者が明示的に選んだプランをそのまま設定する(意図的な格下げも可能)。
+- 対象アカウントに `stripe_subscription_id` が紐づいている場合は画面上で警告する。付与・取り消しをしても次回の `sync` / Webhook が Stripe 上の実際の契約内容へ上書きしうるため。カード契約自体を止めるには Stripe 側で解約する。
+- 「無料プランに戻す」は `plan = 'free'` / `plan_expires_at = NULL` にするのみで、`stripe_subscription_id` は外さない。
+- カード契約中のアカウントへ「無期限」を付与すると、`plan_expires_at` の「後退させない」ガード(辞書順比較)により番兵日付が張り付く。カードの更新失敗(`past_due`)中でも `effectivePlan()` は番兵で未来判定するため、通常より長くプランが維持される。最終的に `customer.subscription.deleted` の `downgradeExpiredCardPlan()` が番兵を現在時刻へ戻して自己修復する。
+- `plan_expires_at` は他の書き込み経路と同じく `toISOString()` の固定フォーマットで格納する(ルート側で正規化)。「無期限」は `INDEFINITE_PLAN_EXPIRES_AT` を入れ、ユーザーの `/mypage`(`describeContract()`)はこの番兵を検知して「利用中（無期限）」と表示し、期限日や更新の催促を出さない。
+
 ## 新規APIエンドポイント
 
 詳細は[`api.md`](./api.md)を参照。
@@ -92,6 +104,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 - `POST /api/account/signup` / `login` / `logout` / `recover` / `GET /api/account/me`
 - `POST /api/billing/stripe/subscription` / `POST /api/billing/stripe/webhook` / `POST /api/billing/stripe/sync` / `POST /api/billing/stripe/cancellation`
 - `POST /api/billing/btc/charge` / `POST /api/billing/btc/webhook`
+- `GET /api/admin/accounts/[accountId]` / `POST /api/admin/accounts/[accountId]`(プラン付与) / `DELETE /api/admin/accounts/[accountId]`(無料プランへ戻す)
 
 ## 新規テーブル
 
