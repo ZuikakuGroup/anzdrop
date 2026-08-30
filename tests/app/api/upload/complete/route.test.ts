@@ -16,7 +16,13 @@ import {
   type TestEnv,
 } from "@/test/env";
 import type { Retention } from "@/lib/retention";
-import { generateKey, iterateEncryptedChunks } from "@/lib/crypto";
+import {
+  generateKey,
+  iterateDecryptedChunks,
+  iterateEncryptedChunks,
+} from "@/lib/crypto";
+import { uploadChunksFromStream } from "@/lib/upload/chunkUploader";
+import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 
 // iterateEncryptedChunks(実際にクライアントが送信するのと同じ形式:先頭に
 // ファイルsaltを含む)で単一ファイルを暗号化し、その唯一のパケットを返す。
@@ -282,6 +288,123 @@ describe("POST /api/upload/complete", () => {
 
     await Promise.all(waitUntilPromises);
   });
+
+  // GitHub issue #34 の回帰テスト。
+  //
+  // 暗号化ストリームは先頭パケットにだけファイルsalt(16B)が付くため、
+  // 修正前のクライアントのように「1パケット=1パート」で送ると先頭パートだけが
+  // 他より16B大きくなり、3パート以上(平文16MiB超)のアップロードで
+  // R2 の complete() が「最終パート以外は同一サイズ」制約に違反して失敗し、
+  // 500(「サーバー内部でエラーが発生しました」)になっていた。
+  //
+  // 実際のクライアント経路(iterateEncryptedChunks → uploadChunksFromStream →
+  // /api/upload/chunk)をそのまま駆動し、chunk が均一サイズのパートに詰め直され、
+  // complete・ダウンロード・復号まで通ることを検証する。
+  it("uploads a file spanning 3+ uniform R2 parts end-to-end via the real client path (issue #34)", async () => {
+    // 平文を 2 * UPLOAD_PART_SIZE + 1 にすると、iterateEncryptedChunks は
+    // 3 パケット(8MiB + 8MiB + 1B の平文それぞれに IV/GCMタグ、先頭は salt 付き)を
+    // 生成する。修正前の「1パケット=1パート」方式では先頭パートだけ salt(16B) の
+    // 分だけ大きくなり、非最終パートが 2 つ(先頭と 2 番目)できて不均一になるため
+    // R2 の complete() が「最終パート以外は同一サイズ」制約に違反して失敗した
+    // (= issue #34 の条件)。ちょうど 2 * UPLOAD_PART_SIZE(2 パケット)だと
+    // 非最終パートが先頭 1 つだけで制約を自明に満たしてしまい、回帰を再現できない。
+    // 修正後は repartition が [8MiB, 8MiB, 残り] の3パートに詰め直す
+    // (非最終パート均一・最終パート極小)。
+    const plaintextSize = 2 * UPLOAD_PART_SIZE + 1;
+    const plaintext = new Uint8Array(plaintextSize);
+    for (let i = 0; i < plaintextSize; i++) {
+      plaintext[i] = (i * 7 + 13) & 0xff;
+    }
+
+    const key = await generateKey();
+    const { uploadSessionId, uploadToken } = await startUpload(
+      "7d",
+      "big.enc",
+      plaintextSize
+    );
+
+    // uploadChunksFromStream が呼ぶ fetch("/api/upload/chunk", ...) を、
+    // 実際の chunk ルートハンドラへ転送する。
+    const { POST: chunkRoute } = await import("@/app/api/upload/chunk/route");
+    const seenPartSizes: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      async (url: string, init: RequestInit): Promise<Response> => {
+        expect(url).toBe("/api/upload/chunk");
+        const body = init.body as ArrayBuffer;
+        seenPartSizes.push(body.byteLength);
+        return chunkRoute(
+          new Request("http://localhost/api/upload/chunk", {
+            method: "POST",
+            headers: init.headers as Record<string, string>,
+            body,
+          })
+        );
+      }
+    );
+
+    const file = new File([plaintext], "big.bin");
+    await uploadChunksFromStream(
+      iterateEncryptedChunks(file, key),
+      uploadSessionId,
+      uploadToken,
+      "big.bin",
+      8,
+      () => {}
+    );
+
+    vi.unstubAllGlobals();
+
+    // 非最終パートは均一な UPLOAD_PART_SIZE、最終パートだけが小さい = #34 の条件。
+    const bySize = [...seenPartSizes].sort((a, b) => b - a);
+    expect(seenPartSizes).toHaveLength(3);
+    expect(bySize[0]).toBe(UPLOAD_PART_SIZE);
+    expect(bySize[1]).toBe(UPLOAD_PART_SIZE);
+    expect(bySize[2]).toBeLessThan(UPLOAD_PART_SIZE);
+
+    const response = await postComplete({ uploadSessionId });
+    expect(response.status).toBe(200);
+    const completeBody = await readJson<{ success: boolean; fileId: string }>(
+      response
+    );
+    expect(completeBody.success).toBe(true);
+
+    // 保存された平文サイズが元に一致する(暗号文サイズからの逆算)。
+    const fileRow = await env.DB.prepare(`SELECT size FROM files WHERE id = ?`)
+      .bind(completeBody.fileId)
+      .first<{ size: number }>();
+    expect(fileRow?.size).toBe(plaintextSize);
+
+    // ダウンロードして復号すると元の平文にバイト単位で一致する。
+    const { GET: downloadFile } = await import("@/app/api/file/[fileId]/route");
+    const downloadResponse = await downloadFile(
+      new Request(`http://localhost/api/file/${completeBody.fileId}`),
+      { params: Promise.resolve({ fileId: completeBody.fileId }) }
+    );
+    expect(downloadResponse.status).toBe(200);
+
+    const decryptedPieces: Uint8Array[] = [];
+    for await (const piece of iterateDecryptedChunks(
+      downloadResponse.body as ReadableStream<Uint8Array>,
+      key,
+      plaintextSize
+    )) {
+      decryptedPieces.push(piece);
+    }
+    const decrypted = new Uint8Array(
+      decryptedPieces.reduce((sum, piece) => sum + piece.byteLength, 0)
+    );
+    let decryptedOffset = 0;
+    for (const piece of decryptedPieces) {
+      decrypted.set(piece, decryptedOffset);
+      decryptedOffset += piece.byteLength;
+    }
+    // 多MB配列への toEqual はこの環境でヒープを食い潰すためバイト比較する。
+    expect(decrypted.byteLength).toBe(plaintext.byteLength);
+    expect(Buffer.from(decrypted).equals(Buffer.from(plaintext))).toBe(true);
+
+    await Promise.all(waitUntilPromises);
+  }, 120_000);
 
   // 413(実サイズがプラン上限を超過)の再現には、free/paidいずれのプランでも
   // 数GB〜数十GBの実データをテスト内でアップロードする必要があり、
