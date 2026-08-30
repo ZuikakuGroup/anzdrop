@@ -44,9 +44,10 @@ describe("buildTokushohoItems", () => {
   });
 
   it("事業者情報は lib/legal/constants の単一の情報源と一致する", () => {
-    // 販売事業者は任意団体「瑞鶴グループ」として表示し、運営統括責任者に
-    // 運営者個人の氏名を記載する。
+    // 販売事業者は任意団体「瑞鶴グループ」として表示し、運営者個人の氏名は
+    // 販売事業者欄には出さない(運営統括責任者欄にのみ記載する)。
     expect(byLabel("販売事業者")).toContain(OPERATOR.groupName);
+    expect(byLabel("販売事業者")).not.toContain(OPERATOR.sellerName);
     expect(byLabel("運営統括責任者")).toBe(OPERATOR.representative);
     expect(byLabel("連絡先")).toContain(OPERATOR.email);
   });
