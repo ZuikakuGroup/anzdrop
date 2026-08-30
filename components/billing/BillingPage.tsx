@@ -329,6 +329,25 @@ export default function BillingPage({
                     ))}
                   </div>
 
+                  <div className="space-y-1 rounded border border-ink/15 bg-ink/[0.02] p-3 text-xs leading-relaxed text-ink/70">
+                    <p className="font-bold text-ink">
+                      お申し込み内容(クレジットカードの場合)
+                    </p>
+                    <p>
+                      {PLAN_LABELS[selectedPlan]} ― 月額 ¥
+                      {PLAN_MONTHLY_PRICE_JPY[selectedPlan].toLocaleString(
+                        "ja-JP"
+                      )}
+                      (消費税込み)
+                    </p>
+                    <p>
+                      契約期間の定めはなく、解約されるまで毎月自動的に更新・課金されます。決済の完了後すぐにご利用いただけます。
+                    </p>
+                    <p>
+                      自動更新はこの「プラン・お支払い」画面からいつでも停止でき、日割りでの返金はありません。
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                     <button
                       onClick={startStripeSubscription}
@@ -353,6 +372,24 @@ export default function BillingPage({
                       ビットコイン決済は現在準備中のため、しばらくお待ちください。
                     </p>
                   </div>
+
+                  <p className="text-center text-xs leading-relaxed text-ink/50">
+                    お申し込みの前に{" "}
+                    <a
+                      href="/legal/terms"
+                      className="font-bold text-brand hover:underline"
+                    >
+                      利用規約
+                    </a>
+                    {" ・ "}
+                    <a
+                      href="/legal/tokushoho"
+                      className="font-bold text-brand hover:underline"
+                    >
+                      特定商取引法に基づく表記
+                    </a>
+                    {" "}をご確認ください。
+                  </p>
 
                   <p className="min-h-[20px] text-sm font-bold text-brand">
                     {error}
