@@ -97,6 +97,12 @@ export default function SiteHeader() {
             {isMenuOpen && (
               <div className="absolute right-0 top-full mt-2 w-40 rounded border border-ink/10 bg-paper py-1 shadow-lg">
                 <a
+                  href="/mypage"
+                  className="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+                >
+                  マイページ
+                </a>
+                <a
                   href="/mypage/billing"
                   className="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink"
                 >
@@ -170,10 +176,16 @@ export default function SiteHeader() {
             {isAuthChecked && (accountId ? (
               <>
                 <a
-                  href="/mypage/billing"
+                  href="/mypage"
                   className="block font-mono text-ink/70 transition-colors hover:text-ink"
                 >
                   {accountId}
+                </a>
+                <a
+                  href="/mypage/billing"
+                  className="block text-ink/70 transition-colors hover:text-ink"
+                >
+                  プラン・お支払い
                 </a>
                 <button
                   onClick={handleLogout}

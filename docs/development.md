@@ -15,10 +15,10 @@ npm install
 
 | ファイル | 用途 | 主な変数 |
 | --- | --- | --- |
-| `.env.local`(gitignore対象) | Next.jsのビルド/実行時にクライアント側へ埋め込む値 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` |
+| `.env.local`(gitignore対象) | Next.jsのビルド/実行時にクライアント側へ埋め込む値 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` |
 | `.dev.vars`(gitignore対象) | ローカルのWorkers実行時シークレット(wranglerが読む) | `TURNSTILE_SECRET_KEY` |
 
-いずれもリポジトリには含まれないため、各自 [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) でサイトキー・シークレットキーを発行して設定する(開発用にはテスト用の常時成功/失敗キーも利用可能)。
+いずれもリポジトリには含まれないため、各自発行して設定する。`NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`は[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)から発行する(開発用にはテスト用の常時成功/失敗キーも利用可能)。`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`はStripeダッシュボード(テストモード)の「開発者」→「APIキー」から取得できる公開可能キー(`pk_test_...`)を使う。
 
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 

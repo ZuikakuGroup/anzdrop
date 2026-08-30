@@ -18,6 +18,7 @@
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | `wrangler`のD1マイグレーション適用・デプロイ両方に使用。対象アカウントの Workers / D1 / R2 への書き込み権限が必要 |
 | `TURNSTILE_SITE_KEY` | ビルド時に `NEXT_PUBLIC_TURNSTILE_SITE_KEY` としてクライアントバンドルへ埋め込まれる、Turnstileのサイトキー(公開情報) |
+| `STRIPE_PUBLISHABLE_KEY` | ビルド時に `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` としてクライアントバンドルへ埋め込まれる、Stripeの公開可能キー(公開情報。Stripe.js/Payment Elementの初期化に使う) |
 
 ### Cloudflare Workersのシークレット(`wrangler secret put`、リポジトリには含まれない)
 
@@ -25,7 +26,7 @@
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Turnstile検証用のシークレットキー |
 | `SESSION_SECRET` | アカウントのログインセッションJWTの署名鍵(HS256)。詳細は[`accounts.md`](./accounts.md) |
-| `STRIPE_SECRET_KEY` | Stripe APIキー(Checkout Session作成・Webhook内でのSubscription参照に使用) |
+| `STRIPE_SECRET_KEY` | Stripe APIキー(Customer/Subscriptionの作成・取得・更新などのAPI呼び出しに使用) |
 | `STRIPE_WEBHOOK_SECRET` | `/api/billing/stripe/webhook` の署名検証用シークレット(Stripeダッシュボードで作成したWebhookエンドポイントごとに発行される) |
 | `OPENNODE_API_KEY` | OpenNode APIキー。charge作成とWebhook署名検証(HMAC鍵)の両方に使う |
 
@@ -65,8 +66,8 @@
 設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境でセットアップする場合の概略:
 
 1. Stripeダッシュボード(またはStripe API)でStandard用・Premium用それぞれの月額サブスクリプションProduct/Priceを作成し、そのidを`wrangler.jsonc`の`STRIPE_PRICE_ID_STANDARD`・`STRIPE_PRICE_ID_PREMIUM`に設定する。Webhook(`app/api/billing/stripe/webhook/route.ts`)はSubscriptionの実際のPrice IDを見てプランを判定するため、ここで設定したid以外のPriceで契約された場合はプランが反映されない(意図しないプラン活性化を防ぐための防御的な挙動)。
-2. Stripeダッシュボードで秘密鍵を取得し、`wrangler secret put STRIPE_SECRET_KEY`で設定する。
-3. Stripeダッシュボードで`https://<本番ドメイン>/api/billing/stripe/webhook`宛のWebhookエンドポイントを作成し、`checkout.session.completed`・`customer.subscription.updated`・`customer.subscription.deleted`を購読する。発行される署名シークレットを`wrangler secret put STRIPE_WEBHOOK_SECRET`で設定する。
+2. Stripeダッシュボードで秘密鍵・公開可能キーを取得し、秘密鍵は`wrangler secret put STRIPE_SECRET_KEY`で設定する。公開可能キーはGitHub Secretsの`STRIPE_PUBLISHABLE_KEY`に設定する(ビルド時に`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`としてクライアントへ埋め込まれる、公開情報)。
+3. Stripeダッシュボードで`https://<本番ドメイン>/api/billing/stripe/webhook`宛のWebhookエンドポイントを作成し、`customer.subscription.updated`・`customer.subscription.deleted`を購読する。発行される署名シークレットを`wrangler secret put STRIPE_WEBHOOK_SECRET`で設定する。
 4. OpenNodeでビジネスアカウントを作成(要KYB/KYC)し、APIキーを取得して`wrangler secret put OPENNODE_API_KEY`で設定する。OpenNode側でのWebhookエンドポイント登録は不要(charge作成時に`callback_url`として都度指定している)。
 5. `wrangler.jsonc`の`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`・`OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM`・`OPENNODE_BTC_DAYS_PER_CHARGE`を実際の価格に合わせて調整する。
 6. `SESSION_SECRET`(ログインセッションJWTの署名鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put SESSION_SECRET`で設定する。

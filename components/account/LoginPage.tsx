@@ -13,7 +13,7 @@ import type { LoginResponse } from "@/app/api/account/login/schema";
 
 export default function LoginPage() {
   const router = useRouter();
-  const canRenderForm = useRedirectIfLoggedIn("/mypage/billing");
+  const canRenderForm = useRedirectIfLoggedIn("/mypage");
   const [accountId, setAccountId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,7 +53,7 @@ export default function LoginPage() {
         throw new Error(!data.success ? data.error : "ログインに失敗しました。");
       }
 
-      router.push("/mypage/billing");
+      router.replace("/mypage");
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");

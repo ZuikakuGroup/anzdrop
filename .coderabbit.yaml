@@ -1,2 +1,10 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: ja-JP
+reviews:
+  # 未解消の指摘がある PR は「変更要求」レビューとして扱い、
+  # マージのゲートにできるようにする(AGENTS.md のマージ条件と揃える)。
+  request_changes_workflow: true
+  auto_review:
+    # コミットが短期間に積み重なっても自動レビューを止めない
+    # (0 で auto-pause を無効化)。
+    auto_pause_after_reviewed_commits: 0

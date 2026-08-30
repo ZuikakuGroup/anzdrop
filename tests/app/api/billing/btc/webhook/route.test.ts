@@ -349,4 +349,86 @@ describe("POST /api/billing/btc/webhook", () => {
 
     expect(response.status).toBe(200);
   });
+
+  it.each(["underpaid", "expired", "refunded"])(
+    "ignores a non-paid '%s' status: no plan activation, pending row untouched",
+    async (status) => {
+      const { accountId } = await insertTestAccount(env, { plan: "free" });
+      const chargeId = `charge-${status}`;
+      await insertPendingPayment({ accountId, chargeId });
+
+      const hashedOrder = await hmacHex(env.OPENNODE_API_KEY, chargeId);
+      const response = await postWebhook({
+        id: chargeId,
+        status,
+        hashed_order: hashedOrder,
+      });
+
+      expect(response.status).toBe(200);
+      const payment = await env.DB.prepare(
+        `SELECT status FROM btc_payments WHERE opennode_charge_id = ?`
+      )
+        .bind(chargeId)
+        .first<{ status: string }>();
+      expect(payment?.status).toBe("pending");
+      expect((await getAccount(accountId))?.plan).toBe("free");
+    }
+  );
+
+  it("only settles the charge named in the webhook, leaving other pending payments and accounts untouched", async () => {
+    const a = await insertTestAccount(env, { plan: "free" });
+    const b = await insertTestAccount(env, { plan: "free" });
+    await insertPendingPayment({
+      accountId: a.accountId,
+      chargeId: "charge-a",
+      plan: "standard",
+    });
+    await insertPendingPayment({
+      accountId: b.accountId,
+      chargeId: "charge-b",
+      plan: "premium",
+    });
+
+    const hashedOrder = await hmacHex(env.OPENNODE_API_KEY, "charge-a");
+    const response = await postWebhook({
+      id: "charge-a",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(200);
+
+    // 支払われた側だけが反映される。
+    expect((await getAccount(a.accountId))?.plan).toBe("standard");
+
+    // もう一方は一切変わらない。
+    expect((await getAccount(b.accountId))?.plan).toBe("free");
+    const paymentB = await env.DB.prepare(
+      `SELECT status FROM btc_payments WHERE opennode_charge_id = ?`
+    )
+      .bind("charge-b")
+      .first<{ status: string }>();
+    expect(paymentB?.status).toBe("pending");
+  });
+
+  it("rejects a 'paid' webhook whose signature was computed with a different api key", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    await insertPendingPayment({ accountId, chargeId: "charge-wrong-key" });
+
+    const hashedOrder = await hmacHex("some-other-api-key", "charge-wrong-key");
+    const response = await postWebhook({
+      id: "charge-wrong-key",
+      status: "paid",
+      hashed_order: hashedOrder,
+    });
+
+    expect(response.status).toBe(400);
+    expect((await getAccount(accountId))?.plan).toBe("free");
+    const payment = await env.DB.prepare(
+      `SELECT status FROM btc_payments WHERE opennode_charge_id = ?`
+    )
+      .bind("charge-wrong-key")
+      .first<{ status: string }>();
+    expect(payment?.status).toBe("pending");
+  });
 });
