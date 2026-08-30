@@ -81,6 +81,10 @@ export default function AdminAccountsPage() {
     setIsSearching(true);
     setSearchError("");
     resetActionState();
+    // 検索中に前回のアカウントを対象に付与・取り消しが実行されないよう、
+    // 表示中のアカウント情報を先にクリアする。
+    setAccount(null);
+    setSearchedAccountId("");
 
     try {
       const info = await fetchAccount(accountId);
