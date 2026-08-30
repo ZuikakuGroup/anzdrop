@@ -58,6 +58,35 @@ export async function loadPlanStatus(): Promise<PlanStatusResult> {
   }
 }
 
+// /mypage 下部の「プラン・お支払い」への導線ボタン。/mypage 自体は操作を持たず、
+// 実際の解約・再開は /mypage/billing の管理ブロックで行うが、カード契約がある間は
+// ボタンの主目的が「支払い」ではなく「契約の管理」になるため、文言を状態に合わせて
+// 変える(遷移先は常に /mypage/billing)。
+//
+// tone は見た目の強調度。カード自動更新中(active)はこのボタンが「解約」の入り口に
+// なるので、前進系の CTA と同じブランドカラー塗り(primary)ではなく控えめな
+// アウトライン(neutral)にし、/mypage/billing 側の解約ボタンと視覚的に揃える。
+// 解約予約中(canceling)は逆にこのボタンが「解約を取り消す=契約を続ける」復帰系の
+// 操作で、期限を過ぎると無料に戻ってしまう状態なので、見つけやすい primary にする。
+export type BillingCta = {
+  label: string;
+  tone: "primary" | "neutral";
+};
+
+export function describeBillingCta(
+  subscriptionState: StripeSubscriptionSummary["state"] | null
+): BillingCta {
+  if (subscriptionState === "active") {
+    return { label: "解約する", tone: "neutral" };
+  }
+
+  if (subscriptionState === "canceling") {
+    return { label: "解約を取り消す", tone: "primary" };
+  }
+
+  return { label: "プラン・お支払いへ", tone: "primary" };
+}
+
 // 契約状態の表示用テキスト。/mypage で「現在のプラン」の下に添える。
 export type ContractView = {
   stateLabel: string;

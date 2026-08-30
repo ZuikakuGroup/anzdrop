@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
+import Spinner from "@/components/brand/Spinner";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import type { RecoverResponse } from "@/app/api/account/recover/schema";
@@ -17,20 +18,39 @@ export default function RecoverPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle"
+  );
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async () => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     if (isSubmitting || newRecoveryCode) {
       return;
     }
 
-    if (!accountId.trim() || !recoveryCode.trim()) {
+    // 資格情報マネージャーによる自動入力は DOM の値だけを書き換えて change
+    // イベントを発火しないことがある。その場合 controlled state が空のままに
+    // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
+    const formData = new FormData(event.currentTarget);
+    const submittedAccountId = String(formData.get("accountId") ?? "");
+    const submittedRecoveryCode = String(formData.get("recoveryCode") ?? "");
+    const submittedNewPassword = String(formData.get("newPassword") ?? "");
+    setAccountId(submittedAccountId);
+    setRecoveryCode(submittedRecoveryCode);
+    setNewPassword(submittedNewPassword);
+
+    const trimmedAccountId = submittedAccountId.trim();
+    const trimmedRecoveryCode = submittedRecoveryCode.trim();
+
+    if (!trimmedAccountId || !trimmedRecoveryCode) {
       setError("アカウントIDとリカバリーコードを入力してください。");
       return;
     }
 
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    if (submittedNewPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`新しいパスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
       return;
     }
@@ -45,9 +65,9 @@ export default function RecoverPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: accountId.trim(),
-          recoveryCode: recoveryCode.trim(),
-          newPassword,
+          accountId: trimmedAccountId,
+          recoveryCode: trimmedRecoveryCode,
+          newPassword: submittedNewPassword,
           turnstileToken,
         }),
       });
@@ -66,6 +86,21 @@ export default function RecoverPage() {
       setError(err.message);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!newRecoveryCode) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(newRecoveryCode);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    } finally {
+      setTimeout(() => setCopyState("idle"), 2000);
     }
   };
 
@@ -88,12 +123,25 @@ export default function RecoverPage() {
             <div className="space-y-4">
               <div className="rounded border-2 border-brand p-4 text-sm">
                 <p className="mb-3 font-bold text-brand">
-                  パスワードを再設定しました。新しいリカバリーコードは今だけ表示されます。
+                  パスワードを再設定しました。新しいリカバリーコードは今だけ表示されます。必ず保存してください。
                 </p>
                 <p className="break-all font-mono text-[13px]">
                   {newRecoveryCode}
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
+              >
+                {copyState === "copied"
+                  ? "コピーしました"
+                  : copyState === "failed"
+                    ? "コピーできませんでした。手で控えてください"
+                    : "リカバリーコードをコピー"}
+              </button>
+
               <a
                 href="/mypage/login"
                 className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
@@ -102,7 +150,7 @@ export default function RecoverPage() {
               </a>
             </div>
           ) : (
-            <div className="space-y-4">
+            <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1">
                 <label
                   htmlFor="recover-account-id"
@@ -112,9 +160,15 @@ export default function RecoverPage() {
                 </label>
                 <input
                   id="recover-account-id"
+                  name="accountId"
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
+                  placeholder="yamada-taro"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
@@ -128,9 +182,15 @@ export default function RecoverPage() {
                 </label>
                 <input
                   id="recover-code"
+                  name="recoveryCode"
                   type="text"
                   value={recoveryCode}
                   onChange={(event) => setRecoveryCode(event.target.value)}
+                  placeholder="作成時に表示されたコード"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
@@ -144,8 +204,10 @@ export default function RecoverPage() {
                 </label>
                 <PasswordInput
                   id="recover-new-password"
+                  name="newPassword"
                   value={newPassword}
                   onChange={setNewPassword}
+                  placeholder="8文字以上のパスワード"
                   autoComplete="new-password"
                   className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
@@ -154,17 +216,31 @@ export default function RecoverPage() {
               {turnstileWidget}
 
               <button
-                onClick={submit}
+                type="submit"
                 disabled={isSubmitting}
                 className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
+                {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
                 {isSubmitting ? "再設定中..." : "パスワードを再設定する"}
               </button>
 
-              <p className="min-h-[20px] text-sm font-bold text-brand">
+              <p
+                role="alert"
+                className="min-h-[20px] text-sm font-bold text-brand"
+              >
                 {error}
               </p>
-            </div>
+
+              <p className="text-center text-xs text-ink/50">
+                パスワードを思い出した場合は{" "}
+                <a
+                  href="/mypage/login"
+                  className="font-bold text-brand hover:underline"
+                >
+                  ログイン
+                </a>
+              </p>
+            </form>
           )}
         </div>
       </main>

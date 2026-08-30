@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -26,23 +26,36 @@ export default function SignupPage() {
   const [result, setResult] = useState<
     { accountId: string; recoveryCode: string } | null
   >(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle"
+  );
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async () => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     if (isSubmitting || result) {
       return;
     }
 
-    if (!isValidAccountId(accountId)) {
+    // 資格情報マネージャーによる自動入力は DOM の値だけを書き換えて change
+    // イベントを発火しないことがある。その場合 controlled state が空のままに
+    // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
+    const formData = new FormData(event.currentTarget);
+    const submittedAccountId = String(formData.get("accountId") ?? "");
+    const submittedPassword = String(formData.get("password") ?? "");
+    setAccountId(submittedAccountId);
+    setPassword(submittedPassword);
+
+    if (!isValidAccountId(submittedAccountId)) {
       setError(
         `アカウントIDは${MIN_ACCOUNT_ID_LENGTH}〜${MAX_ACCOUNT_ID_LENGTH}文字の半角英数字・ハイフン・アンダースコアで入力してください。`
       );
       return;
     }
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
+    if (submittedPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
       return;
     }
@@ -56,7 +69,11 @@ export default function SignupPage() {
       const response = await fetch("/api/account/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, password, turnstileToken }),
+        body: JSON.stringify({
+          accountId: submittedAccountId,
+          password: submittedPassword,
+          turnstileToken,
+        }),
       });
 
       const data = (await response.json()) as SignupResponse;
@@ -89,9 +106,11 @@ export default function SignupPage() {
       );
       setCopyState("copied");
     } catch {
-      // クリップボード失敗時も画面上の文字列は見えているので致命的ではない
+      // クリップボード失敗時も画面上の文字列は見えているので致命的ではないが、
+      // コピーできたか分からないと困るので、手で控えるよう促す。
+      setCopyState("failed");
     } finally {
-      setTimeout(() => setCopyState("idle"), 1500);
+      setTimeout(() => setCopyState("idle"), 2000);
     }
   };
 
@@ -138,10 +157,15 @@ export default function SignupPage() {
               </div>
 
               <button
+                type="button"
                 onClick={handleCopy}
                 className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
               >
-                {copyState === "copied" ? "コピーしました" : "両方コピー"}
+                {copyState === "copied"
+                  ? "コピーしました"
+                  : copyState === "failed"
+                    ? "コピーできませんでした。手で控えてください"
+                    : "両方コピー"}
               </button>
 
               <a
@@ -152,7 +176,7 @@ export default function SignupPage() {
               </a>
             </div>
           ) : (
-            <div className="space-y-4">
+            <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1">
                 <label
                   htmlFor="signup-account-id"
@@ -162,10 +186,12 @@ export default function SignupPage() {
                 </label>
                 <input
                   id="signup-account-id"
+                  name="accountId"
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
                   placeholder="yamada-taro"
+                  autoComplete="username"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -182,6 +208,7 @@ export default function SignupPage() {
                 </label>
                 <PasswordInput
                   id="signup-password"
+                  name="password"
                   value={password}
                   onChange={setPassword}
                   placeholder="8文字以上のパスワード"
@@ -193,14 +220,18 @@ export default function SignupPage() {
               {turnstileWidget}
 
               <button
-                onClick={submit}
+                type="submit"
                 disabled={isSubmitting}
                 className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
+                {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
                 {isSubmitting ? "作成中..." : "アカウントを作成する"}
               </button>
 
-              <p className="min-h-[20px] text-sm font-bold text-brand">
+              <p
+                role="alert"
+                className="min-h-[20px] text-sm font-bold text-brand"
+              >
                 {error}
               </p>
 
@@ -210,7 +241,7 @@ export default function SignupPage() {
                   ログイン
                 </a>
               </p>
-            </div>
+            </form>
           )}
         </div>
       </main>

@@ -13,10 +13,11 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 ### ログイン状態に応じた画面遷移・ヘッダー表示
 
-- アカウント関連の画面は、いずれも`/mypage`配下(`/mypage`〈アカウント概要〉・`/mypage/login`・`/mypage/signup`・`/mypage/recover`・`/mypage/billing`)にまとめて配置している(`app/mypage/`)。`app/mypage/layout.tsx`で配下すべてを`robots: noindex`にしている。
-- **`/mypage`(アカウント概要)は状態確認専用**。表示するのはアカウントID・現在のプランと契約状態(「カードで自動更新中」「解約予約中」「有効期限あり（自動更新なし）」「無料プラン」＋次回更新日/有効期限)・現プランの主な内容(最大ファイルサイズ・最大保存期間・ブラウザ内プレビュー可否)・パスワード再設定の注意書き(リカバリーコードのみ・紛失時は復旧不可。コード自体は出さない)と、`/mypage/billing`へのリンク。プラン選択・決済・解約などの操作は一切持たず、`/mypage/billing`へ誘導する。
+- アカウント関連の画面は、いずれも`/mypage`配下(`/mypage`〈マイページ〉・`/mypage/login`・`/mypage/signup`・`/mypage/recover`・`/mypage/billing`)にまとめて配置している(`app/mypage/`)。`app/mypage/layout.tsx`で配下すべてを`robots: noindex`にしている。画面名は「マイページ」で統一する(h1・ヘッダーメニュー・`/mypage/billing`の戻りリンク)。
+- **`/mypage`(マイページ)は状態確認専用**。表示するのはアカウントID・現在のプランと契約状態(「カードで自動更新中」「解約予約中」「有効期限あり（自動更新なし）」「無料プラン」＋次回更新日/有効期限)・現プランの主な内容(最大ファイルサイズ・最大保存期間・ブラウザ内プレビュー可否)・パスワード再設定の注意書き(リカバリーコードのみ・紛失時は復旧不可。コード自体は出さない)と、`/mypage/billing`へのリンク。プラン選択・決済・解約などの操作は一切持たず、`/mypage/billing`へ誘導する。誘導ボタンは契約状態に合わせて変える(`describeBillingCta()`。カードで自動更新中は「解約する」、解約予約中は「解約を取り消す」、それ以外は「プラン・お支払いへ」)が、遷移先は常に`/mypage/billing`で、実際の解約・再開は遷移先の`SubscriptionManager`で行う。トーンは、自動更新中(`active`)のみこのボタンが「解約」の入り口になるため前進系CTAのブランドカラー塗りではなく控えめなアウトライン(`tone: "neutral"`)にし`/mypage/billing`側の解約ボタンと揃える。解約予約中(`canceling`)は「解約を取り消す=契約を続ける」復帰系の操作で、期限を過ぎると無料に戻るため見つけやすい`primary`にする。
+- 読み込み(`loadPlanStatus()` = `POST /api/billing/stripe/sync`)に失敗した場合、`/mypage`・`/mypage/billing`とも「一時的に読み込めませんでした。」の文言と**再読み込みボタン**を出す(`sync`は毎回Stripeを叩くため一時的な失敗がありうる。手動リロードしか手段がないと詰むため)。
 - `/mypage`と`/mypage/billing`はどちらも初回表示時に`POST /api/billing/stripe/sync`を呼ぶ。契約状態(「自動更新中」か「解約予約中」か)と次回更新日は`GET /api/account/me`(純粋DB、`subscription`要約を返さない)では出せないため。**401**なら`/mypage/login`へリダイレクト、それ以外の失敗(500等)は「読み込みに失敗しました。」表示に留める(`sync`は毎回Stripeを叩くため500がありうる。500でリダイレクトすると`/mypage/login`側がログイン済みを見て戻しループになる)。この「sync取得＋401/500ハンドリング＋契約状態ラベル判定」は`lib/account/planStatus.ts`(`loadPlanStatus()` / `describeContract()`)に集約し、`/mypage`と`/mypage/billing`(初回＋決済後ポーリング)で共有する。
-- カード契約の**解約・再開の操作(SubscriptionManager)は`/mypage/billing`にのみ置く**。`/mypage`は解約予約中かどうかを表示するだけ。
+- カード契約の**解約・再開の操作(SubscriptionManager)は`/mypage/billing`にのみ置く**。`/mypage`は契約状態を表示し、`/mypage/billing`への誘導ボタンをその状態に合わせるだけ(操作自体は持たない)。`/mypage/billing`の戻りリンクは「← マイページ」。
 - 逆に`/mypage/login`・`/mypage/signup`はログイン済み(`GET /api/account/me`が成功)なら`/mypage`へリダイレクトする(`lib/account/useRedirectIfLoggedIn.ts`)。ログイン成功後の遷移先も`/mypage`。行き先は暫定で、将来変更の可能性がある。
 - いずれもサーバー側でのリダイレクト(Server Component等)ではなく、マウント後にAPIを呼んでクライアント側で判定する方式。判定が終わるまでは対象画面の代わりにスピナーを表示する。
 - 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントIDのプルダウン(クリックで「マイページ」〈`/mypage`〉「プラン・お支払い」〈`/mypage/billing`〉「ログアウト」を表示。モバイルはアカウントID行が`/mypage`リンク)を、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
@@ -63,7 +64,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
   - `incomplete`/`past_due`等の中間状態: `accounts`は触らない(Webhook / 次回の同期を待つ)。ただし`past_due`は要約(`{ state: "past_due" }`)を返し、UI上は契約フローではなく管理ブロック(お支払い方法の確認 / 自動更新の停止)を出す。
   - Stripe到達に失敗した場合(前項の404、およびレート制限・タイムアウト・Stripe障害等)は、このエンドポイントを失敗させず`accounts`も書き換えず、DB由来の現在のプラン情報で`success`を返す(ここで500を返すと、請求ページを開いた課金顧客がページを使えなくなる。クライアントは401のみをログイン切れとして扱う)。この場合、`stripe_subscription_id`を持ち`plan_expires_at`が未来であれば、Stripe上の実際の状態(解約予約中かどうか)は分からないため要約は暫定的に`{ state: "active", currentPeriodEnd: plan_expires_at }`を返す。期限切れなら`null`。
   - 新しい種類の情報をサーバーへ保存するものではない。あわせて画面表示用の現在のサブスクリプション要約も返す。`active`/`trialing`のSubscriptionは`cancel_at_period_end`に応じて`{ state: "active" | "canceling", currentPeriodEnd }`、`past_due`(更新dunning中)は`cancel_at_period_end`が未設定なら`{ state: "past_due", currentPeriodEnd: null }`(設定済みなら`canceling`)、それ以外(Subscription無し・`incomplete`・`canceled`等)は`null`(＝契約フローを表示)。`past_due`で`currentPeriodEnd`を`null`にするのは、更新インボイス生成時にStripeが請求期間を未払いの次期へ前進させることがあり、`current_period_end`が支払い済みの期限より先を指しうるため(払い込み済みの期限は`accounts.plan_expires_at`側。`past_due`ではWebhook・syncとも更新しない)。ただし前項のStripe到達失敗時の暫定フォールバックは例外。
-- **解約**は`POST /api/billing/stripe/cancellation`(`{ cancelAtPeriodEnd: boolean }`)で行う。`true`で「期間末での解約」(`cancel_at_period_end: true`。自動更新を停止するだけで、期間中はプランを維持)、`false`でその取り消し(自動更新を再開)。即時解約・日割り返金は行わない。実際のプラン失効は、期間末にStripeが発火する`customer.subscription.deleted`(既存のWebhook処理で`downgradeExpiredCardPlan()`により`plan_expires_at`を現在時刻へ更新し`stripe_subscription_id`を外す)に委ねる。`past_due`のSubscriptionも対象にする(自動更新を止める操作は課金を増やさないため安全。止められないと、あとでStripeのリトライが成功したときに解約意思に反して次期分が請求されてしまう)。`/mypage/billing`でのみ操作でき、`sync`が返す要約が`active`なら「解約する」ボタン(2段階確認)、`past_due`なら支払い確認中の案内と同じ「解約する」ボタン、`canceling`なら「解約を取り消す」ボタンと終了予定日を表示し、いずれの状態でも新規契約フロー(プラン選択)は出さない。終了予定日は通常の`canceling`では要約の`currentPeriodEnd`の日付を表示するが、`past_due`から`cancel_at_period_end`が付いて`canceling`になった要約は`currentPeriodEnd`が`null`(前項の理由による)のため具体的な日付を出せず、「現在の請求期間の終了時」という表現に留める。このエンドポイントもサーバーへ新しい情報を保存しない。
+- **解約**は`POST /api/billing/stripe/cancellation`(`{ cancelAtPeriodEnd: boolean }`)で行う。`true`で「期間末での解約」(`cancel_at_period_end: true`。自動更新を停止するだけで、期間中はプランを維持)、`false`でその取り消し(自動更新を再開)。即時解約・日割り返金は行わない。実際のプラン失効は、期間末にStripeが発火する`customer.subscription.deleted`(既存のWebhook処理で`downgradeExpiredCardPlan()`により`plan_expires_at`を現在時刻へ更新し`stripe_subscription_id`を外す)に委ねる。`past_due`のSubscriptionも対象にする(自動更新を止める操作は課金を増やさないため安全。止められないと、あとでStripeのリトライが成功したときに解約意思に反して次期分が請求されてしまう)。`/mypage/billing`でのみ操作でき、`sync`が返す要約が`active`なら「解約する」ボタン(押すと2段階確認。確認画面では安全側の「解約しない」を主ボタン、「解約する」をアウトラインにする)、`past_due`なら支払い確認中の案内と同じ「解約する」ボタン、`canceling`なら「解約を取り消す」ボタンと終了予定日を表示し、いずれの状態でも新規契約フロー(プラン選択)は出さない。終了予定日は通常の`canceling`では要約の`currentPeriodEnd`の日付を表示するが、`past_due`から`cancel_at_period_end`が付いて`canceling`になった要約は`currentPeriodEnd`が`null`(前項の理由による)のため具体的な日付を出せず、「現在の請求期間の終了時」という表現に留める。このエンドポイントもサーバーへ新しい情報を保存しない。
 - Cloudflare WorkersにはNodeの`crypto`モジュールが無いため、SDKの`Stripe.createFetchHttpClient()`(HTTPクライアント)と`Stripe.createSubtleCryptoProvider()`(Webhook署名検証)を明示的に指定している。
 - Stripeの新しいAPIバージョンでは請求期間(`current_period_end`)がSubscription直下ではなく各SubscriptionItemに付く。このアプリは1サブスクリプションにつき1アイテムのみ使うため、先頭アイテムの値を使う(`getSubscriptionPeriodEnd()`)。
 - 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに処理済みイベントIDを記録する。
@@ -82,7 +83,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 
 ### 期限切れの通知について
 
-メールを収集しない方針のため、有料プランの期限が近い/切れたことをメールで事前通知する手段はない。`/mypage`(アカウント概要)で現在のプラン・契約状態・次回更新日/有効期限を表示するだけに留めている。
+メールを収集しない方針のため、有料プランの期限が近い/切れたことをメールで事前通知する手段はない。`/mypage`(マイページ)で現在のプラン・契約状態・次回更新日/有効期限を表示するだけに留めている。
 
 ## 新規APIエンドポイント
 
