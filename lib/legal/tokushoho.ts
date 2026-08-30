@@ -3,7 +3,7 @@ import {
   PLAN_MONTHLY_PRICE_JPY,
   type Plan,
 } from "@/lib/plan";
-import { OPERATOR } from "@/lib/legal/constants";
+import { OPERATOR, OPERATOR_GROUP_LABEL } from "@/lib/legal/constants";
 
 // 特定商取引法第11条に基づく通信販売の表示。表示項目と本文を1か所にまとめ、
 // 価格などプランに依存する値は lib/plan.ts の単一の情報源から組み立てる
@@ -34,7 +34,7 @@ export function buildTokushohoItems(): TokushohoItem[] {
   return [
     {
       label: "販売事業者",
-      lines: [`任意団体 ${OPERATOR.groupName}`],
+      lines: [OPERATOR_GROUP_LABEL],
     },
     {
       label: "運営統括責任者",

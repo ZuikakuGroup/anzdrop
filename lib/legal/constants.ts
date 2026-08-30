@@ -5,17 +5,18 @@ export const LEGAL_LAST_UPDATED = "2026年8月30日";
 
 // 事業者情報(特商法の表記・各ポリシーの問い合わせ先で使い回す単一の情報源)。
 //
-// 本サービスは任意団体「瑞鶴グループ」として運営しているが、任意団体そのものには
-// 法人格がないため、特定商取引法上の「販売事業者」としては運営者個人(相澤遼)の
-// 氏名を表示する。所在地・電話番号は、消費者からの請求があった場合に遅滞なく
-// 開示する方式とする。
+// 本サービスは任意団体「瑞鶴グループ」として運営している。運営者個人の氏名は、
+// 特定商取引法上必要な「運営統括責任者」欄(representative)にのみ表示し、
+// 利用規約・プライバシーポリシーや特商法の「販売事業者」欄では団体名のみを
+// 用いる(OPERATOR_GROUP_LABEL)。所在地・電話番号は、消費者からの請求が
+// あった場合に遅滞なく開示する方式とする。
 export const OPERATOR = {
-  sellerName: "相澤遼",
   groupName: "瑞鶴グループ",
   representative: "相澤遼",
   email: "zuikakugroup@gmail.com",
   contactFormPath: "/contact",
 } as const;
 
-// 利用規約・プライバシーポリシーの本文で「当方」を定義するときの主体表記。
-export const OPERATOR_ENTITY_LABEL = `任意団体「${OPERATOR.groupName}」(運営者: ${OPERATOR.sellerName})`;
+// 団体名のみの表記(運営者個人の氏名を出さない)。利用規約・プライバシーポリシーの
+// 主体表記、特商法の「販売事業者」欄など、団体名だけを示したい箇所で使う。
+export const OPERATOR_GROUP_LABEL = `任意団体 ${OPERATOR.groupName}`;

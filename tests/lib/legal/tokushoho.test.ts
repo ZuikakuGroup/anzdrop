@@ -44,9 +44,10 @@ describe("buildTokushohoItems", () => {
   });
 
   it("事業者情報は lib/legal/constants の単一の情報源と一致する", () => {
-    // 販売事業者は団体名のみを表示する。運営者個人の氏名(sellerName)は
+    // 販売事業者は団体名のみを表示する。運営者個人の氏名(representative)は
     // 販売事業者欄には出さず、運営統括責任者欄にのみ記載する。
     expect(byLabel("販売事業者")).toBe(`任意団体 ${OPERATOR.groupName}`);
+    expect(byLabel("販売事業者")).not.toContain(OPERATOR.representative);
     expect(byLabel("運営統括責任者")).toBe(OPERATOR.representative);
     // 連絡先はメールアドレスのみ(お問い合わせフォームへの誘導は入れない)。
     expect(byLabel("連絡先")).toBe(`メールアドレス: ${OPERATOR.email}`);
