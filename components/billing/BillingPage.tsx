@@ -21,7 +21,11 @@ import { loadPlanStatus, type PlanStatus } from "@/lib/account/planStatus";
 
 type PurchasablePlan = "standard" | "premium";
 
-const PURCHASABLE_PLANS: PurchasablePlan[] = ["standard", "premium"];
+// Standardプランは提供準備中(Issue #5)のため、購入導線には出さない。
+// スキーマ・APIルート・環境変数(STRIPE_PRICE_ID_STANDARD 等)はStandardも
+// 受け付けられる状態のまま残してあるので、提供開始時はこの配列に "standard" を
+// 戻すだけでよい。/pricing でも Standard は「準備中」表示のみ。
+const PURCHASABLE_PLANS: PurchasablePlan[] = ["premium"];
 
 // Webhook反映はStripeからの非同期通知を待つ必要があるため、決済確定直後は
 // 少し間を空けて数回だけ最新のプランを取り直す(反映が間に合わなくても
@@ -46,7 +50,7 @@ export default function BillingPage({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [selectedPlan, setSelectedPlan] = useState<PurchasablePlan>(
-    "standard"
+    PURCHASABLE_PLANS[0]
   );
   const [stripePayment, setStripePayment] = useState<{
     clientSecret: string;
@@ -297,7 +301,11 @@ export default function BillingPage({
                 />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div
+                    className={`grid gap-2 ${
+                      PURCHASABLE_PLANS.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                    }`}
+                  >
                     {PURCHASABLE_PLANS.map((plan) => (
                       <button
                         key={plan}

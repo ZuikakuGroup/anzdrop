@@ -28,7 +28,7 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
 | `SESSION_SECRET` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` | シークレット | アカウントセッション・有料プラン決済([`accounts.md`](./accounts.md)参照) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ビルド時埋め込み | Stripe.js / Payment Element の初期化に使う公開可能キー(GitHub Secrets の `STRIPE_PUBLISHABLE_KEY` から埋め込み) |
-| `STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定([`deployment.md`](./deployment.md)参照) |
+| `STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定([`deployment.md`](./deployment.md)参照)。`*_STANDARD` は提供準備中のStandard用で、現状の購入導線ではPremiumのみ使用する |
 
 ## 主要な画面とAPI
 
@@ -41,8 +41,8 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
 | `/mypage`(`app/mypage/page.tsx`) | アカウント概要。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
-| `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開 |
-| `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは未実装で「近日公開」表示のみ(実装はIssue #5でトラッキング) |
+| `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`) |
+| `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
 | `/about`(`app/about/page.tsx`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
 
 API側の詳細は [`api.md`](./api.md) を参照。

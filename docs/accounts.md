@@ -38,6 +38,8 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 すべて`lib/plan.ts`の`PLAN_LIMITS`に集約されており、ここを変更するだけでアップロードフロー全体・料金表示に反映される。具体的な容量・金額は暫定値。変更する場合は`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`STRIPE_PRICE_ID_*`/`OPENNODE_BTC_CHARGE_AMOUNT_USD_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
 
+**Standardプランは現在提供準備中**(Issue #5)。`/pricing`では「準備中」表示のみ、`/mypage/billing`の購入導線(`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)にも出していない。スキーマ・APIルート・環境変数はStandardも受け付けられる状態のまま残してあり、提供開始時は`PURCHASABLE_PLANS`に`"standard"`を戻すだけでよい。以下の表のStandard列は提供開始後の想定値。
+
 ブラウザ内プレビューの可否(`shares.preview_allowed`)も、保存期間の上限と同じく共有作成時のアップローダーの実効プランから一度だけ判定して共有に焼き込む(`lib/preview.ts`)。以後アカウントの状態が変わっても、既に作成済みの共有の値は変わらない。ダウンロード側は完全に匿名なので、この判定は「プレビューする人」ではなく「共有を作ったアップローダー」のプランに基づく。保存期間「1回」のファイルは、プレビューが`GET /api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、共有がプレビュー可であっても無条件でプレビューを非表示にする。
 
 `accounts.plan`と`accounts.plan_expires_at`から実効プランを判定するのが`getAccountPlanInfo()`/`effectivePlan()`で、`plan_expires_at`が過去なら自動的にfree扱いになる。これはBitcoin決済が自動更新されないための「失効」判定を兼ねている。なお`accounts.plan`は元々`"free" | "paid"`の2値だったが、Standardプラン新設に伴い`"free" | "standard" | "premium"`の3値に拡張した(migration 0013で既存の`'paid'`は`'premium'`へ正規化済み。加えて`lib/plan.ts`内の`normalizeStoredPlan()`が、万一DB上に旧値`'paid'`が残っていても`premium`として扱う防御的なエイリアスを持つ)。
