@@ -27,7 +27,8 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 環境変数 | 管理画面(`/admin`, `/api/admin/*`)のCloudflare Access JWT検証用 |
 | `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
 | `SESSION_SECRET` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` | シークレット | アカウントセッション・有料プラン決済([`accounts.md`](./accounts.md)参照) |
-| `STRIPE_PRICE_ID` / `OPENNODE_BTC_CHARGE_AMOUNT_USD` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定 |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ビルド時埋め込み | Stripe.js / Payment Element の初期化に使う公開可能キー(GitHub Secrets の `STRIPE_PUBLISHABLE_KEY` から埋め込み) |
+| `STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定([`deployment.md`](./deployment.md)参照) |
 
 ## 主要な画面とAPI
 
