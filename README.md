@@ -63,6 +63,7 @@ npm run dev
 | [`docs/development.md`](./docs/development.md) | ローカル開発環境の構築手順 |
 | [`docs/deployment.md`](./docs/deployment.md) | デプロイ・CI/CD・必要なシークレット |
 | [`docs/moderation.md`](./docs/moderation.md) | 通報・モデレーション機能の仕様 |
+| [`docs/legal.md`](./docs/legal.md) | 利用規約・プライバシーポリシー・特定商取引法に基づく表記の各ページ |
 
 ## ライセンス
 
