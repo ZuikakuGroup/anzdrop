@@ -426,6 +426,98 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(account?.stripe_subscription_id).toBe("sub_newer_valid");
   });
 
+  it("does not overwrite the pointer via the metadata fallback if accounts.stripe_subscription_id is re-pointed mid-handler (atomic UPDATE guard)", async () => {
+    // フォールバックは「SELECT で現状確認 → UPDATE」の2段階。その隙間に別イベント/
+    // 別タブが stripe_subscription_id を張り替えるレースを想定し、UPDATE 自体の
+    // WHERE 句で弾けること(古い subscription.id で新しい契約の追跡を潰さない)を
+    // 確認する。
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      stripeSubscriptionId: "sub_stale",
+    });
+    await env.DB.prepare(
+      `UPDATE accounts SET stripe_subscription_id = ? WHERE id = ?`
+    )
+      .bind("sub_read_as_this", accountId)
+      .run();
+
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    // 衝突チェックの retrieve() が呼ばれた時点で(＝現状確認の SELECT より後)、
+    // 別処理が pointer をさらに別の Subscription へ張り替えたことにする。
+    mockSubscriptionsRetrieve.mockImplementation(async () => {
+      await env.DB.prepare(
+        `UPDATE accounts SET stripe_subscription_id = ? WHERE id = ?`
+      )
+        .bind("sub_repointed_concurrently", accountId)
+        .run();
+      return { status: "canceled" };
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_race", "customer.subscription.updated", {
+        id: "sub_stale",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // 並行して張り替えられた pointer は、古いイベントで上書きされない。
+    expect(account?.stripe_subscription_id).toBe("sub_repointed_concurrently");
+    expect(account?.plan).toBe("free");
+  });
+
+  it("does not move plan_expires_at backward via the metadata fallback if it is bumped forward mid-handler (atomic UPDATE guard)", async () => {
+    // 事前の isExpirySafe チェック(SELECT 時点の値で判定)は通っても、その後
+    // UPDATE までの間に別処理がより新しい期限を書いた場合、UPDATE 自体の
+    // WHERE 句(plan_expires_at <= newExpiresAt)で弾けることを確認する。
+    const laterExpiry = new Date(
+      Date.now() + 60 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      planExpiresAt: new Date(
+        Date.now() + 10 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      stripeSubscriptionId: "sub_other",
+    });
+
+    // イベントの期間末は「SELECT 時点の期限(10日後)」より後だが、
+    // 「並行して書かれる期限(60日後)」より前。
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
+
+    mockSubscriptionsRetrieve.mockImplementation(async () => {
+      await env.DB.prepare(
+        `UPDATE accounts SET plan_expires_at = ? WHERE id = ?`
+      )
+        .bind(laterExpiry, accountId)
+        .run();
+      return { status: "canceled" };
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_expiry_race", "customer.subscription.updated", {
+        id: "sub_stale",
+        status: "active",
+        metadata: { accountId, plan: "premium" },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
+      })
+    );
+
+    const response = await postWebhook("{}");
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    // 並行して書かれた新しい期限は、古いイベントで後退させられない。
+    expect(account?.plan_expires_at).toBe(laterExpiry);
+    expect(account?.stripe_subscription_id).toBe("sub_other");
+  });
+
   it("downgrades from premium to standard when the subscription's price changes to the standard price", async () => {
     const { accountId } = await insertTestAccount(env, {
       plan: "premium",

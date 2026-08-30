@@ -139,22 +139,45 @@ async function applyEvent(
               new Date(newExpiresAt).getTime() >=
                 new Date(currentExpiresAt).getTime();
 
-            if (!conflictsWithActiveSubscription && isExpirySafe) {
-              await env.DB.prepare(
-                `
-                UPDATE accounts
-                SET plan = ?, plan_expires_at = ?, stripe_subscription_id = ?
-                WHERE id = ?
-              `
-              )
-                .bind(plan, newExpiresAt, subscription.id, accountId)
-                .run();
-            } else {
+            if (conflictsWithActiveSubscription || !isExpirySafe) {
               console.warn(
                 `stripe webhook: skipped fallback update for account ${accountId} ` +
                   `(conflictsWithActiveSubscription=${conflictsWithActiveSubscription}, ` +
                   `expiry current=${currentExpiresAt}, new=${newExpiresAt})`
               );
+            } else {
+              // 上のSELECTからこのUPDATEまでの間に、別タブ・別イベントの処理で
+              // accounts.stripe_subscription_id が張り替わる / より新しい
+              // 有効期限が書かれる可能性がある。その競合をUPDATE自体のWHERE句で
+              // 弾き(SQLiteの IS はNULL安全な等価比較)、1行も更新できなければ
+              // 競合とみなして何もしない。これを怠ると、後から関連付けられた
+              // 別の有効なSubscriptionのIDを、古い subscription.id で上書きして
+              // しまう(その契約が課金され続けるのに追跡できなくなる)。
+              const fallbackResult = await env.DB.prepare(
+                `
+                UPDATE accounts
+                SET plan = ?, plan_expires_at = ?, stripe_subscription_id = ?
+                WHERE id = ?
+                  AND stripe_subscription_id IS ?
+                  AND (plan_expires_at IS NULL OR plan_expires_at <= ?)
+              `
+              )
+                .bind(
+                  plan,
+                  newExpiresAt,
+                  subscription.id,
+                  accountId,
+                  currentSubscriptionId,
+                  newExpiresAt
+                )
+                .run();
+
+              if (fallbackResult.meta.changes === 0) {
+                console.warn(
+                  `stripe webhook: fallback update for account ${accountId} matched no row ` +
+                    `(concurrent re-pointing or newer expiry; subscription ${subscription.id})`
+                );
+              }
             }
           }
         }

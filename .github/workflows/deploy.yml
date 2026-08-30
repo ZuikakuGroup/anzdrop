@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
 
+# このワークフローはソースの取得・D1マイグレーション・wrangler デプロイのみで、
+# GITHUB_TOKEN による書き込みは一切行わない。既定の権限に依存せず最小権限にする。
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
@@ -36,6 +37,7 @@ type Props = {
 export default function BillingPage({
   initialPaymentIntentClientSecret,
 }: Props) {
+  const router = useRouter();
   const [me, setMe] = useState<PlanStatus | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [isLoadingAction, setIsLoadingAction] = useState<
@@ -78,7 +80,7 @@ export default function BillingPage({
     // 誘導すると、/mypage/loginがログイン済みを見てここへ戻しループになる。
     loadPlanStatus().then((result) => {
       if (result.kind === "unauthenticated") {
-        window.location.href = "/mypage/login";
+        router.replace("/mypage/login");
         return;
       }
 
@@ -89,7 +91,7 @@ export default function BillingPage({
 
       setMe(result.status);
     });
-  }, []);
+  }, [router]);
 
   // カード決済の3Dセキュア等が稀にページ遷移を伴う場合のフォールバック。
   // 通常のカード決済(redirect: "if_required")ではここは使われない。
@@ -341,7 +343,7 @@ export default function BillingPage({
                       (消費税込み)
                     </p>
                     <p>
-                      契約期間の定めはなく、解約されるまで毎月自動的に更新・課金されます。決済の完了後すぐにご利用いただけます。
+                      契約期間の定めはなく、解約されるまで毎月自動的に更新・課金されます。決済の完了後、プランへの反映まで少しお時間をいただくことがあります。
                     </p>
                     <p>
                       自動更新はこの「プラン・お支払い」画面からいつでも停止でき、日割りでの返金はありません。

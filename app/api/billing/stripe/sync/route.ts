@@ -99,11 +99,18 @@ async function reconcileFromStripe(
         ? (error as { statusCode?: unknown }).statusCode
         : undefined;
 
-    // 404(Stripe 側に該当 Subscription が無い。削除済み等)は追跡対象から外す。
-    // plan / plan_expires_at はここでは触らず、期限が来れば effectivePlan() が
-    // 自動的に free へ倒す。
+    // 404(Stripe 側に該当 Subscription が無い。削除済み等)。ポインタだけ外すと
+    // plan / plan_expires_at が旧カード期間のまま残り、後から届く可能性のある
+    // deleted Webhook も解除済み ID からアカウントを引けなくなる。終端ステータス
+    // (canceled 等)と同じ即時ダウングレードに寄せる(Bitcoin の期間チャージで
+    // 先まで前払いされている分はそのまま残る)。
+    // なお実運用で 404 が返る主因は API キー / モード取り違え・破損 ID なので、
+    // 多発したときに気づけるようログを残す(非 404 分岐の console.error と対)。
     if (statusCode === 404) {
-      await clearSubscriptionPointer(env, accountId, subscriptionId);
+      console.warn(
+        `POST /api/billing/stripe/sync: subscription ${subscriptionId} not found on Stripe (404); downgrading account ${accountId}`
+      );
+      await downgradeExpiredCardPlan(env, { accountId, subscriptionId });
       return null;
     }
 
@@ -170,20 +177,4 @@ async function reconcileFromStripe(
   // (Webhook / 次回の同期を待つ)。toSubscriptionSummary() が
   // active/trialing 以外は null を返すので、UI 上は契約フロー扱いになる。
   return toSubscriptionSummary(subscription);
-}
-
-async function clearSubscriptionPointer(
-  env: CloudflareEnv,
-  accountId: string,
-  subscriptionId: string
-): Promise<void> {
-  await env.DB.prepare(
-    `
-    UPDATE accounts
-    SET stripe_subscription_id = NULL
-    WHERE id = ? AND stripe_subscription_id = ?
-  `
-  )
-    .bind(accountId, subscriptionId)
-    .run();
 }

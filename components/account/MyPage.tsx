@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
@@ -15,6 +16,7 @@ import { formatBytes } from "@/lib/format";
 type LoadedResult = Exclude<PlanStatusResult, { kind: "unauthenticated" }>;
 
 export default function MyPage() {
+  const router = useRouter();
   const [result, setResult] = useState<LoadedResult | null>(null);
 
   useEffect(() => {
@@ -22,13 +24,13 @@ export default function MyPage() {
       // 未ログインのときだけログインへ誘導する。500等は「読み込みに失敗しました。」
       // 表示に留める(誘導すると/mypage/login側がログイン済みを見て戻しループになる)。
       if (next.kind === "unauthenticated") {
-        window.location.href = "/mypage/login";
+        router.replace("/mypage/login");
         return;
       }
 
       setResult(next);
     });
-  }, []);
+  }, [router]);
 
   return (
     <div className="flex min-h-screen flex-col">

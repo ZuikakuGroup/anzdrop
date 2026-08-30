@@ -141,7 +141,8 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 - レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)を表す。
   - `null`になるのは、契約が無い / Subscriptionが`active`・`trialing`でない(`incomplete`・`past_due`・`canceled`等) / Stripe取得が404(削除済み)のとき。
-  - ただしStripe取得が404以外で失敗(レート制限・障害)した場合は、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。このときも`accounts`は書き換えない。
+  - Stripe取得が**404**(Stripe側にSubscriptionが無い)の場合は、`canceled`等の終端ステータスと同じく`downgradeExpiredCardPlan()`で即時ダウングレードする(`plan` / `plan_expires_at`を実態へ、`stripe_subscription_id`を外す。Bitcoin前払い分があればその日付が下限)。ポインタだけ外すと旧カード期間のプランが残り、後から届く`deleted` Webhookも突き合わせ先を失うため。
+  - Stripe取得が**404以外**で失敗(レート制限・タイムアウト・Stripe障害)した場合は`accounts`を書き換えず、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。
 
 ### `POST /api/billing/stripe/cancellation`
 
