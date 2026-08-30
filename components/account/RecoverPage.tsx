@@ -24,19 +24,33 @@ export default function RecoverPage() {
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (isSubmitting || newRecoveryCode) {
       return;
     }
 
-    if (!accountId.trim() || !recoveryCode.trim()) {
+    // 資格情報マネージャーによる自動入力は DOM の値だけを書き換えて change
+    // イベントを発火しないことがある。その場合 controlled state が空のままに
+    // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
+    const formData = new FormData(event.currentTarget);
+    const submittedAccountId = String(formData.get("accountId") ?? "");
+    const submittedRecoveryCode = String(formData.get("recoveryCode") ?? "");
+    const submittedNewPassword = String(formData.get("newPassword") ?? "");
+    setAccountId(submittedAccountId);
+    setRecoveryCode(submittedRecoveryCode);
+    setNewPassword(submittedNewPassword);
+
+    const trimmedAccountId = submittedAccountId.trim();
+    const trimmedRecoveryCode = submittedRecoveryCode.trim();
+
+    if (!trimmedAccountId || !trimmedRecoveryCode) {
       setError("アカウントIDとリカバリーコードを入力してください。");
       return;
     }
 
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    if (submittedNewPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`新しいパスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
       return;
     }
@@ -51,9 +65,9 @@ export default function RecoverPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: accountId.trim(),
-          recoveryCode: recoveryCode.trim(),
-          newPassword,
+          accountId: trimmedAccountId,
+          recoveryCode: trimmedRecoveryCode,
+          newPassword: submittedNewPassword,
           turnstileToken,
         }),
       });
@@ -146,6 +160,7 @@ export default function RecoverPage() {
                 </label>
                 <input
                   id="recover-account-id"
+                  name="accountId"
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
@@ -167,6 +182,7 @@ export default function RecoverPage() {
                 </label>
                 <input
                   id="recover-code"
+                  name="recoveryCode"
                   type="text"
                   value={recoveryCode}
                   onChange={(event) => setRecoveryCode(event.target.value)}
@@ -188,6 +204,7 @@ export default function RecoverPage() {
                 </label>
                 <PasswordInput
                   id="recover-new-password"
+                  name="newPassword"
                   value={newPassword}
                   onChange={setNewPassword}
                   placeholder="8文字以上のパスワード"

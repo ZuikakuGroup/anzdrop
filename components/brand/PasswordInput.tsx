@@ -5,6 +5,7 @@ import { EyeIcon, EyeOffIcon } from "./ShareIcons";
 
 type PasswordInputProps = {
   id?: string;
+  name?: string;
   value: string;
   onChange: (value: string) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
@@ -18,6 +19,7 @@ type PasswordInputProps = {
 // 値そのもの(平文パスワード)は呼び出し元のstateのまま変わらない。
 export default function PasswordInput({
   id,
+  name,
   value,
   onChange,
   onKeyDown,
@@ -31,6 +33,7 @@ export default function PasswordInput({
     <div className="relative">
       <input
         id={id}
+        name={name}
         type={isVisible ? "text" : "password"}
         value={value}
         onChange={(event) => onChange(event.target.value)}

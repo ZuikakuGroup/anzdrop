@@ -32,21 +32,30 @@ export default function SignupPage() {
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (isSubmitting || result) {
       return;
     }
 
-    if (!isValidAccountId(accountId)) {
+    // 資格情報マネージャーによる自動入力は DOM の値だけを書き換えて change
+    // イベントを発火しないことがある。その場合 controlled state が空のままに
+    // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
+    const formData = new FormData(event.currentTarget);
+    const submittedAccountId = String(formData.get("accountId") ?? "");
+    const submittedPassword = String(formData.get("password") ?? "");
+    setAccountId(submittedAccountId);
+    setPassword(submittedPassword);
+
+    if (!isValidAccountId(submittedAccountId)) {
       setError(
         `アカウントIDは${MIN_ACCOUNT_ID_LENGTH}〜${MAX_ACCOUNT_ID_LENGTH}文字の半角英数字・ハイフン・アンダースコアで入力してください。`
       );
       return;
     }
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
+    if (submittedPassword.length < MIN_PASSWORD_LENGTH) {
       setError(`パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください。`);
       return;
     }
@@ -60,7 +69,11 @@ export default function SignupPage() {
       const response = await fetch("/api/account/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, password, turnstileToken }),
+        body: JSON.stringify({
+          accountId: submittedAccountId,
+          password: submittedPassword,
+          turnstileToken,
+        }),
       });
 
       const data = (await response.json()) as SignupResponse;
@@ -173,6 +186,7 @@ export default function SignupPage() {
                 </label>
                 <input
                   id="signup-account-id"
+                  name="accountId"
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
@@ -194,6 +208,7 @@ export default function SignupPage() {
                 </label>
                 <PasswordInput
                   id="signup-password"
+                  name="password"
                   value={password}
                   onChange={setPassword}
                   placeholder="8文字以上のパスワード"

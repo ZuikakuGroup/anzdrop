@@ -21,14 +21,25 @@ export default function LoginPage() {
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (isSubmitting) {
       return;
     }
 
-    if (!accountId.trim() || !password) {
+    // 資格情報マネージャーによる自動入力は DOM の値だけを書き換えて change
+    // イベントを発火しないことがある。その場合 controlled state が空のままに
+    // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
+    const formData = new FormData(event.currentTarget);
+    const submittedAccountId = String(formData.get("accountId") ?? "");
+    const submittedPassword = String(formData.get("password") ?? "");
+    setAccountId(submittedAccountId);
+    setPassword(submittedPassword);
+
+    const trimmedAccountId = submittedAccountId.trim();
+
+    if (!trimmedAccountId || !submittedPassword) {
       setError("アカウントIDとパスワードを入力してください。");
       return;
     }
@@ -43,8 +54,8 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          accountId: accountId.trim(),
-          password,
+          accountId: trimmedAccountId,
+          password: submittedPassword,
           turnstileToken,
         }),
       });
@@ -96,6 +107,7 @@ export default function LoginPage() {
                   </label>
                   <input
                     id="login-account-id"
+                    name="accountId"
                     type="text"
                     value={accountId}
                     onChange={(event) => setAccountId(event.target.value)}
@@ -117,6 +129,7 @@ export default function LoginPage() {
                   </label>
                   <PasswordInput
                     id="login-password"
+                    name="password"
                     value={password}
                     onChange={setPassword}
                     placeholder="パスワード"
