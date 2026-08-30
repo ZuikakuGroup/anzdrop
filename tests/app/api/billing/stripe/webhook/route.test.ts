@@ -565,17 +565,102 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(account?.plan_expires_at).toBe(originalExpiry);
   });
 
-  it("does not update the account when customer.subscription.updated reports a non-active status", async () => {
-    const originalExpiry = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+  it("does not update the account when customer.subscription.updated reports a non-terminal, non-active status (past_due)", async () => {
+    const originalExpiry = new Date(
+      Date.now() + 5 * 24 * 60 * 60 * 1000
+    ).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "premium",
       planExpiresAt: originalExpiry,
-      stripeSubscriptionId: "sub_canceling",
+      stripeSubscriptionId: "sub_past_due",
     });
 
     mockConstructEventAsync.mockResolvedValue(
       fakeEvent("evt_4", "customer.subscription.updated", {
-        id: "sub_canceling",
+        id: "sub_past_due",
+        status: "past_due",
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+        ),
+      })
+    );
+
+    await postWebhook("{}");
+
+    const account = await getAccount(accountId);
+    // past_due は「終端」ではない(まだ復帰しうる)ため、accounts は触らない。
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(originalExpiry);
+    expect(account?.stripe_subscription_id).toBe("sub_past_due");
+  });
+
+  it("clears the stale pointer and downgrades when customer.subscription.updated reports a terminal status (mirrors sync, so an incomplete_expired transition delivered only via .updated is still cleaned up)", async () => {
+    // 「決済フォームを開いただけで離脱」した incomplete の Subscription は、
+    // 約23時間後に incomplete_expired へ status 遷移する更新イベントだけが届き
+    // (deleted は来ない)。この場合でも accounts.stripe_subscription_id の
+    // ゴミポインタが残らないこと。
+    const paidUntil = new Date(
+      Date.now() + 5 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "free",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_incomplete_expired",
+    });
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_incomplete_expired", "customer.subscription.updated", {
+        id: "sub_incomplete_expired",
+        status: "incomplete_expired",
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_STANDARD,
+          Math.floor(Date.now() / 1000)
+        ),
+      })
+    );
+
+    const before = Date.now();
+    const response = await postWebhook("{}");
+    const after = Date.now();
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("free");
+    const expiresAtMs = new Date(account!.plan_expires_at!).getTime();
+    expect(expiresAtMs).toBeGreaterThanOrEqual(before - 1000);
+    expect(expiresAtMs).toBeLessThanOrEqual(after + 1000);
+  });
+
+  it("downgrades and keeps a Bitcoin-prepaid future period when customer.subscription.updated reports 'canceled'", async () => {
+    // 期間末解約後などに canceled が updated だけで届くケース。deleted と同じく
+    // Bitcoin 前払い分は消さない。
+    const btcPaidUntil = new Date(
+      Date.now() + 40 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: btcPaidUntil,
+      stripeSubscriptionId: "sub_canceled_updated",
+    });
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_updated_canceled",
+        btcPaidUntil,
+        new Date().toISOString()
+      )
+      .run();
+
+    mockConstructEventAsync.mockResolvedValue(
+      fakeEvent("evt_canceled_updated", "customer.subscription.updated", {
+        id: "sub_canceled_updated",
         status: "canceled",
         ...subscriptionWithPrice(
           env.STRIPE_PRICE_ID_PREMIUM,
@@ -587,8 +672,9 @@ describe("POST /api/billing/stripe/webhook", () => {
     await postWebhook("{}");
 
     const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan_expires_at).toBe(btcPaidUntil);
     expect(account?.plan).toBe("premium");
-    expect(account?.plan_expires_at).toBe(originalExpiry);
   });
 
   it("processes customer.subscription.deleted by clearing the subscription id and expiring the plan immediately", async () => {

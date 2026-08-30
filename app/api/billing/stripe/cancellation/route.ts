@@ -4,7 +4,7 @@ import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
-  isActiveSubscriptionStatus,
+  isManageableSubscriptionStatus,
   toSubscriptionSummary,
 } from "@/lib/stripe-subscription";
 import {
@@ -85,11 +85,9 @@ export const POST = withApiHandler(
     // リトライ中)も「期間末で解約」の対象にする。past_due で解約できないと、
     // Stripe のリトライがあとから成功したときに、解約意思に反して次期分の
     // 請求が確定してしまう。自動更新を止める操作は課金を増やさないため安全。
-    // incomplete(初回未確定)・canceled 等は対象外。
-    if (
-      !isActiveSubscriptionStatus(subscription.status) &&
-      subscription.status !== "past_due"
-    ) {
+    // incomplete(初回未確定)・canceled 等は対象外
+    // (isManageableSubscriptionStatus = active/trialing/past_due)。
+    if (!isManageableSubscriptionStatus(subscription.status)) {
       return Response.json(
         { success: false, error: "このプランは解約できる状態ではありません" },
         { status: 409 }

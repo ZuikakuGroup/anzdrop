@@ -134,7 +134,7 @@
 
 ### `POST /api/billing/stripe/webhook`
 
-Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名検証する。人間が直接叩くエンドポイントではない。
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名検証する。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、終端ステータス(`canceled`/`unpaid`/`incomplete_expired`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す(`deleted`が届かないケースでもゴミポインタを残さないため)。`customer.subscription.deleted`も即時ダウングレード。
 
 ### `POST /api/billing/stripe/sync`
 
@@ -209,7 +209,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `GET /api/admin/accounts/[accountId]`
 
-アカウントIDを指定して現在のプラン状況を取得する。`/admin/accounts` 画面の検索欄から使う、読み取り専用ルートのためOrigin検証は行わない。レスポンスの `account` は `exists`(アカウントの有無)・`storedPlan`(`accounts.plan` の正規化値。期限切れでも有料値のまま)・`effectivePlan`(期限切れを加味した実効プラン)・`planExpiresAt`・`indefinite`(「無期限」の番兵値か)・`hasStripeSubscription`(`accounts.stripe_subscription_id` が設定されているか。Stripe上で実際に `active` かまでは確認しない)。存在しないアカウントIDでも200で `exists: false` を返す。
+アカウントIDを指定して現在のプラン状況を取得する。`/admin/accounts` 画面の検索欄から使う、読み取り専用ルートのためOrigin検証は行わない。レスポンスの `account` は `exists`(アカウントの有無)・`storedPlan`(`accounts.plan` の正規化値。期限切れでも有料値のまま)・`effectivePlan`(期限切れを加味した実効プラン)・`planExpiresAt`・`indefinite`(「無期限」の番兵値か)・`hasStripeSubscription`(`accounts.stripe_subscription_id` が **Stripe 上でいま管理対象として生きている契約**(`active` / `trialing` / `past_due`)を指しているか。`stripe.subscriptions.retrieve()` で確認し、`incomplete` / `incomplete_expired` / `canceled` / `unpaid` のゴミポインタでは `false`。`retrieve` 失敗時は保守的に `true`。表示専用で `accounts` は書き換えない)。存在しないアカウントIDでも200で `exists: false` を返す。
 
 ### `POST /api/admin/accounts/[accountId]`
 

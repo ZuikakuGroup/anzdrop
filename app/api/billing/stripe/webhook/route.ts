@@ -5,6 +5,7 @@ import { downgradeExpiredCardPlan } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
+  isDeadSubscriptionStatus,
   planFromSubscription,
   unixSecondsToIso,
 } from "@/lib/stripe-subscription";
@@ -184,6 +185,22 @@ async function applyEvent(
             }
           }
         }
+      } else if (isDeadSubscriptionStatus(subscription.status)) {
+        // incomplete_expired / canceled / unpaid へ遷移したが
+        // customer.subscription.deleted が届かない場合の掃除。特に
+        // 「決済フォームを開いただけで離脱」した incomplete の Subscription は、
+        // 約23時間後に incomplete_expired へ status 遷移する更新イベントだけが
+        // 届き(deleted は来ない)、そのままだと accounts.stripe_subscription_id に
+        // ゴミポインタが残り続ける。sync 側の reconcileFromStripe と同じく
+        // downgradeExpiredCardPlan で即時ダウングレード(古いポインタを外し、
+        // Bitcoin 前払い分があればその期限・プランは残す)を行い、sync と
+        // Webhook の挙動を揃える。該当ポインタを持つ行が無ければ何もしない
+        // (deleted ハンドラと同じ)。
+        // deleted ハンドラと同様、ここでポインタを外したあとに順不同で古い
+        // active イベントが遅れて届くと metadata.accountId フォールバックで
+        // 1 請求期間だけプランが復活しうるが、これは deleted でも同様の既存の
+        // 挙動で、次回の sync(retrieve → 終端 → 再ダウングレード)で自己修復する。
+        await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
       }
 
       break;
