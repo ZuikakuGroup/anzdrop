@@ -1,13 +1,14 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { FILE_SALT_LENGTH, PACKED_CHUNK_SIZE } from "@/lib/crypto/types";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
+import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 import { withApiHandler } from "@/lib/api/handler";
 import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
 
 // R2のマルチパートアップロードは、最終パートを除きパートサイズが最小5MiB
-// 以上でなければならない制約がある。クライアントは通常CHUNK_SIZE(8MiB)を
-// 1パートとして送るが、この制約を満たすためにより細かく分割する余地も
-// 考慮し、declaredFileSizeから許容するパート数の上限をこの最小粒度で見積もる。
+// 以上でなければならない制約がある。クライアントは暗号化ストリームを
+// UPLOAD_PART_SIZE(8MiB)ちょうどで切り出して送る(最終パートのみ小さい)。
+// declaredFileSizeから許容するパート数の上限を、より小さいこの最小粒度で
+// 見積もることで、正当なアップロードを弾かずに上限を保守的に定める。
 const R2_MULTIPART_MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
 export const POST = withApiHandler(
@@ -61,17 +62,10 @@ export const POST = withApiHandler(
       );
     }
 
-    // クライアントは平文をCHUNK_SIZE(8MiB)ごとに区切ってから暗号化・アップロード
-    // するため、パート1件あたりの上限はPACKED_CHUNK_SIZE(IV・GCMタグ込み)を
-    // 超えない。ただしファイルsaltが先頭に付与される最初のパートだけは、
-    // その分(FILE_SALT_LENGTH)だけ上限が大きくなる。これを超える場合は
-    // 不正なリクエストとして拒否する。
-    const maxBodySize =
-      partNumber === 1
-        ? PACKED_CHUNK_SIZE + FILE_SALT_LENGTH
-        : PACKED_CHUNK_SIZE;
-
-    if (body.byteLength > maxBodySize) {
+    // クライアントは暗号化ストリームをUPLOAD_PART_SIZEちょうどで切り出して送り、
+    // 最終パートだけがそれ未満になる。よってどのパートもUPLOAD_PART_SIZEを
+    // 超えることはない。これを超える場合は不正なリクエストとして拒否する。
+    if (body.byteLength > UPLOAD_PART_SIZE) {
       return Response.json(
         {
           success: false,
@@ -136,7 +130,10 @@ export const POST = withApiHandler(
     // /api/upload/startで検証済みの申告fileSizeから、このアップロードで
     // 有効なパート番号の上限を導く。これにより、completeを呼ばずにチャンクを
     // 送り続けてストレージを無制限に消費する(cleanupの猶予時間まで居座る)
-    // 濫用を、各リクエスト単位でも防ぐ。
+    // 濫用を、各リクエスト単位でも防ぐ。実パート数は
+    // ceil(暗号文サイズ / UPLOAD_PART_SIZE(8MiB)) だが、暗号文はsalt・IV・
+    // GCMタグの分だけ平文より大きいため、より小さい5MiB粒度で見積もって
+    // 正当なアップロードを弾かないようにする。
     const declaredFileSize = upload.file_size ?? 0;
     const maxPartNumber = Math.max(
       1,

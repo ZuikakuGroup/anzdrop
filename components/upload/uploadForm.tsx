@@ -8,7 +8,6 @@ import {
   encodeBase64Url,
   iterateEncryptedChunks,
 } from "@/lib/crypto";
-import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { bufferAhead } from "@/lib/asyncBuffer";
 import {
   getMaxFileSizeBytes,
@@ -269,12 +268,11 @@ export default function UploadForm() {
           ? await wrapKeyWithPassword(key, password)
           : null;
 
-      const totalChunks = pending.reduce(
-        (sum, item) =>
-          sum + Math.ceil(item.pendingFile.file.size / CHUNK_SIZE),
+      const totalBytes = pending.reduce(
+        (sum, item) => sum + item.pendingFile.file.size,
         0
       );
-      let completedChunks = 0;
+      let uploadedBytes = 0;
 
       for (const item of pending) {
         const { path } = item.pendingFile;
@@ -321,11 +319,14 @@ export default function UploadForm() {
           startResult.uploadToken,
           path,
           getUploadConcurrencyForPlan(plan),
-          () => {
-            completedChunks++;
+          (bytes) => {
+            uploadedBytes += bytes;
             setProgress(
-              totalChunks > 0
-                ? Math.round((completedChunks / totalChunks) * 100)
+              totalBytes > 0
+                ? Math.min(
+                    100,
+                    Math.round((uploadedBytes / totalBytes) * 100)
+                  )
                 : 100
             );
           }

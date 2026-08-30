@@ -14,6 +14,7 @@ import {
   stubTurnstileSuccess,
   type TestEnv,
 } from "@/test/env";
+import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -160,12 +161,10 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(400);
   });
 
-  it("rejects a single chunk larger than the packed chunk size (plus the leading file-salt allowance)", async () => {
+  it("rejects a part larger than UPLOAD_PART_SIZE", async () => {
     const { uploadSessionId, uploadToken } = await startUpload();
 
-    // 8MiBチャンク + IV(12) + GCMタグ(16) + 先頭パートのみ許容されるファイル
-    // salt(16, lib/crypto/types.tsのFILE_SALT_LENGTH) を超える1バイト。
-    const oversized = new Uint8Array(8 * 1024 * 1024 + 12 + 16 + 16 + 1);
+    const oversized = new Uint8Array(UPLOAD_PART_SIZE + 1);
     const response = await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,
@@ -178,27 +177,40 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(413);
   });
 
-  it("rejects a non-first part larger than the packed chunk size, even within the leading file-salt allowance (the salt is only ever on part 1)", async () => {
+  it("applies the same UPLOAD_PART_SIZE ceiling to every part number (no special allowance for part 1)", async () => {
     // partNumber 2を有効な範囲にするため、declaredFileSizeを大きめにする。
     const { uploadSessionId, uploadToken } = await startUpload(
       16 * 1024 * 1024
     );
 
-    // part 1の上限(PACKED_CHUNK_SIZE + FILE_SALT_LENGTH)には収まるが、
-    // part 2以降に許されるPACKED_CHUNK_SIZEは超えているサイズ。
-    const oversizedForNonFirstPart = new Uint8Array(
-      8 * 1024 * 1024 + 12 + 16 + 1
-    );
+    const oversized = new Uint8Array(UPLOAD_PART_SIZE + 1);
     const response = await postChunk(
       {
         "Anzdrop-Upload-Session": uploadSessionId,
         "Anzdrop-Part-Number": "2",
         "Anzdrop-Upload-Token": uploadToken,
       },
-      oversizedForNonFirstPart
+      oversized
     );
 
     expect(response.status).toBe(413);
+  });
+
+  it("accepts a part of exactly UPLOAD_PART_SIZE", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload(
+      16 * 1024 * 1024
+    );
+
+    const response = await postChunk(
+      {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
+      },
+      new Uint8Array(UPLOAD_PART_SIZE)
+    );
+
+    expect(response.status).toBe(200);
   });
 
   it("stores the uploaded part with its part number and etag", async () => {
