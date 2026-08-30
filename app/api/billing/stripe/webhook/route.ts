@@ -94,8 +94,26 @@ async function applyEvent(
                 stripe_subscription_id: string | null;
               }>();
 
+            if (!currentAccount) {
+              return;
+            }
+
+            // イベントは順不同で届きうるため、payload が active でも、その後
+            // Subscription 自体が終端へ遷移済みの可能性がある。特に終端イベントで
+            // downgradeExpiredCardPlan がポインタを外した後、古い active イベントを
+            // metadata.accountId で再関連付けして有料プランを復活させないよう、
+            // フォールバックを行う直前に Stripe 上の現在状態を正とする。
+            // 取得失敗は握りつぶさず、外側で処理済みマークを取り消して再送に賭ける。
+            const currentSubscription = await stripe.subscriptions.retrieve(
+              subscription.id
+            );
+
+            if (isDeadSubscriptionStatus(currentSubscription.status)) {
+              return;
+            }
+
             const currentSubscriptionId =
-              currentAccount?.stripe_subscription_id ?? null;
+              currentAccount.stripe_subscription_id;
 
             // アカウントが今まさに別のSubscription IDを指していて、それが
             // Stripe上でまだactive/trialingなら、このフォールバックによる
@@ -137,7 +155,7 @@ async function applyEvent(
             // ケースである可能性もあるため、既存の有効期限より後退する
             // 反映は行わない(既に別の有効なSubscriptionでより新しい
             // 有効期限が設定済みの状態を、古い情報で上書きしないための保険)。
-            const currentExpiresAt = currentAccount?.plan_expires_at;
+            const currentExpiresAt = currentAccount.plan_expires_at;
             const isExpirySafe =
               !currentExpiresAt ||
               new Date(newExpiresAt).getTime() >=
@@ -196,10 +214,9 @@ async function applyEvent(
         // Bitcoin 前払い分があればその期限・プランは残す)を行い、sync と
         // Webhook の挙動を揃える。該当ポインタを持つ行が無ければ何もしない
         // (deleted ハンドラと同じ)。
-        // deleted ハンドラと同様、ここでポインタを外したあとに順不同で古い
-        // active イベントが遅れて届くと metadata.accountId フォールバックで
-        // 1 請求期間だけプランが復活しうるが、これは deleted でも同様の既存の
-        // 挙動で、次回の sync(retrieve → 終端 → 再ダウングレード)で自己修復する。
+        // ここでポインタを外したあとに順不同で古い active イベントが届いても、
+        // 上の metadata.accountId フォールバックは Stripe 上の現在状態を再取得し、
+        // 終端状態なら再関連付けしない。
         await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
       }
 

@@ -55,9 +55,9 @@ beforeEach(async () => {
   await clearAllTables(env);
   mockConstructEventAsync.mockReset();
   mockSubscriptionsRetrieve.mockReset();
-  // フォールバック経路が「衝突チェック」でstripe.subscriptions.retrieve()を
-  // 呼ぶケースのデフォルト。個々のテストで衝突を検証したい場合は上書きする。
-  mockSubscriptionsRetrieve.mockResolvedValue({ status: "canceled" });
+  // metadataフォールバック対象のイベントは通常、Stripe上でもactiveのまま。
+  // 終端状態や別Subscriptionとの衝突を検証するテストでは上書きする。
+  mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
 });
 
 async function postWebhook(body: string, signature = "valid-signature") {
@@ -266,6 +266,9 @@ describe("POST /api/billing/stripe/webhook", () => {
     )
       .bind("sub_newer_attempt", accountId)
       .run();
+    mockSubscriptionsRetrieve
+      .mockResolvedValueOnce({ status: "active" })
+      .mockResolvedValueOnce({ status: "canceled" });
 
     mockConstructEventAsync.mockResolvedValue(
       fakeEvent("evt_fallback", "customer.subscription.updated", {
@@ -280,8 +283,8 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     expect(response.status).toBe(200);
     // 衝突チェックのため、上書き対象になる「別の」Subscriptionを実際に
-    // Stripeへ問い合わせていること(デフォルトモックはactive/trialingでは
-    // ないため、衝突なしと判定されフォールバックが適用される)。
+    // Stripeへ問い合わせていること(上で2回目の応答をcanceledにしているため、
+    // 衝突なしと判定されフォールバックが適用される)。
     expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
       "sub_newer_attempt"
     );
@@ -351,9 +354,11 @@ describe("POST /api/billing/stripe/webhook", () => {
       planExpiresAt: originalExpiry,
       stripeSubscriptionId: "sub_other_unknown_state",
     });
-    mockSubscriptionsRetrieve.mockRejectedValue(
-      Object.assign(new Error("rate limited"), { statusCode: 429 })
-    );
+    mockSubscriptionsRetrieve
+      .mockResolvedValueOnce({ status: "active" })
+      .mockRejectedValueOnce(
+        Object.assign(new Error("rate limited"), { statusCode: 429 })
+      );
 
     const laterPeriodEndUnix =
       Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
@@ -404,6 +409,9 @@ describe("POST /api/billing/stripe/webhook", () => {
     // 現在の有効期限より前になる、古いSubscriptionからのイベント。
     const earlierPeriodEndUnix =
       Math.floor(Date.now() / 1000) + 10 * 24 * 60 * 60;
+    mockSubscriptionsRetrieve
+      .mockResolvedValueOnce({ status: "active" })
+      .mockResolvedValueOnce({ status: "canceled" });
 
     mockConstructEventAsync.mockResolvedValue(
       fakeEvent("evt_stale_fallback", "customer.subscription.updated", {
@@ -445,7 +453,11 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     // 衝突チェックの retrieve() が呼ばれた時点で(＝現状確認の SELECT より後)、
     // 別処理が pointer をさらに別の Subscription へ張り替えたことにする。
-    mockSubscriptionsRetrieve.mockImplementation(async () => {
+    mockSubscriptionsRetrieve.mockImplementation(async (subscriptionId) => {
+      if (subscriptionId === "sub_stale") {
+        return { status: "active" };
+      }
+
       await env.DB.prepare(
         `UPDATE accounts SET stripe_subscription_id = ? WHERE id = ?`
       )
@@ -491,7 +503,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     // 「並行して書かれる期限(60日後)」より前。
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockSubscriptionsRetrieve.mockImplementation(async () => {
+    mockSubscriptionsRetrieve.mockImplementation(async (subscriptionId) => {
+      if (subscriptionId === "sub_stale") {
+        return { status: "active" };
+      }
+
       await env.DB.prepare(
         `UPDATE accounts SET plan_expires_at = ? WHERE id = ?`
       )
@@ -676,6 +692,85 @@ describe("POST /api/billing/stripe/webhook", () => {
     expect(account?.plan_expires_at).toBe(btcPaidUntil);
     expect(account?.plan).toBe("premium");
   });
+
+  it.each([
+    {
+      terminalEventType: "customer.subscription.updated",
+      terminalStatus: "incomplete_expired",
+    },
+    {
+      terminalEventType: "customer.subscription.updated",
+      terminalStatus: "canceled",
+    },
+    {
+      terminalEventType: "customer.subscription.updated",
+      terminalStatus: "unpaid",
+    },
+    {
+      terminalEventType: "customer.subscription.deleted",
+      terminalStatus: "canceled",
+    },
+  ])(
+    "does not restore a paid plan from an out-of-order active event after $terminalEventType ($terminalStatus)",
+    async ({ terminalEventType, terminalStatus }) => {
+      const subscriptionId = `sub_terminal_${terminalEventType}_${terminalStatus}`;
+      const { accountId } = await insertTestAccount(env, {
+        plan: "premium",
+        planExpiresAt: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        stripeSubscriptionId: subscriptionId,
+      });
+      const terminalSubscription =
+        terminalEventType === "customer.subscription.deleted"
+          ? { id: subscriptionId }
+          : {
+              id: subscriptionId,
+              status: terminalStatus,
+              ...subscriptionWithPrice(
+                env.STRIPE_PRICE_ID_PREMIUM,
+                Math.floor(Date.now() / 1000)
+              ),
+            };
+      const staleActiveSubscription = {
+        id: subscriptionId,
+        status: "active",
+        metadata: { accountId },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+        ),
+      };
+
+      mockConstructEventAsync
+        .mockResolvedValueOnce(
+          fakeEvent(
+            `evt_terminal_${terminalEventType}_${terminalStatus}`,
+            terminalEventType,
+            terminalSubscription
+          )
+        )
+        .mockResolvedValueOnce(
+          fakeEvent(
+            `evt_stale_active_${terminalEventType}_${terminalStatus}`,
+            "customer.subscription.updated",
+            staleActiveSubscription
+          )
+        );
+      mockSubscriptionsRetrieve.mockResolvedValue({ status: terminalStatus });
+
+      const terminalResponse = await postWebhook("{}");
+      const accountAfterTerminalEvent = await getAccount(accountId);
+      const staleActiveResponse = await postWebhook("{}");
+
+      expect(terminalResponse.status).toBe(200);
+      expect(staleActiveResponse.status).toBe(200);
+      expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(subscriptionId);
+      expect(await getAccount(accountId)).toEqual(accountAfterTerminalEvent);
+      expect(accountAfterTerminalEvent?.plan).toBe("free");
+      expect(accountAfterTerminalEvent?.stripe_subscription_id).toBeNull();
+    }
+  );
 
   it("processes customer.subscription.deleted by clearing the subscription id and expiring the plan immediately", async () => {
     const { accountId } = await insertTestAccount(env, {
