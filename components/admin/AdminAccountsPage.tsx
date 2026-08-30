@@ -74,7 +74,10 @@ export default function AdminAccountsPage() {
   const search = async () => {
     const accountId = accountIdInput.trim();
 
-    if (!accountId || isSearching) {
+    // 付与・取り消しの処理中は検索を受け付けない。処理中に別アカウントを
+    // 検索すると、保留中の操作結果が後から表示状態を上書きし、表示中の
+    // アカウントと searchedAccountId がずれる可能性があるため。
+    if (!accountId || isSearching || actionPending) {
       return;
     }
 
@@ -206,7 +209,9 @@ export default function AdminAccountsPage() {
               />
               <button
                 onClick={search}
-                disabled={isSearching || !accountIdInput.trim()}
+                disabled={
+                  isSearching || actionPending || !accountIdInput.trim()
+                }
                 className="rounded border-2 border-ink/20 px-3 py-2 text-xs font-bold transition-colors hover:bg-ink/[0.06] disabled:opacity-40"
               >
                 {isSearching ? "検索中..." : "検索"}
