@@ -21,11 +21,10 @@ function priceLines(): string[] {
     (plan) =>
       `${PLAN_LABELS[plan]}: 月額 ${PLAN_MONTHLY_PRICE_JPY[
         plan
-      ].toLocaleString("ja-JP")}円(消費税込み)`
+      ].toLocaleString("ja-JP")}円(税込)`
   );
 
   return [
-    `${PLAN_LABELS.free}: 0円`,
     ...perPlan,
     "ビットコインでのお支払いの場合、上記の日本円価格を基準に、決済時の為替レートで換算した相当額をお支払いいただきます。",
   ];
@@ -35,7 +34,7 @@ export function buildTokushohoItems(): TokushohoItem[] {
   return [
     {
       label: "販売事業者",
-      lines: [`${OPERATOR.sellerName}(任意団体「${OPERATOR.groupName}」として運営)`],
+      lines: [`任意団体 ${OPERATOR.groupName}`],
     },
     {
       label: "運営統括責任者",
@@ -44,20 +43,19 @@ export function buildTokushohoItems(): TokushohoItem[] {
     {
       label: "所在地",
       lines: [
-        "消費者からのご請求があった場合には、遅滞なく電子メールにて開示します。",
+        "請求があった場合には、遅滞なく電子メールにて開示します。",
       ],
     },
     {
       label: "電話番号",
       lines: [
-        "消費者からのご請求があった場合には、遅滞なく電子メールにて開示します。",
+        "請求があった場合には、遅滞なく電子メールにて開示します。",
       ],
     },
     {
-      label: "連絡先(お問い合わせ)",
+      label: "連絡先",
       lines: [
         `メールアドレス: ${OPERATOR.email}`,
-        `または本サイトのお問い合わせフォーム( ${OPERATOR.contactFormPath} )`,
       ],
     },
     {
@@ -75,7 +73,7 @@ export function buildTokushohoItems(): TokushohoItem[] {
       label: "支払方法",
       lines: [
         "クレジットカード(Stripeを通じて決済します)",
-        "ビットコイン(OpenNodeを通じて決済します。現在準備中です)",
+        "ビットコイン(現在準備中です)",
       ],
     },
     {
@@ -88,8 +86,8 @@ export function buildTokushohoItems(): TokushohoItem[] {
     {
       label: "支払時期",
       lines: [
-        "クレジットカード: お申し込み時に初回分を決済し、以後は解約されるまで1か月ごとに自動更新で決済します。",
-        "ビットコイン: 一定期間分の利用権を都度購入する方式のため、お申し込みのつどお支払いいただきます(自動更新はありません)。",
+        "クレジットカード：お申し込み時に初回分を決済し、以後は解約されるまで1か月ごとに自動更新で決済します。",
+        "ビットコイン：一定期間分の利用権を都度購入する方式のため、お申し込みのつどお支払いいただきます(自動更新はありません)。",
       ],
     },
     {

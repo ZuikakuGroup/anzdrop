@@ -376,7 +376,7 @@ export default function BillingPage({
                       {PLAN_MONTHLY_PRICE_JPY[selectedPlan].toLocaleString(
                         "ja-JP"
                       )}
-                      (消費税込み)
+                      (税込)
                     </p>
                     <p>
                       契約期間の定めはなく、解約されるまで毎月自動的に更新・課金されます。決済の完了後、プランへの反映まで少しお時間をいただくことがあります。

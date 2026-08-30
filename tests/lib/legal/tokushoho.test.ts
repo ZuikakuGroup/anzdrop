@@ -21,7 +21,7 @@ describe("buildTokushohoItems", () => {
       "運営統括責任者",
       "所在地",
       "電話番号",
-      "連絡先(お問い合わせ)",
+      "連絡先",
       "販売価格",
       "商品代金以外の必要料金",
       "支払方法",
@@ -44,14 +44,11 @@ describe("buildTokushohoItems", () => {
   });
 
   it("事業者情報は lib/legal/constants の単一の情報源と一致する", () => {
-    // 販売事業者は「相澤遼(任意団体「瑞鶴グループ」として運営)」のように、
-    // 運営者個人の氏名と団体名の両方を含む(任意団体には法人格がないため、
-    // 特商法上の事業者表示は個人名で行う)。
-    expect(byLabel("販売事業者")).toContain(OPERATOR.sellerName);
+    // 販売事業者は任意団体「瑞鶴グループ」として表示し、運営統括責任者に
+    // 運営者個人の氏名を記載する。
     expect(byLabel("販売事業者")).toContain(OPERATOR.groupName);
     expect(byLabel("運営統括責任者")).toBe(OPERATOR.representative);
-    expect(byLabel("連絡先(お問い合わせ)")).toContain(OPERATOR.email);
-    expect(byLabel("連絡先(お問い合わせ)")).toContain(OPERATOR.contactFormPath);
+    expect(byLabel("連絡先")).toContain(OPERATOR.email);
   });
 
   it("所在地・電話番号は「請求により遅滞なく開示」方式で記載する", () => {
@@ -78,10 +75,10 @@ describe("buildTokushohoItems", () => {
       );
     }
 
-    // 無料プランが0円であることも明示する。
-    expect(priceText).toContain(`${PLAN_LABELS.free}: 0円`);
-    // 消費税の扱いが分かる。
-    expect(priceText).toContain("消費税込み");
+    // 販売価格の表記は有料プランのみを対象とし、無料プランは含めない。
+    expect(priceText).not.toContain(PLAN_LABELS.free);
+    // 消費税の扱い(税込)が分かる。
+    expect(priceText).toContain("税込");
   });
 
   it("解約条件として、自動更新の停止方法と日割り返金がないことに触れている", () => {
