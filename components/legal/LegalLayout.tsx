@@ -90,6 +90,20 @@ export function LegalParagraph({ children }: { children: React.ReactNode }) {
   );
 }
 
+export function LegalLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a href={href} className="font-bold text-brand hover:underline">
+      {children}
+    </a>
+  );
+}
+
 export function LegalList({ items }: { items: React.ReactNode[] }) {
   return (
     <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/30">

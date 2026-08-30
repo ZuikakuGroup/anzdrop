@@ -1,24 +1,25 @@
 import LegalLayout, {
   LegalSection,
   LegalParagraph,
+  LegalLink,
   LegalList,
 } from "@/components/legal/LegalLayout";
 import {
   LEGAL_LAST_UPDATED,
   OPERATOR,
-  OPERATOR_ENTITY_LABEL,
+  OPERATOR_GROUP_LABEL,
 } from "@/lib/legal/constants";
 
 export default function TermsPage() {
   return (
     <LegalLayout
       title="利用規約"
-      description="Anzdrop(以下「本サービス」)をご利用いただく前にお読みください。"
+      description="Anzdropをご利用いただく前にお読みください。"
       lastUpdated={LEGAL_LAST_UPDATED}
     >
       <LegalSection heading="第1条(適用)">
         <LegalParagraph>
-          本規約は、{OPERATOR_ENTITY_LABEL}
+          本規約は、{OPERATOR_GROUP_LABEL}
           (以下「当方」)が提供する本サービスの利用に関する条件を、当方とご利用者(以下「ユーザー」)との間で定めるものです。ユーザーは、本サービスを利用することにより本規約に同意したものとみなされます。
         </LegalParagraph>
       </LegalSection>
@@ -37,10 +38,9 @@ export default function TermsPage() {
       <LegalSection heading="第3条(アカウント)">
         <LegalList
           items={[
-            "アカウントは、ユーザーが任意に定めるアカウントIDとパスワードのみで構成されます。アカウントの登録にあたり、当方はメールアドレスその他の個人情報を取得しません。",
+            "アカウントは、ユーザーが任意に定めるアカウントIDとパスワードのみで構成されます。",
             "パスワードを忘れた場合の再設定は、登録時に一度だけ表示されるリカバリーコードによってのみ可能です。当方はパスワードの平文もリカバリーコードの平文も保持していないため、これらを失うと当方でもアカウントを復旧できません。",
             "ユーザーは、自己の責任においてアカウントID・パスワード・リカバリーコードを管理するものとし、これらの管理不十分・第三者の使用等により生じた損害の責任はユーザーが負います。",
-            "5回連続でログインに失敗すると、一定時間そのアカウントIDでのログインが制限されます。",
           ]}
         />
       </LegalSection>
@@ -48,7 +48,7 @@ export default function TermsPage() {
       <LegalSection heading="第4条(料金・支払い)">
         <LegalList
           items={[
-            "無料プランは無償で提供されます。有料プラン(Standard・Premium)の料金・支払方法・支払時期・解約条件は、特定商取引法に基づく表記に定めるとおりです。",
+            "無料プランは無料で提供されます。有料プランの料金・支払方法・支払時期・解約条件は、特定商取引法に基づく表記に定めるとおりです。",
             "有料プランの決済は、クレジットカードについてはStripe、ビットコインについてはOpenNodeを通じて行われます。クレジットカード番号等の情報は当方のサーバーを経由しません。",
             "クレジットカードによる支払いは、解約されるまで毎月自動で更新・課金されます。ビットコインによる支払いは、一定期間分の利用権を都度購入する方式です。",
             "サービスの性質上、決済後の返金は原則として行いません。詳細は特定商取引法に基づく表記をご確認ください。",
@@ -79,7 +79,7 @@ export default function TermsPage() {
           ]}
         />
         <LegalParagraph>
-          本サービスのソースコードはオープンソースとして公開されており、ライセンス(Apache License 2.0)の範囲での利用・改変・再配布は禁止されません。
+          本サービスのソースコードはオープンソースとして公開されており、ライセンスの範囲での利用・改変・再配布は禁止されません。
         </LegalParagraph>
       </LegalSection>
 
@@ -88,7 +88,11 @@ export default function TermsPage() {
           items={[
             "アップロードされたファイルに関する権利および責任は、これをアップロードしたユーザーに帰属します。当方はファイルの内容を復号・閲覧できません。",
             "当方は、共有URLの通報を受け付けています。違法なコンテンツ、または本規約に違反すると合理的に判断されるコンテンツについては、当方の裁量により、事前の通知なく該当する共有の一時停止または削除を行うことがあります。判断は共有URL単位で行われ、ファイルの内容そのものを確認して行うものではありません。",
-            "著作権等の権利者本人またはその代理人からの申し立ては、専用フォーム(/report/rights)で受け付けます。",
+            <>
+              著作権等の権利者本人またはその代理人からの申し立ては、
+              <LegalLink href="/report/rights">専用フォーム</LegalLink>
+              で受け付けます。
+            </>,
           ]}
         />
       </LegalSection>
@@ -114,7 +118,7 @@ export default function TermsPage() {
 
       <LegalSection heading="第10条(知的財産権)">
         <LegalParagraph>
-          本サービスに関する著作権その他の知的財産権は、当方または正当な権利者に帰属します。本サービスのソースコードの利用条件は、公開されているリポジトリのライセンス(Apache License 2.0)に従います。
+          本サービスに関する著作権その他の知的財産権は、当方または正当な権利者に帰属します。本サービスのソースコードの利用条件は、公開されているリポジトリのライセンスに従います。
         </LegalParagraph>
       </LegalSection>
 
@@ -132,9 +136,11 @@ export default function TermsPage() {
 
       <LegalSection heading="第13条(お問い合わせ)">
         <LegalParagraph>
-          本規約に関するお問い合わせは、本サイトのお問い合わせフォーム(
-          {OPERATOR.contactFormPath})または {OPERATOR.email}
-          までご連絡ください。
+          本規約に関するお問い合わせは、
+          <LegalLink href={OPERATOR.contactFormPath}>お問い合わせフォーム</LegalLink>
+          、またはメールアドレス{" "}
+          <LegalLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</LegalLink>
+          {" "}までご連絡ください。
         </LegalParagraph>
       </LegalSection>
     </LegalLayout>
