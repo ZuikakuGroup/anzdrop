@@ -213,7 +213,7 @@ describe("POST /api/billing/stripe/cancellation", () => {
     expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
   });
 
-  it("clears the pointer and returns 409 when the subscription no longer exists on Stripe (404)", async () => {
+  it("returns 409 but leaves stripe_subscription_id intact when the subscription 404s on Stripe (a 404 can be a mode/key mismatch; keeping the pointer lets the signed deleted webhook still match a real deletion)", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeSubscriptionId: "sub_gone",
     });
@@ -228,7 +228,8 @@ describe("POST /api/billing/stripe/cancellation", () => {
 
     expect(response.status).toBe(409);
     expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
-    expect(await getSubscriptionId(accountId)).toBeNull();
+    // accounts は一切書き換えない。
+    expect(await getSubscriptionId(accountId)).toBe("sub_gone");
   });
 
   it("returns 500 and does not modify Stripe when the read fails transiently (not a 404)", async () => {

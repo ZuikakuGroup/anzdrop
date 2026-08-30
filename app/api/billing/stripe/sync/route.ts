@@ -142,23 +142,22 @@ async function reconcileFromStripe(
     // plan(Price ID 由来)は常に実態へ合わせる。plan_expires_at だけは
     // 後退させない(Stripe 読み取りの一時的な遅延や、Webhook が先にもっと
     // 新しい期限を書いていた場合に、古い情報で巻き戻さないための保険)。
-    const nextExpiresAt =
-      !currentPlanExpiresAt ||
-      new Date(newExpiresAt).getTime() >=
-        new Date(currentPlanExpiresAt).getTime()
-        ? newExpiresAt
-        : currentPlanExpiresAt;
-
+    // 「後退させない」判定は、reconcile 開始時に読んだ currentPlanExpiresAt
+    // ではなく UPDATE 内で現在の列値に対して原子的に行う。Stripe 取得中に
+    // Webhook がより新しい期限を書き込んでいても、それを古い newExpiresAt で
+    // 上書きして課金済み期間を短縮しないため(Webhook 主経路の
+    // `max(coalesce(plan_expires_at, ?), ?)` と揃える)。
     // WHERE に stripe_subscription_id も含めることで、この同期の実行中に
     // 別 Subscription へ切り替わった場合の取り違えを防ぐ。
     await env.DB.prepare(
       `
       UPDATE accounts
-      SET plan = ?, plan_expires_at = ?
+      SET plan = ?,
+          plan_expires_at = max(coalesce(plan_expires_at, ?), ?)
       WHERE id = ? AND stripe_subscription_id = ?
     `
     )
-      .bind(plan, nextExpiresAt, accountId, subscriptionId)
+      .bind(plan, newExpiresAt, newExpiresAt, accountId, subscriptionId)
       .run();
   } else if (isDeadSubscriptionStatus(subscription.status)) {
     // canceled / incomplete_expired / unpaid。Webhook の

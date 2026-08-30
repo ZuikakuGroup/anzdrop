@@ -64,22 +64,20 @@ export const POST = withApiHandler(
           ? (error as { statusCode?: unknown }).statusCode
           : undefined;
 
-      // 404 のときだけ、既に存在しない Subscription の追跡を外して 409 を返す。
-      // それ以外の一時的な障害は握りつぶさず 500 にして、状態を変えない。
+      // 404(Stripe 側に該当 Subscription が無い)。retrieve の 404 は契約の
+      // 削除だけでなく、テスト/ライブモードの取り違え・API キーや Stripe
+      // アカウントの不一致・破損 ID でも起きる。ここで stripe_subscription_id を
+      // 外すと、本物の削除だった場合に後続の署名検証済み
+      // customer.subscription.deleted が契約 ID でアカウントを引けず、実際の
+      // 失効が反映されなくなる。accounts は一切変更せず 409 だけ返す。
       if (statusCode === 404) {
-        await env.DB.prepare(
-          `UPDATE accounts SET stripe_subscription_id = NULL
-           WHERE id = ? AND stripe_subscription_id = ?`
-        )
-          .bind(session.accountId, subscriptionId)
-          .run();
-
         return Response.json(
           { success: false, error: "対象のプランが見つかりませんでした" },
           { status: 409 }
         );
       }
 
+      // それ以外の一時的な障害は握りつぶさず 500 にして、状態を変えない。
       throw error;
     }
 

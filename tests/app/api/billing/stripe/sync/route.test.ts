@@ -244,6 +244,38 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(account?.plan_expires_at).toBe(laterExpiry);
   });
 
+  it("does not move plan_expires_at backward even if a webhook bumps it forward DURING the Stripe read (atomic UPDATE guard, not a stale read comparison)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: new Date(daysFromNowUnix(10) * 1000).toISOString(),
+      stripeSubscriptionId: "sub_toctou",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const webhookBumped = new Date(daysFromNowUnix(60) * 1000).toISOString();
+    // reconcile が期限を読んだ後・UPDATE する前に、別の Webhook がより新しい
+    // 期限を書き込んだ状況を再現する。
+    mockSubscriptionsRetrieve.mockImplementation(async () => {
+      await env.DB.prepare(
+        `UPDATE accounts SET plan_expires_at = ? WHERE id = ?`
+      )
+        .bind(webhookBumped, accountId)
+        .run();
+      return subscription(
+        "active",
+        env.STRIPE_PRICE_ID_STANDARD,
+        daysFromNowUnix(30)
+      );
+    });
+
+    await postSync(cookie);
+
+    const account = await getAccount(accountId);
+    // 取得中に書かれた +60d は、取得後の +30d 同期で巻き戻されない。
+    expect(account?.plan_expires_at).toBe(webhookBumped);
+    expect(account?.plan).toBe("standard");
+  });
+
   it("immediately downgrades on a canceled subscription (mirrors the deleted webhook so a late webhook can't be lost)", async () => {
     const paidUntil = new Date(daysFromNowUnix(12) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
