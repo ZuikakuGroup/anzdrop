@@ -54,7 +54,10 @@ async function applyEvent(
         //
         // なお plan 列は順不同イベントでは一時的に巻き戻りうる(古いイベントの
         // Price IDで上書きされる)が、次のイベント / sync で実態へ復旧する。
-        // 課金済み期間(plan_expires_at)ほど保護の必要が高くないため非対称にしている。
+        // plan_expires_at と同じ「請求期間末の新しさ」で plan もガードすると、
+        // Bitcoinで先まで前払い済みのときに正当なプラン変更イベントまで弾いて
+        // しまう(期間末とプラン正しさは別軸)。恒久対策はイベント順序を判定する
+        // 列の追加が必要で、サーバー側の新規永続化はユーザー許可が要るため見送る。
         const result = await env.DB.prepare(
           `
           UPDATE accounts

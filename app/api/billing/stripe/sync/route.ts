@@ -99,31 +99,31 @@ async function reconcileFromStripe(
         ? (error as { statusCode?: unknown }).statusCode
         : undefined;
 
-    // 404(Stripe 側に該当 Subscription が無い)。retrieve の 404 は契約の削除
-    // だけでなく、テスト/ライブモードの取り違え・API キーや Stripe アカウントの
-    // 不一致・破損した ID でも発生する。ここで plan / plan_expires_at まで失効
-    // させると、一時的なモード不一致等で課金中の顧客が即座に free へ落ちてしまう。
-    // そのため追跡ポインタ(stripe_subscription_id)だけ外し、実際のダウングレード
-    // は署名検証済みの customer.subscription.deleted に委ねる(期限が来れば
-    // effectivePlan() が自動的に free へ倒す)。主因がモード取り違え等なので、
-    // 多発したときに気づけるようログは残す。
+    // retrieve が失敗した場合、accounts は一切書き換えない。
+    //  - 404(Stripe 側に該当 Subscription が無い): 契約の削除だけでなく、
+    //    テスト/ライブモードの取り違え・API キーや Stripe アカウントの不一致・
+    //    破損した ID でも起きる。ここでポインタ(stripe_subscription_id)を外すと、
+    //    本物の削除だった場合に後続の署名検証済み customer.subscription.deleted が
+    //    契約 ID でアカウントを引けなくなり、即時ダウングレードが恒久的に不発になる。
+    //  - それ以外(レート制限・タイムアウト・Stripe 障害): 一時的なので次回の
+    //    sync / Webhook を待てばよい。
+    // どちらも「今回の同期を諦めるだけ」にし、実際の失効は deleted Webhook と
+    // effectivePlan()(期限到来時の自動 free 落ち)に委ねる。
     if (statusCode === 404) {
       console.warn(
-        `POST /api/billing/stripe/sync: subscription ${subscriptionId} not found on Stripe (404) for account ${accountId}; clearing pointer only`
+        `POST /api/billing/stripe/sync: subscription ${subscriptionId} not found on Stripe (404) for account ${accountId}; ` +
+          `leaving DB state untouched (a real deletion is downgraded by the signed deleted webhook)`
       );
-      await clearSubscriptionPointer(env, accountId, subscriptionId);
-      return null;
+    } else {
+      console.error(
+        "POST /api/billing/stripe/sync: subscription retrieve failed:",
+        error
+      );
     }
 
-    // それ以外(レート制限・タイムアウト・Stripe 障害等)は、今回の同期を
-    // 諦めるだけで失敗にはしない。DB 上まだ有効期限内の有料プランを持って
-    // いるなら、UI が管理ブロックを出せるよう最低限の要約を返す
-    // (cancel_at_period_end までは分からないので "active" 扱い)。
-    console.error(
-      "POST /api/billing/stripe/sync: subscription retrieve failed:",
-      error
-    );
-
+    // DB 上まだ有効期限内の有料プランを持っているなら、UI が管理ブロックを
+    // 出せるよう最低限の要約を返す(cancel_at_period_end までは分からないので
+    // "active" 扱い)。期限切れなら null(契約フロー表示)。
     const stillPaid =
       currentPlanExpiresAt &&
       new Date(currentPlanExpiresAt).getTime() > Date.now();
@@ -178,23 +178,4 @@ async function reconcileFromStripe(
   // (Webhook / 次回の同期を待つ)。toSubscriptionSummary() が
   // active/trialing 以外は null を返すので、UI 上は契約フロー扱いになる。
   return toSubscriptionSummary(subscription);
-}
-
-// Stripe が Subscription を 404 で返したときに、追跡ポインタだけを外す
-// (plan / plan_expires_at は触らない)。1行だけを対象にするため WHERE に
-// stripe_subscription_id も含める。
-async function clearSubscriptionPointer(
-  env: CloudflareEnv,
-  accountId: string,
-  subscriptionId: string
-): Promise<void> {
-  await env.DB.prepare(
-    `
-    UPDATE accounts
-    SET stripe_subscription_id = NULL
-    WHERE id = ? AND stripe_subscription_id = ?
-  `
-  )
-    .bind(accountId, subscriptionId)
-    .run();
 }

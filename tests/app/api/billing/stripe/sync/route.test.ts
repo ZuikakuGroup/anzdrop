@@ -313,7 +313,7 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.plan).toBe("premium");
   });
 
-  it("stops tracking a subscription that no longer exists on Stripe (404) without erroring, but does NOT downgrade plan/expiry (a 404 can be a mode/key mismatch, not a real cancellation; the signed deleted webhook handles real downgrades)", async () => {
+  it("leaves accounts completely untouched on a 404 from Stripe (a 404 can be a mode/key mismatch, not a real cancellation; keeping stripe_subscription_id lets the signed deleted webhook still match)", async () => {
     const paidUntil = new Date(daysFromNowUnix(5) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "standard",
@@ -329,14 +329,20 @@ describe("POST /api/billing/stripe/sync", () => {
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
-    // 追跡ポインタだけ外れ、plan / plan_expires_at は保持される。
-    expect(account?.stripe_subscription_id).toBeNull();
+    // ポインタも plan も expiry も一切変えない。
+    expect(account?.stripe_subscription_id).toBe("sub_gone");
     expect(account?.plan).toBe("standard");
     expect(account?.plan_expires_at).toBe(paidUntil);
 
-    // 期限内なので実効プランはまだ standard(effectivePlan が期限で自動失効させる)。
-    const body = await readJson<{ plan: string }>(response);
+    // 期限内なので暫定要約は "active" を返す(cancel_at_period_end は不明)。
+    const body = await readJson<{ plan: string; subscription: unknown }>(
+      response
+    );
     expect(body.plan).toBe("standard");
+    expect(body.subscription).toEqual({
+      state: "active",
+      currentPeriodEnd: paidUntil,
+    });
   });
 
   it("does not fail (or change the DB) when the Stripe read errors transiently, and still surfaces the DB-backed plan", async () => {
