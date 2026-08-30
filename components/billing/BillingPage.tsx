@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -77,11 +77,11 @@ export default function BillingPage({
     }
   };
 
-  useEffect(() => {
-    // 初回表示のこのタイミングでStripe側のSubscription状態も取り直す
-    // (Webhook不達で「課金済みなのに未反映」等になっていた場合の是正)。
-    // 401(未ログイン)のときだけログインへ誘導する。500等のサーバーエラーで
-    // 誘導すると、/mypage/loginがログイン済みを見てここへ戻しループになる。
+  // 初回表示のこのタイミングでStripe側のSubscription状態も取り直す
+  // (Webhook不達で「課金済みなのに未反映」等になっていた場合の是正)。
+  // 401(未ログイン)のときだけログインへ誘導する。500等のサーバーエラーで
+  // 誘導すると、/mypage/loginがログイン済みを見てここへ戻しループになる。
+  const load = useCallback(() => {
     loadPlanStatus().then((result) => {
       if (result.kind === "unauthenticated") {
         router.replace("/mypage/login");
@@ -96,6 +96,18 @@ export default function BillingPage({
       setMe(result.status);
     });
   }, [router]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const retry = () => {
+    setLoadError(false);
+    setMe(null);
+    setError("");
+    setNotice("");
+    load();
+  };
 
   // カード決済の3Dセキュア等が稀にページ遷移を伴う場合のフォールバック。
   // 通常のカード決済(redirect: "if_required")ではここは使われない。
@@ -257,18 +269,30 @@ export default function BillingPage({
             <h1 className="text-2xl font-black leading-snug tracking-normal">
               プラン・お支払い
             </h1>
+            <p className="text-xs text-ink/50">
+              プランの変更・お支払い方法・解約の手続きができます。
+            </p>
             <a
               href="/mypage"
-              className="text-xs font-bold text-brand hover:underline"
+              className="inline-block pt-0.5 text-xs font-bold text-brand hover:underline"
             >
-              ← アカウント概要
+              ← マイページ
             </a>
           </div>
 
           {loadError ? (
-            <p className="text-sm font-bold text-brand">
-              読み込みに失敗しました。
-            </p>
+            <div className="space-y-3">
+              <p role="alert" className="text-sm font-bold text-brand">
+                一時的に読み込めませんでした。時間をおいて再度お試しください。
+              </p>
+              <button
+                type="button"
+                onClick={retry}
+                className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40"
+              >
+                再読み込み
+              </button>
+            </div>
           ) : me === null ? (
             <div className="flex justify-center py-8">
               <Spinner className="h-6 w-6 text-brand" />
@@ -279,7 +303,7 @@ export default function BillingPage({
                 <p
                   role="status"
                   aria-live="polite"
-                  className="rounded border-2 border-ink/20 p-3 text-sm font-bold text-ink/70"
+                  className="rounded border border-ink/15 bg-ink/[0.02] p-3 text-sm font-bold text-ink/70"
                 >
                   {notice}
                 </p>
@@ -462,7 +486,7 @@ function SubscriptionManager({
 
   return (
     <div className="space-y-4">
-      <div className="rounded border-2 border-ink/20 p-4 text-sm">
+      <div className="rounded border border-ink/15 bg-ink/[0.02] p-4 text-sm">
         {subscription.state === "active" ? (
           <>
             <p className="font-bold">カードでの自動更新が有効です。</p>
@@ -499,22 +523,20 @@ function SubscriptionManager({
             </p>
             <button
               type="button"
-              onClick={onCancel}
+              onClick={onDismissConfirm}
               disabled={busy}
-              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+              className="w-full rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
-              {action === "cancel" && (
-                <Spinner className="h-4 w-4 text-paper" />
-              )}
-              解約する
+              解約しない
             </button>
             <button
               type="button"
-              onClick={onDismissConfirm}
+              onClick={onCancel}
               disabled={busy}
-              className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
+              className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
             >
-              やめる
+              {action === "cancel" && <Spinner className="h-4 w-4 text-ink" />}
+              解約する
             </button>
           </div>
         ) : (
@@ -524,7 +546,7 @@ function SubscriptionManager({
             disabled={busy}
             className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
           >
-            プランを解約する
+            解約する
           </button>
         )
       ) : (

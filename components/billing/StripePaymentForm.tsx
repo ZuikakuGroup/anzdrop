@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import {
   Elements,
   PaymentElement,
@@ -14,18 +14,37 @@ import type {
 import Spinner from "@/components/brand/Spinner";
 import { getStripe } from "@/lib/stripe-client";
 
-// フォームの見た目をアプリのブランドカラー(app/globals.cssのCSS変数)に
-// 合わせるためのAppearance API設定。
-const APPEARANCE: StripeElementsOptions["appearance"] = {
-  theme: "stripe",
-  variables: {
-    colorPrimary: "#f15a22",
-    colorBackground: "#ffffff",
-    colorText: "#0a0a0a",
-    borderRadius: "4px",
-    fontFamily: "inherit",
-  },
-};
+// フォームの見た目をアプリのブランドカラーに合わせるためのAppearance API設定。
+// 色は app/globals.css の CSS 変数を実行時に読み取り、両者がズレないようにする
+// (このコンポーネントはユーザー操作後にクライアントでのみ描画されるので、
+// フォールバックは SSR 相当の初期値)。
+function resolveAppearance(): StripeElementsOptions["appearance"] {
+  const fallback = { brand: "#f15a22", paper: "#ffffff", ink: "#0a0a0a" };
+  const colors =
+    typeof window === "undefined"
+      ? fallback
+      : (() => {
+          const style = getComputedStyle(document.documentElement);
+          return {
+            brand:
+              style.getPropertyValue("--color-brand").trim() || fallback.brand,
+            paper:
+              style.getPropertyValue("--color-paper").trim() || fallback.paper,
+            ink: style.getPropertyValue("--color-ink").trim() || fallback.ink,
+          };
+        })();
+
+  return {
+    theme: "stripe",
+    variables: {
+      colorPrimary: colors.brand,
+      colorBackground: colors.paper,
+      colorText: colors.ink,
+      borderRadius: "4px",
+      fontFamily: "inherit",
+    },
+  };
+}
 
 const PAYMENT_ELEMENT_OPTIONS: StripePaymentElementOptions = {
   layout: "tabs",
@@ -130,10 +149,12 @@ export default function StripePaymentForm({
   onSuccess,
   onCancel,
 }: Props) {
+  const appearance = useMemo(() => resolveAppearance(), []);
+
   return (
     <Elements
       stripe={getStripe()}
-      options={{ clientSecret, appearance: APPEARANCE }}
+      options={{ clientSecret, appearance }}
     >
       <PayButton returnUrl={returnUrl} onSuccess={onSuccess} onCancel={onCancel} />
     </Elements>

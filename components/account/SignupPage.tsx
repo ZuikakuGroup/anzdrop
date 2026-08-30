@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
@@ -26,11 +26,15 @@ export default function SignupPage() {
   const [result, setResult] = useState<
     { accountId: string; recoveryCode: string } | null
   >(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle"
+  );
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async () => {
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+
     if (isSubmitting || result) {
       return;
     }
@@ -89,9 +93,11 @@ export default function SignupPage() {
       );
       setCopyState("copied");
     } catch {
-      // クリップボード失敗時も画面上の文字列は見えているので致命的ではない
+      // クリップボード失敗時も画面上の文字列は見えているので致命的ではないが、
+      // コピーできたか分からないと困るので、手で控えるよう促す。
+      setCopyState("failed");
     } finally {
-      setTimeout(() => setCopyState("idle"), 1500);
+      setTimeout(() => setCopyState("idle"), 2000);
     }
   };
 
@@ -138,10 +144,15 @@ export default function SignupPage() {
               </div>
 
               <button
+                type="button"
                 onClick={handleCopy}
                 className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
               >
-                {copyState === "copied" ? "コピーしました" : "両方コピー"}
+                {copyState === "copied"
+                  ? "コピーしました"
+                  : copyState === "failed"
+                    ? "コピーできませんでした。手で控えてください"
+                    : "両方コピー"}
               </button>
 
               <a
@@ -152,7 +163,7 @@ export default function SignupPage() {
               </a>
             </div>
           ) : (
-            <div className="space-y-4">
+            <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1">
                 <label
                   htmlFor="signup-account-id"
@@ -166,6 +177,7 @@ export default function SignupPage() {
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
                   placeholder="yamada-taro"
+                  autoComplete="username"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -193,14 +205,18 @@ export default function SignupPage() {
               {turnstileWidget}
 
               <button
-                onClick={submit}
+                type="submit"
                 disabled={isSubmitting}
                 className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
+                {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
                 {isSubmitting ? "作成中..." : "アカウントを作成する"}
               </button>
 
-              <p className="min-h-[20px] text-sm font-bold text-brand">
+              <p
+                role="alert"
+                className="min-h-[20px] text-sm font-bold text-brand"
+              >
                 {error}
               </p>
 
@@ -210,7 +226,7 @@ export default function SignupPage() {
                   ログイン
                 </a>
               </p>
-            </div>
+            </form>
           )}
         </div>
       </main>

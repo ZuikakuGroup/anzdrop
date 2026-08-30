@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  describeBillingCta,
   describeContract,
   loadPlanStatus,
   type PlanStatus,
@@ -124,6 +125,29 @@ describe("describeContract", () => {
     expect(view.note).toBe(
       "自動更新はありません。期限が切れる前に更新してください。"
     );
+  });
+});
+
+describe("describeBillingCta", () => {
+  it("labels the CTA 解約する with a subdued tone while a card subscription is auto-renewing", () => {
+    expect(describeBillingCta("active")).toEqual({
+      label: "解約する",
+      tone: "neutral",
+    });
+  });
+
+  it("labels the CTA 解約を取り消す with a primary tone once the subscription is set to cancel (this is a recovery action)", () => {
+    expect(describeBillingCta("canceling")).toEqual({
+      label: "解約を取り消す",
+      tone: "primary",
+    });
+  });
+
+  it("keeps a primary payment CTA when there is no card subscription", () => {
+    expect(describeBillingCta(null)).toEqual({
+      label: "プラン・お支払いへ",
+      tone: "primary",
+    });
   });
 });
 

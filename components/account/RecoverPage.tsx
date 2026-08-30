@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import Script from "next/script";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
+import Spinner from "@/components/brand/Spinner";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import type { RecoverResponse } from "@/app/api/account/recover/schema";
@@ -17,10 +18,15 @@ export default function RecoverPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle"
+  );
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
-  const submit = async () => {
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+
     if (isSubmitting || newRecoveryCode) {
       return;
     }
@@ -69,6 +75,21 @@ export default function RecoverPage() {
     }
   };
 
+  const handleCopy = async () => {
+    if (!newRecoveryCode) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(newRecoveryCode);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    } finally {
+      setTimeout(() => setCopyState("idle"), 2000);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
@@ -88,12 +109,25 @@ export default function RecoverPage() {
             <div className="space-y-4">
               <div className="rounded border-2 border-brand p-4 text-sm">
                 <p className="mb-3 font-bold text-brand">
-                  パスワードを再設定しました。新しいリカバリーコードは今だけ表示されます。
+                  パスワードを再設定しました。新しいリカバリーコードは今だけ表示されます。必ず保存してください。
                 </p>
                 <p className="break-all font-mono text-[13px]">
                   {newRecoveryCode}
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
+              >
+                {copyState === "copied"
+                  ? "コピーしました"
+                  : copyState === "failed"
+                    ? "コピーできませんでした。手で控えてください"
+                    : "リカバリーコードをコピー"}
+              </button>
+
               <a
                 href="/mypage/login"
                 className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
@@ -102,7 +136,7 @@ export default function RecoverPage() {
               </a>
             </div>
           ) : (
-            <div className="space-y-4">
+            <form onSubmit={submit} className="space-y-4">
               <div className="space-y-1">
                 <label
                   htmlFor="recover-account-id"
@@ -115,6 +149,11 @@ export default function RecoverPage() {
                   type="text"
                   value={accountId}
                   onChange={(event) => setAccountId(event.target.value)}
+                  placeholder="yamada-taro"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
@@ -131,6 +170,11 @@ export default function RecoverPage() {
                   type="text"
                   value={recoveryCode}
                   onChange={(event) => setRecoveryCode(event.target.value)}
+                  placeholder="作成時に表示されたコード"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                 />
               </div>
@@ -146,6 +190,7 @@ export default function RecoverPage() {
                   id="recover-new-password"
                   value={newPassword}
                   onChange={setNewPassword}
+                  placeholder="8文字以上のパスワード"
                   autoComplete="new-password"
                   className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                 />
@@ -154,17 +199,31 @@ export default function RecoverPage() {
               {turnstileWidget}
 
               <button
-                onClick={submit}
+                type="submit"
                 disabled={isSubmitting}
                 className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
+                {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
                 {isSubmitting ? "再設定中..." : "パスワードを再設定する"}
               </button>
 
-              <p className="min-h-[20px] text-sm font-bold text-brand">
+              <p
+                role="alert"
+                className="min-h-[20px] text-sm font-bold text-brand"
+              >
                 {error}
               </p>
-            </div>
+
+              <p className="text-center text-xs text-ink/50">
+                パスワードを思い出した場合は{" "}
+                <a
+                  href="/mypage/login"
+                  className="font-bold text-brand hover:underline"
+                >
+                  ログイン
+                </a>
+              </p>
+            </form>
           )}
         </div>
       </main>
