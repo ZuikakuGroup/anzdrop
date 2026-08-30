@@ -281,23 +281,97 @@ describe("POST /api/billing/stripe/cancellation", () => {
     expect(body.subscription?.state).toBe("canceling");
   });
 
-  it("returns 409 for a past_due subscription (dunning in progress is not a cancelable state here)", async () => {
+  it("cancels a past_due subscription (stopping auto-renew is always safe; blocking it risks a charge on a later retry)", async () => {
     const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
       stripeSubscriptionId: "sub_past_due",
     });
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({
+      ...activeSubscription(false),
       status: "past_due",
-      cancel_at_period_end: false,
-      items: { data: [] },
+    });
+    mockSubscriptionsUpdate.mockResolvedValue({
+      ...activeSubscription(true),
+      status: "past_due",
     });
 
     const response = await postCancellation(cookie, {
       cancelAtPeriodEnd: true,
     });
 
-    expect(response.status).toBe(409);
-    expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsUpdate).toHaveBeenCalledWith("sub_past_due", {
+      cancel_at_period_end: true,
+    });
+
+    const body = await readJson<{
+      success: boolean;
+      subscription: { state: string } | null;
+    }>(response);
+    expect(body.success).toBe(true);
+    // past_due + cancel_at_period_end は "canceling" として要約される。
+    expect(body.subscription?.state).toBe("canceling");
+  });
+
+  it("lets a past_due subscription undo a scheduled cancellation (resume auto-renew)", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      stripeSubscriptionId: "sub_past_due_resume",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      ...activeSubscription(true),
+      status: "past_due",
+    });
+    mockSubscriptionsUpdate.mockResolvedValue({
+      ...activeSubscription(false),
+      status: "past_due",
+    });
+
+    const response = await postCancellation(cookie, {
+      cancelAtPeriodEnd: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockSubscriptionsUpdate).toHaveBeenCalledWith("sub_past_due_resume", {
+      cancel_at_period_end: false,
+    });
+    const body = await readJson<{ subscription: { state: string } | null }>(
+      response
+    );
+    // 予約解除後は past_due のまま(要約は state "past_due"、期限は伏せる)。
+    expect(body.subscription).toEqual({
+      state: "past_due",
+      currentPeriodEnd: null,
+    });
+  });
+
+  it("returns 409 for non-manageable statuses (terminal / not-yet-started) without touching Stripe", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      stripeSubscriptionId: "sub_dead",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    for (const status of [
+      "canceled",
+      "unpaid",
+      "incomplete_expired",
+    ] as const) {
+      mockSubscriptionsUpdate.mockClear();
+      mockSubscriptionsRetrieve.mockResolvedValue({
+        status,
+        cancel_at_period_end: false,
+        items: { data: [] },
+      });
+
+      const response = await postCancellation(cookie, {
+        cancelAtPeriodEnd: true,
+      });
+
+      expect(response.status).toBe(409);
+      expect(mockSubscriptionsUpdate).not.toHaveBeenCalled();
+    }
   });
 
   it("returns a generic 500 (and keeps the pointer) when the Stripe update call fails", async () => {

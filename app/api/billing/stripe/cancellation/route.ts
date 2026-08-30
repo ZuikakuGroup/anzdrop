@@ -81,9 +81,15 @@ export const POST = withApiHandler(
       throw error;
     }
 
-    // active / trialing 以外(incomplete・past_due・canceled 等)は
-    // 「期間末で解約」という操作の対象にならない。
-    if (!isActiveSubscriptionStatus(subscription.status)) {
+    // active / trialing に加えて past_due(更新の支払いに失敗して dunning
+    // リトライ中)も「期間末で解約」の対象にする。past_due で解約できないと、
+    // Stripe のリトライがあとから成功したときに、解約意思に反して次期分の
+    // 請求が確定してしまう。自動更新を止める操作は課金を増やさないため安全。
+    // incomplete(初回未確定)・canceled 等は対象外。
+    if (
+      !isActiveSubscriptionStatus(subscription.status) &&
+      subscription.status !== "past_due"
+    ) {
       return Response.json(
         { success: false, error: "このプランは解約できる状態ではありません" },
         { status: 409 }

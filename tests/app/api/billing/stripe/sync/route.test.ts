@@ -430,8 +430,10 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.subscription).toBeNull();
   });
 
-  it("leaves an intermediate (past_due) subscription tracked and untouched", async () => {
-    const expiresAt = new Date(daysFromNowUnix(3) * 1000).toISOString();
+  it("leaves a past_due subscription's accounts row untouched but returns a past_due summary with no period end (Stripe's current_period_end has advanced to the unpaid next period)", async () => {
+    // 支払い済みの期限は 2 日先。更新決済が失敗して past_due になり、Stripe 側の
+    // current_period_end は次期(約 1 か月先)へ前進済み、という典型ケース。
+    const expiresAt = new Date(daysFromNowUnix(2) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "standard",
       planExpiresAt: expiresAt,
@@ -439,15 +441,54 @@ describe("POST /api/billing/stripe/sync", () => {
     });
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue(
-      subscription("past_due", env.STRIPE_PRICE_ID_STANDARD, daysFromNowUnix(3))
+      subscription(
+        "past_due",
+        env.STRIPE_PRICE_ID_STANDARD,
+        daysFromNowUnix(32)
+      )
     );
 
-    await postSync(cookie);
+    const response = await postSync(cookie);
 
+    // accounts は一切書き換えない(Webhook / 次回同期に委ねる)。
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBe("sub_past_due");
     expect(account?.plan).toBe("standard");
     expect(account?.plan_expires_at).toBe(expiresAt);
+
+    // 要約は past_due で返す(契約フローに落ちると解約もできなくなるため)。
+    // currentPeriodEnd は前進した next period の日付を漏らさず null。
+    const body = await readJson<{
+      subscription: { state: string; currentPeriodEnd: string | null } | null;
+    }>(response);
+    expect(body.subscription).toEqual({
+      state: "past_due",
+      currentPeriodEnd: null,
+    });
+  });
+
+  it("returns a canceling summary for a past_due subscription already set to cancel at period end", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "standard",
+      planExpiresAt: new Date(daysFromNowUnix(3) * 1000).toISOString(),
+      stripeSubscriptionId: "sub_past_due_canceling",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription(
+        "past_due",
+        env.STRIPE_PRICE_ID_STANDARD,
+        daysFromNowUnix(3),
+        true
+      )
+    );
+
+    const response = await postSync(cookie);
+
+    const body = await readJson<{
+      subscription: { state: string } | null;
+    }>(response);
+    expect(body.subscription?.state).toBe("canceling");
   });
 
   it("reflects a trialing subscription (free trial) as an active paid plan", async () => {

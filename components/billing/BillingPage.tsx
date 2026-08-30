@@ -449,6 +449,9 @@ function SubscriptionManager({
 }: SubscriptionManagerProps) {
   const busy = action !== null;
   const periodEnd = formatPeriodEnd(subscription.currentPeriodEnd);
+  // active も past_due も「自動更新が動いている(=停止できる)」側。
+  // canceling(解約予約済み)のときだけ再開ボタンを出す。
+  const autoRenewing = subscription.state !== "canceling";
 
   return (
     <div className="space-y-4">
@@ -462,6 +465,13 @@ function SubscriptionManager({
               </p>
             )}
           </>
+        ) : subscription.state === "past_due" ? (
+          <>
+            <p className="font-bold">お支払いの確認が取れていません。</p>
+            <p className="mt-1 text-xs text-ink/60">
+              カードの有効期限切れなどで自動更新の決済に失敗しています。お支払い方法の変更が必要な場合はお問い合わせください。このまま自動更新を停止することもできます。
+            </p>
+          </>
         ) : (
           <>
             <p className="font-bold">{periodEnd}にこのプランは終了します。</p>
@@ -472,11 +482,13 @@ function SubscriptionManager({
         )}
       </div>
 
-      {subscription.state === "active" ? (
+      {autoRenewing ? (
         confirmingCancel ? (
           <div className="space-y-2">
             <p className="text-sm font-bold">
-              解約すると、{periodEnd}に無料プランへ戻ります。よろしいですか?
+              {subscription.state === "past_due"
+                ? "自動更新を停止します。失敗している決済のリトライは続き、成功しなければ有効期限の到来時に無料プランへ戻ります。よろしいですか?"
+                : `解約すると、${periodEnd}に無料プランへ戻ります。よろしいですか?`}
             </p>
             <button
               type="button"

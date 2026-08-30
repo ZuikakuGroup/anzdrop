@@ -80,6 +80,36 @@ describe("describeContract", () => {
     );
   });
 
+  it("reports a past_due subscription as payment-under-review without asserting a specific date", () => {
+    const view = describeContract(
+      baseStatus({
+        subscription: { state: "past_due", currentPeriodEnd: null },
+      })
+    );
+
+    expect(view.stateLabel).toBe("お支払いの確認中");
+    // past_due では確定的な期限を出さない(current_period_end も
+    // plan_expires_at も当てにならないため)。
+    expect(view.detail).toBeNull();
+    expect(view.note).toContain("お問い合わせ");
+    expect(view.note).toContain("自動更新を停止");
+  });
+
+  it("still surfaces a past_due subscription even after the effective plan has already lapsed to free", () => {
+    // 更新失敗直後は plan_expires_at が過去へ回り実効プランがすぐ free に
+    // なりうる。それでも「解約すべき宙ぶらりんの購読がある」ことを出す。
+    const view = describeContract(
+      baseStatus({
+        plan: "free",
+        planExpiresAt: "2020-01-01T00:00:00.000Z",
+        subscription: { state: "past_due", currentPeriodEnd: null },
+      })
+    );
+
+    expect(view.stateLabel).toBe("お支払いの確認中");
+    expect(view.stateLabel).not.toBe("無料プラン");
+  });
+
   it("reports a paid plan without a Stripe subscription as a non-renewing period (Bitcoin top-up)", () => {
     const view = describeContract(
       baseStatus({

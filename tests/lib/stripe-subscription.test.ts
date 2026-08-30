@@ -241,9 +241,37 @@ describe("toSubscriptionSummary", () => {
     expect(summary).toEqual({ state: "active", currentPeriodEnd: null });
   });
 
-  it("returns null for any non-active status (UI then shows the contract flow, not a management block)", () => {
+  it("summarizes a past_due subscription as state 'past_due' with currentPeriodEnd null (Stripe's current_period_end can point at the unpaid next period, so it is not a real paid-through date)", () => {
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60;
+    expect(
+      toSubscriptionSummary(
+        subscription({
+          status: "past_due",
+          cancelAtPeriodEnd: false,
+          periodEndUnix,
+        })
+      )
+    ).toEqual({
+      state: "past_due",
+      currentPeriodEnd: null,
+    });
+  });
+
+  it("summarizes a past_due subscription already set to cancel at period end as state 'canceling' (still no period end for past_due)", () => {
+    const periodEndUnix = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60;
+    expect(
+      toSubscriptionSummary(
+        subscription({
+          status: "past_due",
+          cancelAtPeriodEnd: true,
+          periodEndUnix,
+        })
+      )
+    ).toEqual({ state: "canceling", currentPeriodEnd: null });
+  });
+
+  it("returns null for not-yet-started / terminal statuses (UI then shows the contract flow, not a management block)", () => {
     for (const status of [
-      "past_due",
       "incomplete",
       "incomplete_expired",
       "unpaid",

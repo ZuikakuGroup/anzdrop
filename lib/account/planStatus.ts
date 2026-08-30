@@ -72,6 +72,20 @@ function formatDate(iso: string | null | undefined): string | null {
 export function describeContract(status: PlanStatus): ContractView {
   const { plan, planExpiresAt, subscription } = status;
 
+  // 更新の支払いに失敗して dunning リトライ中。free に判定を先んじて出す。
+  // このケースは更新失敗直後に plan_expires_at が過去へ回り実効プランが
+  // すぐ free になりうるため、free ブロックの前で拾わないと「宙ぶらりんの
+  // 購読を解約できる」ことに気づけなくなる。日付は出さない(支払い済みの
+  // 期限は plan_expires_at 側だが、そこも past_due では更新されないため
+  // 断定的な表示を避ける)。
+  if (subscription?.state === "past_due") {
+    return {
+      stateLabel: "お支払いの確認中",
+      detail: null,
+      note: "自動更新の決済に失敗しています。決済が確認できない場合は無料プランへ戻ります。プランを続けない場合は /mypage/billing から自動更新を停止できます。お支払い方法の変更が必要なときはお問い合わせください。",
+    };
+  }
+
   // 実効プランが free。有料期限が切れた(Bitcoin 失効・解約後の期限到来)
   // 場合も sync 側で free に倒れているのでここに来る。
   if (plan === "free") {

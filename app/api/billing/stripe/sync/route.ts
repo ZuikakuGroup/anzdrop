@@ -174,7 +174,9 @@ async function reconcileFromStripe(
   }
 
   // incomplete / past_due 等の中間状態は accounts を触らない
-  // (Webhook / 次回の同期を待つ)。toSubscriptionSummary() が
-  // active/trialing 以外は null を返すので、UI 上は契約フロー扱いになる。
+  // (Webhook / 次回の同期を待つ)。ただし past_due は toSubscriptionSummary()
+  // が要約({ state: "past_due" })を返すため、UI は契約フローではなく管理
+  // ブロック(お支払い方法の確認 / 自動更新の停止)を出す。それ以外の中間
+  // 状態は null で契約フロー扱いになる。
   return toSubscriptionSummary(subscription);
 }
