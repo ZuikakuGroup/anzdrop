@@ -313,7 +313,7 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.plan).toBe("premium");
   });
 
-  it("immediately downgrades when the subscription no longer exists on Stripe (404), mirroring a canceled subscription so a late deleted webhook can't be lost", async () => {
+  it("stops tracking a subscription that no longer exists on Stripe (404) without erroring, but does NOT downgrade plan/expiry (a 404 can be a mode/key mismatch, not a real cancellation; the signed deleted webhook handles real downgrades)", async () => {
     const paidUntil = new Date(daysFromNowUnix(5) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "standard",
@@ -325,59 +325,18 @@ describe("POST /api/billing/stripe/sync", () => {
       Object.assign(new Error("No such subscription"), { statusCode: 404 })
     );
 
-    const before = Date.now();
     const response = await postSync(cookie);
-    const after = Date.now();
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
+    // 追跡ポインタだけ外れ、plan / plan_expires_at は保持される。
     expect(account?.stripe_subscription_id).toBeNull();
-    // plan_expires_at は「今」まで巻き戻り、元の期間末より手前になる。
-    const newExpiry = new Date(account?.plan_expires_at ?? 0).getTime();
-    expect(newExpiry).toBeGreaterThanOrEqual(before - 1000);
-    expect(newExpiry).toBeLessThanOrEqual(after + 1000);
-    expect(newExpiry).toBeLessThan(new Date(paidUntil).getTime());
+    expect(account?.plan).toBe("standard");
+    expect(account?.plan_expires_at).toBe(paidUntil);
 
-    const body = await readJson<{ plan: string; subscription: unknown }>(
-      response
-    );
-    expect(body.plan).toBe("free");
-    expect(body.subscription).toBeNull();
-  });
-
-  it("keeps a Bitcoin-prepaid future period when the Stripe subscription is gone (404)", async () => {
-    const btcPaidUntil = new Date(daysFromNowUnix(40) * 1000).toISOString();
-    const { accountId } = await insertTestAccount(env, {
-      plan: "premium",
-      planExpiresAt: btcPaidUntil,
-      stripeSubscriptionId: "sub_gone_with_btc",
-    });
-    const cookie = await sessionCookieHeader(env, accountId);
-    await env.DB.prepare(
-      `INSERT INTO btc_payments
-         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
-       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
-    )
-      .bind(
-        crypto.randomUUID(),
-        accountId,
-        "charge_sync_404_btc",
-        btcPaidUntil,
-        new Date().toISOString()
-      )
-      .run();
-    mockSubscriptionsRetrieve.mockRejectedValue(
-      Object.assign(new Error("No such subscription"), { statusCode: 404 })
-    );
-
-    const response = await postSync(cookie);
-
-    const account = await getAccount(accountId);
-    expect(account?.stripe_subscription_id).toBeNull();
-    expect(account?.plan_expires_at).toBe(btcPaidUntil);
-
+    // 期限内なので実効プランはまだ standard(effectivePlan が期限で自動失効させる)。
     const body = await readJson<{ plan: string }>(response);
-    expect(body.plan).toBe("premium");
+    expect(body.plan).toBe("standard");
   });
 
   it("does not fail (or change the DB) when the Stripe read errors transiently, and still surfaces the DB-backed plan", async () => {

@@ -99,18 +99,19 @@ async function reconcileFromStripe(
         ? (error as { statusCode?: unknown }).statusCode
         : undefined;
 
-    // 404(Stripe 側に該当 Subscription が無い。削除済み等)。ポインタだけ外すと
-    // plan / plan_expires_at が旧カード期間のまま残り、後から届く可能性のある
-    // deleted Webhook も解除済み ID からアカウントを引けなくなる。終端ステータス
-    // (canceled 等)と同じ即時ダウングレードに寄せる(Bitcoin の期間チャージで
-    // 先まで前払いされている分はそのまま残る)。
-    // なお実運用で 404 が返る主因は API キー / モード取り違え・破損 ID なので、
-    // 多発したときに気づけるようログを残す(非 404 分岐の console.error と対)。
+    // 404(Stripe 側に該当 Subscription が無い)。retrieve の 404 は契約の削除
+    // だけでなく、テスト/ライブモードの取り違え・API キーや Stripe アカウントの
+    // 不一致・破損した ID でも発生する。ここで plan / plan_expires_at まで失効
+    // させると、一時的なモード不一致等で課金中の顧客が即座に free へ落ちてしまう。
+    // そのため追跡ポインタ(stripe_subscription_id)だけ外し、実際のダウングレード
+    // は署名検証済みの customer.subscription.deleted に委ねる(期限が来れば
+    // effectivePlan() が自動的に free へ倒す)。主因がモード取り違え等なので、
+    // 多発したときに気づけるようログは残す。
     if (statusCode === 404) {
       console.warn(
-        `POST /api/billing/stripe/sync: subscription ${subscriptionId} not found on Stripe (404); downgrading account ${accountId}`
+        `POST /api/billing/stripe/sync: subscription ${subscriptionId} not found on Stripe (404) for account ${accountId}; clearing pointer only`
       );
-      await downgradeExpiredCardPlan(env, { accountId, subscriptionId });
+      await clearSubscriptionPointer(env, accountId, subscriptionId);
       return null;
     }
 
@@ -177,4 +178,23 @@ async function reconcileFromStripe(
   // (Webhook / 次回の同期を待つ)。toSubscriptionSummary() が
   // active/trialing 以外は null を返すので、UI 上は契約フロー扱いになる。
   return toSubscriptionSummary(subscription);
+}
+
+// Stripe が Subscription を 404 で返したときに、追跡ポインタだけを外す
+// (plan / plan_expires_at は触らない)。1行だけを対象にするため WHERE に
+// stripe_subscription_id も含める。
+async function clearSubscriptionPointer(
+  env: CloudflareEnv,
+  accountId: string,
+  subscriptionId: string
+): Promise<void> {
+  await env.DB.prepare(
+    `
+    UPDATE accounts
+    SET stripe_subscription_id = NULL
+    WHERE id = ? AND stripe_subscription_id = ?
+  `
+  )
+    .bind(accountId, subscriptionId)
+    .run();
 }
