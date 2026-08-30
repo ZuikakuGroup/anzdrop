@@ -10,8 +10,6 @@ export default function SiteFooter({ reportShareId }: SiteFooterProps) {
   return (
     <footer className="shrink-0 px-4 py-4 text-[11px] text-ink/40">
       <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
-        <p>&copy; Anzdrop</p>
-        <span aria-hidden="true">·</span>
         <a href="/legal/terms" className="hover:text-ink/70 hover:underline">
           利用規約
         </a>
