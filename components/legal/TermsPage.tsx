@@ -14,7 +14,7 @@ export default function TermsPage() {
   return (
     <LegalLayout
       title="利用規約"
-      description="Anzdrop(以下「本サービス」)をご利用いただく前にお読みください。"
+      description="Anzdropをご利用いただく前にお読みください。"
       lastUpdated={LEGAL_LAST_UPDATED}
     >
       <LegalSection heading="第1条(適用)">
