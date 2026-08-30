@@ -276,7 +276,11 @@ export default function BillingPage({
           ) : (
             <div className="space-y-5">
               {notice && (
-                <p className="rounded border-2 border-ink/20 p-3 text-sm font-bold text-ink/70">
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="rounded border-2 border-ink/20 p-3 text-sm font-bold text-ink/70"
+                >
                   {notice}
                 </p>
               )}
@@ -401,7 +405,10 @@ export default function BillingPage({
                     {" "}をご確認ください。
                   </p>
 
-                  <p className="min-h-[20px] text-sm font-bold text-brand">
+                  <p
+                    role="alert"
+                    className="min-h-[20px] text-sm font-bold text-brand"
+                  >
                     {error}
                   </p>
                 </>
