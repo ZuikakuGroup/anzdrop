@@ -1,10 +1,11 @@
 type AdminNavProps = {
-  active: "reports" | "contacts";
+  active: "reports" | "contacts" | "accounts";
 };
 
 const ADMIN_NAV_ITEMS: { key: AdminNavProps["active"]; href: string; label: string }[] = [
   { key: "reports", href: "/admin", label: "通報" },
   { key: "contacts", href: "/admin/contacts", label: "お問い合わせ" },
+  { key: "accounts", href: "/admin/accounts", label: "アカウント" },
 ];
 
 export default function AdminNav({ active }: AdminNavProps) {

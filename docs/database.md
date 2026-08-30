@@ -104,7 +104,7 @@
 | `password_hash` | TEXT | パスワードのArgon2idハッシュ([`lib/account/password.ts`](../lib/account/password.ts)。Cloudflare WorkersランタイムがPBKDF2の反復回数を10万回までしか許可しないため、メモリハードで反復回数の制約を受けないArgon2idを採用)。実行時の動的WebAssemblyコンパイルもCloudflare Workers本番では禁止されているため、npmのhash-wasmはそのままでは使えず、静的importで済むよう自前でビルドしたWASM実装を[`lib/account/wasm-argon2/`](../lib/account/wasm-argon2/)に置いている(由来・ビルド方法は同ディレクトリの`NOTICE.md`を参照) |
 | `recovery_code_hash` | TEXT | リカバリーコードのハッシュ。パスワード忘れ時の再設定にのみ使う(サインアップ時に1回だけ平文を表示し、以後は保持しない) |
 | `plan` | TEXT NOT NULL DEFAULT `'free'` | `"free"` / `"standard"` / `"premium"`(旧値`"paid"`はmigration 0013で`"premium"`へ正規化済み。アプリ側の`normalizeStoredPlan()`も同じ変換を防御的に行う) |
-| `plan_expires_at` | TEXT (nullable) | 有料プランの有効期限(ISO8601)。Bitcoin決済は自動更新されないため、この期限が切れるとfreeに戻る |
+| `plan_expires_at` | TEXT (nullable) | 有料プランの有効期限(ISO8601)。Bitcoin決済は自動更新されないため、この期限が切れるとfreeに戻る。`/admin/accounts`からの「無期限」付与では`lib/plan.ts`の`INDEFINITE_PLAN_EXPIRES_AT`(遠い未来の番兵値)が入る |
 | `stripe_customer_id` | TEXT (nullable) | Stripe Customer ID |
 | `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
 | `created_at` | TEXT | 作成日時 |

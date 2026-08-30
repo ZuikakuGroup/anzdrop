@@ -1,5 +1,5 @@
 import type { StripeSyncResponse } from "@/app/api/billing/stripe/sync/schema";
-import type { Plan } from "@/lib/plan";
+import { isIndefinitePlanExpiry, type Plan } from "@/lib/plan";
 import type { StripeSubscriptionSummary } from "@/lib/stripe-subscription";
 
 // /mypage(アカウント概要)と /mypage/billing の両方で使う、現在のプラン状態。
@@ -138,6 +138,16 @@ export function describeContract(status: PlanStatus): ContractView {
       stateLabel: "解約予約中",
       detail: date ? `有効期限: ${date}` : null,
       note: "自動更新は停止済みです。期限を過ぎると無料プランに戻ります。",
+    };
+  }
+
+  // /admin から「無期限」で付与されたプラン(番兵日付が入っている)。自動更新の
+  // 概念がなく期限切れも起きないため、更新を促さず「無期限」とだけ表示する。
+  if (isIndefinitePlanExpiry(planExpiresAt)) {
+    return {
+      stateLabel: "利用中（無期限）",
+      detail: null,
+      note: null,
     };
   }
 
