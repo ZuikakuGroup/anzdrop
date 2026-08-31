@@ -30,9 +30,13 @@ export type AdminAccountInfo = {
   planExpiresAt: string | null;
   // planExpiresAtが「無期限」の番兵値か。
   indefinite: boolean;
-  // accounts.stripe_subscription_idが設定されているか。設定されている場合、
-  // /adminからの付与・free化は次回のStripe同期/Webhookで上書きされうる。
-  // (実際にStripe上でactiveかどうかまではここでは確認しない。)
+  // accounts.stripe_subscription_id が「いま実際に管理対象として生きている」
+  // Stripe 契約(active / trialing / past_due)を指しているか。GET / POST /
+  // DELETE いずれも Stripe へ retrieve して確認する(ポインタの有無だけでは
+  // 判定しない。決済フォームを開いて離脱しただけの incomplete /
+  // incomplete_expired のゴミポインタを警告対象から除くため)。true の場合、
+  // /admin からの付与・free 化は次回の Stripe 同期 / Webhook で上書きされうる。
+  // retrieve に失敗したときは保守的に true(警告を残す)。
   hasStripeSubscription: boolean;
 };
 

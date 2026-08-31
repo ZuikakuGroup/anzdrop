@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import Stripe from "stripe";
 import { requireAdmin } from "@/lib/api/adminAuth";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -9,6 +10,7 @@ import {
   isIndefinitePlanExpiry,
   normalizeStoredPlan,
 } from "@/lib/plan";
+import { isManageableSubscriptionStatus } from "@/lib/stripe-subscription";
 import {
   GrantPlanRequestSchema,
   type AdminAccountInfo,
@@ -41,7 +43,60 @@ async function fetchAccountRow(
     .first<AccountRow>();
 }
 
-function toAccountInfo(row: AccountRow): AdminAccountInfo {
+// accounts.stripe_subscription_id が指す Stripe Subscription が、いま実際に
+// 「管理対象として生きている」契約か(active / trialing / past_due)を確認する。
+// DB のポインタは支払い確定前に書き込まれるため、決済フォームを開いただけで
+// 離脱したアカウントには incomplete(→ 約23時間後に incomplete_expired)の
+// Subscription ID が plan='free' のまま残る。ポインタの有無(!== null)だけで
+// 警告を出すと、こうした「実際には効かないゴミポインタ」でも警告が出てしまう。
+async function hasLiveStripeSubscription(
+  env: CloudflareEnv,
+  subscriptionId: string | null
+): Promise<boolean> {
+  if (!subscriptionId) {
+    return false;
+  }
+
+  try {
+    // new Stripe() も try 内に置く。STRIPE_SECRET_KEY 未設定などで
+    // コンストラクタが同期例外を投げても、下の catch と同じく保守的に
+    // true(警告を残す)へ倒すため(admin ルートを Stripe 障害で 500 に
+    // しない)。
+    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+      httpClient: Stripe.createFetchHttpClient(),
+    });
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+
+    // active / trialing / past_due は sync / Webhook がこのポインタを手がかりに
+    // plan を上書きしうる(＝警告が必要)。incomplete / incomplete_expired /
+    // canceled / unpaid は上書き対象にならない(＝警告不要)。判定は
+    // /mypage/billing の契約管理フローと同じ isManageableSubscriptionStatus に
+    // 一本化する。
+    return isManageableSubscriptionStatus(subscription.status);
+  } catch (error) {
+    // retrieve に失敗した場合(404・レート制限・タイムアウト・Stripe 障害)は
+    // 保守的に「紐づいている」(true)扱いにして警告を残す。sync 側の
+    // reconcileFromStripe と同じ考え方:
+    //  - 404 は契約削除だけでなくテスト/ライブモードの取り違え・API キーや
+    //    Stripe アカウントの不一致・破損 ID でも起きるため、「契約は無い」と
+    //    断定してはいけない。
+    //  - それ以外は一時的な障害なので、次回の表示で判定し直せばよい。
+    // どちらも「今回は Stripe の実態を確認できなかった」だけであり、その状態で
+    // 警告を消すと、実際にはカード契約があるアカウントへ管理者が付与・取り消しを
+    // して sync / Webhook に巻き戻される事故を招く。過剰な警告は無害。
+    console.error(
+      "/api/admin/accounts/[accountId]: subscription retrieve failed:",
+      error
+    );
+
+    return true;
+  }
+}
+
+async function toAccountInfo(
+  env: CloudflareEnv,
+  row: AccountRow
+): Promise<AdminAccountInfo> {
   const storedPlan = normalizeStoredPlan(row.plan);
 
   return {
@@ -50,7 +105,10 @@ function toAccountInfo(row: AccountRow): AdminAccountInfo {
     effectivePlan: effectivePlan(storedPlan, row.plan_expires_at),
     planExpiresAt: row.plan_expires_at,
     indefinite: isIndefinitePlanExpiry(row.plan_expires_at),
-    hasStripeSubscription: row.stripe_subscription_id !== null,
+    hasStripeSubscription: await hasLiveStripeSubscription(
+      env,
+      row.stripe_subscription_id
+    ),
   };
 }
 
@@ -78,7 +136,9 @@ export const GET = withApiHandler(
     const { accountId } = await context.params;
     const row = await fetchAccountRow(env, accountId);
 
-    return accountResponse(row ? toAccountInfo(row) : MISSING_ACCOUNT_INFO);
+    return accountResponse(
+      row ? await toAccountInfo(env, row) : MISSING_ACCOUNT_INFO
+    );
   }
 );
 
@@ -145,7 +205,9 @@ export const POST = withApiHandler(
 
     const updated = await fetchAccountRow(env, accountId);
 
-    return accountResponse(updated ? toAccountInfo(updated) : MISSING_ACCOUNT_INFO);
+    return accountResponse(
+      updated ? await toAccountInfo(env, updated) : MISSING_ACCOUNT_INFO
+    );
   }
 );
 
@@ -185,6 +247,8 @@ export const DELETE = withApiHandler(
 
     const updated = await fetchAccountRow(env, accountId);
 
-    return accountResponse(updated ? toAccountInfo(updated) : MISSING_ACCOUNT_INFO);
+    return accountResponse(
+      updated ? await toAccountInfo(env, updated) : MISSING_ACCOUNT_INFO
+    );
   }
 );

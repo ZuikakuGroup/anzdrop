@@ -59,6 +59,18 @@ export function isDeadSubscriptionStatus(
   );
 }
 
+// 「まだ管理対象として生きている」サブスクリプションのステータスか。
+// active/trialing(課金が有効)に加えて past_due(更新 dunning 中。お支払い方法の
+// 更新か自動更新の停止をユーザーが選べる)も含む。incomplete(初回未確定)や
+// canceled/incomplete_expired/unpaid(終端)は含まない。
+// /mypage/billing の契約管理フロー表示(toSubscriptionSummary)と、/admin の
+// プラン管理画面が出す「Stripe サブスクリプション紐づき」警告の両方で使う。
+export function isManageableSubscriptionStatus(
+  status: Stripe.Subscription.Status
+): boolean {
+  return isActiveSubscriptionStatus(status) || status === "past_due";
+}
+
 // クライアント(/mypage/billing)へ返す、現在のサブスクリプションの要約。
 // メールを収集しない方針のため、期限切れ・解約はすべてこの画面上の表示で
 // 伝えるしかない。DBへ保存する情報ではなく、都度Stripeから取り直す。
@@ -79,11 +91,7 @@ export type StripeSubscriptionSummary = {
 export function toSubscriptionSummary(
   subscription: Stripe.Subscription
 ): StripeSubscriptionSummary | null {
-  const manageable =
-    isActiveSubscriptionStatus(subscription.status) ||
-    subscription.status === "past_due";
-
-  if (!manageable) {
+  if (!isManageableSubscriptionStatus(subscription.status)) {
     return null;
   }
 

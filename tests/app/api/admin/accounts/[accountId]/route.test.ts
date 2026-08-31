@@ -25,6 +25,24 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
+const mockSubscriptionsRetrieve = vi.fn();
+
+vi.mock("stripe", () => {
+  class MockStripe {
+    static createFetchHttpClient() {
+      return {};
+    }
+    subscriptions = { retrieve: mockSubscriptionsRetrieve };
+    constructor() {}
+  }
+
+  return { default: MockStripe };
+});
+
+function subscriptionStatus(status: string) {
+  return { status };
+}
+
 vi.mock("@/lib/access", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/access")>();
 
@@ -47,6 +65,10 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
   vi.mocked(verifyAccessJwt).mockReset();
+  mockSubscriptionsRetrieve.mockReset();
+  // 明示的に上書きしないテスト向けのデフォルト。stripe_subscription_id が
+  // 設定されているアカウントは「生きた契約」を指しているものとして扱う。
+  mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("active"));
 });
 
 function authorize() {
@@ -172,7 +194,7 @@ describe("GET /api/admin/accounts/[accountId]", () => {
     expect(body.account.effectivePlan).toBe("free");
   });
 
-  it("reports hasStripeSubscription when the account is linked to a subscription", async () => {
+  it("reports hasStripeSubscription: true when the linked subscription is live on Stripe (active)", async () => {
     authorize();
     await insertTestAccount(env, {
       id: "acct-stripe",
@@ -180,11 +202,120 @@ describe("GET /api/admin/accounts/[accountId]", () => {
       planExpiresAt: FUTURE_ISO,
       stripeSubscriptionId: "sub_123",
     });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("active"));
 
     const response = await getRoute("acct-stripe");
     const body = await readJson<{ account: AdminAccountInfo }>(response);
 
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith("sub_123");
     expect(body.account.hasStripeSubscription).toBe(true);
+  });
+
+  it("reports hasStripeSubscription: true for a trialing or past_due subscription (still manageable)", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-trialing",
+      plan: "standard",
+      planExpiresAt: FUTURE_ISO,
+      stripeSubscriptionId: "sub_trialing",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("trialing"));
+    expect(
+      (await readJson<{ account: AdminAccountInfo }>(await getRoute("acct-trialing")))
+        .account.hasStripeSubscription
+    ).toBe(true);
+
+    await insertTestAccount(env, {
+      id: "acct-past-due",
+      plan: "standard",
+      planExpiresAt: FUTURE_ISO,
+      stripeSubscriptionId: "sub_past_due",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("past_due"));
+    expect(
+      (await readJson<{ account: AdminAccountInfo }>(await getRoute("acct-past-due")))
+        .account.hasStripeSubscription
+    ).toBe(true);
+  });
+
+  it.each(["incomplete", "incomplete_expired", "canceled", "unpaid"])(
+    "reports hasStripeSubscription: false when the linked subscription is %s on Stripe (stale pointer left by an abandoned checkout)",
+    async (status) => {
+      authorize();
+      await insertTestAccount(env, {
+        id: "acct-stale",
+        plan: "free",
+        planExpiresAt: null,
+        stripeSubscriptionId: "sub_stale",
+      });
+      mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus(status));
+
+      const response = await getRoute("acct-stale");
+      const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+      expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith("sub_stale");
+      expect(body.account.hasStripeSubscription).toBe(false);
+    }
+  );
+
+  it("does not call Stripe when the account has no stripe_subscription_id", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-no-sub",
+      plan: "premium",
+      planExpiresAt: FUTURE_ISO,
+    });
+
+    const response = await getRoute("acct-no-sub");
+    const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+    expect(body.account.hasStripeSubscription).toBe(false);
+  });
+
+  it.each([
+    ["a 404 (mode/key mismatch or a real deletion)", 404],
+    ["a transient error (rate limit / outage)", 429],
+  ])(
+    "conservatively reports hasStripeSubscription: true when the Stripe retrieve fails with %s",
+    async (_label, statusCode) => {
+      authorize();
+      await insertTestAccount(env, {
+        id: "acct-stripe-down",
+        plan: "standard",
+        planExpiresAt: FUTURE_ISO,
+        stripeSubscriptionId: "sub_unknown",
+      });
+      mockSubscriptionsRetrieve.mockRejectedValue(
+        Object.assign(new Error("stripe error"), { statusCode })
+      );
+
+      const response = await getRoute("acct-stripe-down");
+      const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+      expect(response.status).toBe(200);
+      expect(body.account.hasStripeSubscription).toBe(true);
+    }
+  );
+
+  it("does not clear plan / expiry / pointer while resolving the live Stripe status (GET stays read-only)", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-readonly",
+      plan: "standard",
+      planExpiresAt: FUTURE_ISO,
+      stripeSubscriptionId: "sub_dead",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionStatus("incomplete_expired")
+    );
+
+    await getRoute("acct-readonly");
+
+    const row = await readAccountRow("acct-readonly");
+    expect(row?.plan).toBe("standard");
+    expect(row?.plan_expires_at).toBe(FUTURE_ISO);
+    expect(row?.stripe_subscription_id).toBe("sub_dead");
   });
 });
 
@@ -339,13 +470,14 @@ describe("POST /api/admin/accounts/[accountId]", () => {
     expect((await readAccountRow("acct-1"))?.plan).toBe("premium");
   });
 
-  it("grants the plan without blocking when the account has a Stripe subscription", async () => {
+  it("grants the plan without blocking when the account has a live Stripe subscription", async () => {
     authorize();
     await insertTestAccount(env, {
       id: "acct-1",
       plan: "free",
       stripeSubscriptionId: "sub_active",
     });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("active"));
 
     const response = await postRoute("acct-1", {
       plan: "premium",
@@ -358,6 +490,33 @@ describe("POST /api/admin/accounts/[accountId]", () => {
     expect(body.account.effectivePlan).toBe("premium");
     expect((await readAccountRow("acct-1"))?.stripe_subscription_id).toBe(
       "sub_active"
+    );
+  });
+
+  it("returns hasStripeSubscription: false after granting when the pointer is a stale (incomplete_expired) subscription", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-1",
+      plan: "free",
+      stripeSubscriptionId: "sub_abandoned",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscriptionStatus("incomplete_expired")
+    );
+
+    const response = await postRoute("acct-1", {
+      plan: "premium",
+      expiresAt: null,
+    });
+    const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+    expect(response.status).toBe(200);
+    // 警告は出ない(ゴミポインタなので sync / Webhook が上書きすることはない)。
+    expect(body.account.hasStripeSubscription).toBe(false);
+    expect(body.account.effectivePlan).toBe("premium");
+    // ポインタ自体は GET と同じく触らない。
+    expect((await readAccountRow("acct-1"))?.stripe_subscription_id).toBe(
+      "sub_abandoned"
     );
   });
 
@@ -461,5 +620,38 @@ describe("DELETE /api/admin/accounts/[accountId]", () => {
     expect(row?.plan).toBe("free");
     expect(row?.plan_expires_at).toBeNull();
     expect(row?.stripe_subscription_id).toBe("sub_keepme");
+  });
+
+  it("still reports hasStripeSubscription: true after reverting to free when the card contract is live (the revert can be undone by the next sync)", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-1",
+      plan: "premium",
+      planExpiresAt: FUTURE_ISO,
+      stripeSubscriptionId: "sub_live",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("active"));
+
+    const response = await deleteRoute("acct-1");
+    const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.account.hasStripeSubscription).toBe(true);
+  });
+
+  it("reports hasStripeSubscription: false after reverting to free when the pointer is a stale (canceled) subscription", async () => {
+    authorize();
+    await insertTestAccount(env, {
+      id: "acct-1",
+      plan: "free",
+      stripeSubscriptionId: "sub_stale",
+    });
+    mockSubscriptionsRetrieve.mockResolvedValue(subscriptionStatus("canceled"));
+
+    const response = await deleteRoute("acct-1");
+    const body = await readJson<{ account: AdminAccountInfo }>(response);
+
+    expect(response.status).toBe(200);
+    expect(body.account.hasStripeSubscription).toBe(false);
   });
 });

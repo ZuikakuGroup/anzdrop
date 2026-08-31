@@ -5,6 +5,7 @@ import { downgradeExpiredCardPlan } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
+  isDeadSubscriptionStatus,
   planFromSubscription,
   unixSecondsToIso,
 } from "@/lib/stripe-subscription";
@@ -93,8 +94,26 @@ async function applyEvent(
                 stripe_subscription_id: string | null;
               }>();
 
+            if (!currentAccount) {
+              return;
+            }
+
+            // イベントは順不同で届きうるため、payload が active でも、その後
+            // Subscription 自体が終端へ遷移済みの可能性がある。特に終端イベントで
+            // downgradeExpiredCardPlan がポインタを外した後、古い active イベントを
+            // metadata.accountId で再関連付けして有料プランを復活させないよう、
+            // フォールバックを行う直前に Stripe 上の現在状態を正とする。
+            // 取得失敗は握りつぶさず、外側で処理済みマークを取り消して再送に賭ける。
+            const currentSubscription = await stripe.subscriptions.retrieve(
+              subscription.id
+            );
+
+            if (isDeadSubscriptionStatus(currentSubscription.status)) {
+              return;
+            }
+
             const currentSubscriptionId =
-              currentAccount?.stripe_subscription_id ?? null;
+              currentAccount.stripe_subscription_id;
 
             // アカウントが今まさに別のSubscription IDを指していて、それが
             // Stripe上でまだactive/trialingなら、このフォールバックによる
@@ -136,7 +155,7 @@ async function applyEvent(
             // ケースである可能性もあるため、既存の有効期限より後退する
             // 反映は行わない(既に別の有効なSubscriptionでより新しい
             // 有効期限が設定済みの状態を、古い情報で上書きしないための保険)。
-            const currentExpiresAt = currentAccount?.plan_expires_at;
+            const currentExpiresAt = currentAccount.plan_expires_at;
             const isExpirySafe =
               !currentExpiresAt ||
               new Date(newExpiresAt).getTime() >=
@@ -184,6 +203,21 @@ async function applyEvent(
             }
           }
         }
+      } else if (isDeadSubscriptionStatus(subscription.status)) {
+        // incomplete_expired / canceled / unpaid へ遷移したが
+        // customer.subscription.deleted が届かない場合の掃除。特に
+        // 「決済フォームを開いただけで離脱」した incomplete の Subscription は、
+        // 約23時間後に incomplete_expired へ status 遷移する更新イベントだけが
+        // 届き(deleted は来ない)、そのままだと accounts.stripe_subscription_id に
+        // ゴミポインタが残り続ける。sync 側の reconcileFromStripe と同じく
+        // downgradeExpiredCardPlan で即時ダウングレード(古いポインタを外し、
+        // Bitcoin 前払い分があればその期限・プランは残す)を行い、sync と
+        // Webhook の挙動を揃える。該当ポインタを持つ行が無ければ何もしない
+        // (deleted ハンドラと同じ)。
+        // ここでポインタを外したあとに順不同で古い active イベントが届いても、
+        // 上の metadata.accountId フォールバックは Stripe 上の現在状態を再取得し、
+        // 終端状態なら再関連付けしない。
+        await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
       }
 
       break;

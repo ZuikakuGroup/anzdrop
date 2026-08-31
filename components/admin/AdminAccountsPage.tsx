@@ -247,10 +247,10 @@ export default function AdminAccountsPage() {
 
                 {account.hasStripeSubscription && (
                   <p className="rounded border-2 border-amber-500/40 bg-amber-500/10 p-3 text-xs font-bold text-amber-700">
-                    このアカウントにはStripeのサブスクリプションが紐づいています。
-                    ここで付与・取り消しをしても、次回のStripe同期やWebhookで
-                    実際の契約内容に上書きされることがあります。カード契約自体を
-                    止めるにはStripe側で解約してください。
+                    このアカウントには有効なStripeのカード契約(自動更新
+                    サブスクリプション)があります。ここで付与・取り消しをしても、
+                    次回のStripe同期やWebhookで実際の契約内容に上書きされることが
+                    あります。カード契約自体を止めるにはStripe側で解約してください。
                   </p>
                 )}
 

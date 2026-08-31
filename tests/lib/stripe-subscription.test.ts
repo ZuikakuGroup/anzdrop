@@ -4,6 +4,7 @@ import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
   isDeadSubscriptionStatus,
+  isManageableSubscriptionStatus,
   planFromSubscription,
   toSubscriptionSummary,
   unixSecondsToIso,
@@ -171,6 +172,47 @@ describe("isDeadSubscriptionStatus", () => {
     // active になりうる。ここを dead に含めると回復前に追跡を外してしまう。
     expect(isDeadSubscriptionStatus("past_due")).toBe(false);
     expect(isDeadSubscriptionStatus("incomplete")).toBe(false);
+  });
+});
+
+describe("isManageableSubscriptionStatus", () => {
+  it("is true for active, trialing and past_due (still a live, manageable subscription)", () => {
+    for (const status of [
+      "active",
+      "trialing",
+      "past_due",
+    ] as Stripe.Subscription.Status[]) {
+      expect(isManageableSubscriptionStatus(status)).toBe(true);
+    }
+  });
+
+  it("is false for not-yet-confirmed and terminal statuses (nothing to manage / already gone)", () => {
+    for (const status of [
+      "incomplete",
+      "incomplete_expired",
+      "unpaid",
+      "canceled",
+      "paused",
+    ] as Stripe.Subscription.Status[]) {
+      expect(isManageableSubscriptionStatus(status)).toBe(false);
+    }
+  });
+
+  it("matches exactly the statuses for which toSubscriptionSummary returns non-null", () => {
+    for (const status of [
+      "active",
+      "trialing",
+      "past_due",
+      "incomplete",
+      "incomplete_expired",
+      "unpaid",
+      "canceled",
+      "paused",
+    ] as Stripe.Subscription.Status[]) {
+      expect(isManageableSubscriptionStatus(status)).toBe(
+        toSubscriptionSummary(subscription({ status })) !== null
+      );
+    }
   });
 });
 
