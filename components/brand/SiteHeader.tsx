@@ -8,6 +8,7 @@ import type { MeResponse } from "@/app/api/account/me/schema";
 const NAV_LINKS = [
   { href: "/about", label: "Anzdropとは" },
   { href: "/pricing", label: "料金プラン" },
+  { href: "/contact", label: "問い合わせ" },
 ];
 
 export default function SiteHeader() {
