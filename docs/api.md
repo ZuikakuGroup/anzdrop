@@ -151,7 +151,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 - リクエスト: `{ cancelAtPeriodEnd: boolean }`(`true`=期間末で解約、`false`=解約予約を取り消す)
 - レスポンス: `{ success: true, subscription }`(形は`sync`と同じ)
-- サブスクリプションが無い/`active`・`trialing`でない場合は409。Stripe取得が404(モード/APIキーの取り違え・破損ID・実際の削除)の場合も`accounts`を変更せず409を返す(`stripe_subscription_id`を外すと本物の削除時に`customer.subscription.deleted`が突き合わせ先を失うため)。それ以外のStripe障害は500
+- サブスクリプションが無い/`active`・`trialing`・`past_due`のいずれでもない場合は409。`past_due`(更新の決済に失敗しdunningリトライ中)を対象にするのは、そこで解約できないとStripeのリトライが後から成功したとき解約意思に反して次期分が請求されてしまうため(自動更新を止める操作は課金を増やさない)。Stripe取得が404(モード/APIキーの取り違え・破損ID・実際の削除)の場合も`accounts`を変更せず409を返す(`stripe_subscription_id`を外すと本物の削除時に`customer.subscription.deleted`が突き合わせ先を失うため)。それ以外のStripe障害は500
 
 ### `POST /api/billing/btc/charge`
 
