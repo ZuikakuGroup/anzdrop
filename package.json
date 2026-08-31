@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@cloudflare/workers-types": "^5.20260826.1",
-    "@opennextjs/cloudflare": "^1.19.11",
+    "@opennextjs/cloudflare": "^1.20.4",
     "@stripe/react-stripe-js": "^6.8.2",
     "@stripe/stripe-js": "^9.14.0",
     "fflate": "^0.8.3",
