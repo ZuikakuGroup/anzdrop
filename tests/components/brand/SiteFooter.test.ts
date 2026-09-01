@@ -11,6 +11,11 @@ function hrefs(markup: string): string[] {
   return [...markup.matchAll(/href="([^"]*)"/g)].map((match) => match[1]);
 }
 
+// 正規表現メタ文字(バックスラッシュを含む)をすべてエスケープする。
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 describe("SiteFooter", () => {
   it("フッターの全リンクを既定の href でレンダリングする", () => {
     const markup = render();
@@ -29,7 +34,7 @@ describe("SiteFooter", () => {
     for (const [label, href] of Object.entries(expected)) {
       expect(markup).toContain(`>${label}</a>`);
       expect(markup).toMatch(
-        new RegExp(`href="${href.replace(/\//g, "\\/")}"[^>]*>${label}<\\/a>`)
+        new RegExp(`href="${escapeRegExp(href)}"[^>]*>${escapeRegExp(label)}</a>`)
       );
     }
 
