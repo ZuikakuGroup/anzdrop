@@ -99,10 +99,16 @@ const ALL_TABLES = [
 ];
 
 // テスト間の分離のため、テーブルの中身だけを空にする(スキーマは再利用)。
+//
+// `env.DB.prepare()` はプリペアドステートメントを同期的に返すため、Miniflareの
+// マジックプロキシ経由(Node側からのバインディングアクセス)では1回ごとに
+// workerdへの同期ブロッキング往復が発生する。テーブル数ぶんの同期往復を
+// 毎テストのbeforeEachで繰り返すと、CIの並列実行下でこのプロキシの
+// メッセージフレーミングが稀に競合し `message?.id === id` で失敗する。
+// `exec()` はPromiseを返す非同期プロキシ呼び出しで、改行区切りで複数文を
+// 1回にまとめて実行できるため、同期往復をなくしつつ呼び出しも1回で済む。
 export async function clearAllTables(env: TestEnv): Promise<void> {
-  for (const table of ALL_TABLES) {
-    await env.DB.prepare(`DELETE FROM ${table}`).run();
-  }
+  await env.DB.exec(ALL_TABLES.map((table) => `DELETE FROM ${table};`).join("\n"));
 }
 
 // テスト用アカウントをDBへ直接作成する(signup APIのTurnstile検証を経由しない)。

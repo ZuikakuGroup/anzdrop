@@ -27,6 +27,18 @@ function fillPattern(length: number, seed = 1): Uint8Array<ArrayBuffer> {
   return data;
 }
 
+// vitestの`toEqual`は多メガバイトのTypedArrayを要素ごとに突き合わせるため、
+// このファイルの8MiBチャンク比較では1回あたり十数秒かかり、testTimeoutに
+// 引っかかることがある。まずネイティブのmemcmp(Buffer#equals)で突き合わせ、
+// 実際に食い違ったときだけ`toEqual`に委ねて差分の詳細を出す。
+function expectBytesEqual(actual: Uint8Array, expected: Uint8Array): void {
+  if (Buffer.from(actual).equals(Buffer.from(expected))) {
+    return;
+  }
+
+  expect(actual).toEqual(expected);
+}
+
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
   const result = new Uint8Array(total);
@@ -76,7 +88,7 @@ describe("iterateFileChunks", () => {
     for await (const chunk of iterateFileChunks(file)) chunks.push(chunk);
 
     expect(chunks.length).toBe(1);
-    expect(chunks[0]).toEqual(content);
+    expectBytesEqual(chunks[0], content);
   });
 
   it("yields zero chunks for an empty file", async () => {
@@ -97,7 +109,7 @@ describe("iterateFileChunks", () => {
 
     expect(chunks.length).toBe(1);
     expect(chunks[0].byteLength).toBe(CHUNK_SIZE);
-    expect(chunks[0]).toEqual(content);
+    expectBytesEqual(chunks[0], content);
   });
 
   it("splits a file spanning multiple chunks at exactly CHUNK_SIZE boundaries", async () => {
@@ -111,7 +123,7 @@ describe("iterateFileChunks", () => {
     expect(chunks.length).toBe(2);
     expect(chunks[0].byteLength).toBe(CHUNK_SIZE);
     expect(chunks[1].byteLength).toBe(remainder);
-    expect(concatBytes(chunks)).toEqual(content);
+    expectBytesEqual(concatBytes(chunks), content);
   });
 });
 
@@ -181,7 +193,7 @@ describe("iterateEncryptedChunks", () => {
 
     expect(decryptedChunks[0].byteLength).toBe(CHUNK_SIZE);
     expect(decryptedChunks[1].byteLength).toBe(remainder);
-    expect(concatBytes(decryptedChunks)).toEqual(content);
+    expectBytesEqual(concatBytes(decryptedChunks), content);
   });
 
   it("rejects a packet decrypted with the wrong AAD (wrong index), proving the tag is bound to chunk position", async () => {
@@ -236,7 +248,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     for await (const chunk of iterateDecryptedChunks(stream, key)) out.push(chunk);
 
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintext);
+    expectBytesEqual(out[0], plaintext);
   });
 
   it("decrypts a single packet delivered strictly one byte at a time (worst-case fragmentation)", async () => {
@@ -250,7 +262,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     for await (const chunk of iterateDecryptedChunks(stream, key)) out.push(chunk);
 
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintext);
+    expectBytesEqual(out[0], plaintext);
   });
 
   it("decrypts a genuine new-format (salted, AAD-protected) single-chunk file -- the packet that decides the format is also the final packet", async () => {
@@ -271,7 +283,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     }
 
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintext);
+    expectBytesEqual(out[0], plaintext);
   });
 
   it("reassembles two packets (spanning a CHUNK_SIZE boundary) from an unaligned, irregularly-chunked network stream", async () => {
@@ -293,9 +305,9 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
 
     expect(out.length).toBe(2);
     expect(out[0].byteLength).toBe(CHUNK_SIZE);
-    expect(out[0]).toEqual(plaintextChunk1);
+    expectBytesEqual(out[0], plaintextChunk1);
     expect(out[1].byteLength).toBe(remainder);
-    expect(out[1]).toEqual(plaintextChunk2);
+    expectBytesEqual(out[1], plaintextChunk2);
   });
 
   it("yields nothing for an empty stream (zero-byte download)", async () => {
@@ -319,7 +331,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
       out.push(chunk);
     }
 
-    expect(concatBytes(out)).toEqual(plaintext);
+    expectBytesEqual(concatBytes(out), plaintext);
   });
 
   it("rejects when the stream ends with an entire trailing packet missing, if expectedTotalBytes is supplied (silent truncation attack/failure)", async () => {
@@ -351,7 +363,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     // The first (complete, authentic) packet is still delivered before the
     // truncation is detected -- only the missing second packet is caught.
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintextChunk1);
+    expectBytesEqual(out[0], plaintextChunk1);
   });
 
   it("without expectedTotalBytes, a whole trailing packet going missing is NOT detected (documents why callers must pass the expected size)", async () => {
@@ -370,7 +382,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     // follow. Callers that care about completeness MUST pass
     // expectedTotalBytes (see the previous test).
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintextChunk1);
+    expectBytesEqual(out[0], plaintextChunk1);
   });
 
   it("rejects (throws) when a packet's ciphertext is corrupted in transit, instead of yielding garbage", async () => {
@@ -414,7 +426,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     // The first (untampered) packet should still have been yielded correctly
     // before the failure on the second packet.
     expect(out.length).toBe(1);
-    expect(out[0]).toEqual(plaintextChunk1);
+    expectBytesEqual(out[0], plaintextChunk1);
   });
 
   it("full pipeline round-trip: iterateFileChunks -> iterateEncryptedChunks -> unaligned network stream -> iterateDecryptedChunks reproduces the original file byte-for-byte", async () => {
@@ -435,7 +447,7 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
       decrypted.push(chunk);
     }
 
-    expect(concatBytes(decrypted)).toEqual(content);
+    expectBytesEqual(concatBytes(decrypted), content);
   });
 
   it("still decrypts a pre-existing multi-chunk file uploaded before AAD protection was added (legacy format: no salt, no AAD)", async () => {
@@ -461,7 +473,8 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
       out.push(chunk);
     }
 
-    expect(concatBytes(out)).toEqual(
+    expectBytesEqual(
+      concatBytes(out),
       concatBytes([plaintextChunk1, plaintextChunk2])
     );
   });
