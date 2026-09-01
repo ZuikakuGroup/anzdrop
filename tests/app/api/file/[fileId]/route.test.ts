@@ -174,6 +174,10 @@ describe("GET /api/file/[fileId]", () => {
     expect(response.headers.get("Content-Disposition")).toBe(
       `attachment; filename="my file.enc"`
     );
+    // Content-Length は本体のバイト長と一致し、クライアント側の途中切断検知に使える。
+    expect(response.headers.get("Content-Length")).toBe(
+      String(content.byteLength)
+    );
     const body = new Uint8Array(await response.arrayBuffer());
     expect(body).toEqual(content);
   });

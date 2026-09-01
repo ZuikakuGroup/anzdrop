@@ -148,6 +148,10 @@ export const GET = withApiHandler(
       headers: {
         "Content-Type":
           object.httpMetadata?.contentType ?? "application/octet-stream",
+        // レスポンス本体はR2オブジェクトをそのまま素通しするため、object.sizeが
+        // そのままバイト長になる。クライアント/ブラウザ側が途中切断を検知でき、
+        // ダウンロードの進捗表示にも使える。
+        "Content-Length": String(object.size),
         "Content-Disposition": `attachment; filename="${file.encrypted_file_name}"`,
         "Cache-Control": "no-store",
       },

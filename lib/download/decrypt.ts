@@ -61,10 +61,15 @@ export async function unwrapKeyWithPassword(
   return importKey(rawKey);
 }
 
-export async function fetchAndDecrypt(
+// ファイル本体を取得し、受信しながらチャンクごとに復号した平文を順番に
+// 流すReadableStreamを返す。呼び出し側はこれをディスクへ直接書き出す
+// (showSaveFilePicker)ことで、ファイル全体をメモリに保持せずに保存できる。
+// 途中切断・改ざんは iterateDecryptedChunks 側で検知され、streamのエラーと
+// して伝播する。
+export async function fetchDecryptedStream(
   file: DecryptedFile,
   key: CryptoKey
-): Promise<Uint8Array> {
+): Promise<ReadableStream<Uint8Array>> {
   const response = await fetch(`/api/file/${file.id}`);
 
   if (response.status === 404) {
@@ -75,20 +80,48 @@ export async function fetchAndDecrypt(
     throw new FriendlyError("ダウンロードに失敗しました。");
   }
 
-  const chunks: Uint8Array[] = [];
+  const chunks = iterateDecryptedChunks(response.body, key, file.size);
 
-  for await (const decrypted of iterateDecryptedChunks(
-    response.body,
-    key,
-    file.size
-  )) {
-    chunks.push(decrypted);
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { value, done } = await chunks.next();
+
+        if (done) {
+          controller.close();
+        } else {
+          controller.enqueue(value);
+        }
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    async cancel() {
+      await chunks.return(undefined);
+    },
+  });
+}
+
+export async function fetchAndDecrypt(
+  file: DecryptedFile,
+  key: CryptoKey
+): Promise<Uint8Array> {
+  const stream = await fetchDecryptedStream(file, key);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalLength = 0;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    chunks.push(value);
+    totalLength += value.byteLength;
   }
 
-  const totalLength = chunks.reduce(
-    (sum, chunk) => sum + chunk.byteLength,
-    0
-  );
   const combined = new Uint8Array(totalLength);
   let offset = 0;
 
