@@ -27,6 +27,7 @@ import {
   type RawFile,
 } from "@/lib/download/decrypt";
 import { withDuplicateSuffix, zipFiles } from "@/lib/download/zipDownload";
+import { saveDecryptedFile, triggerBlobDownload } from "@/lib/download/saveFile";
 
 type DownloadPageProps = {
   shareId: string;
@@ -65,18 +66,6 @@ const GENERIC_LOAD_ERROR =
   "ファイルの取得に失敗しました。URLが正しいかご確認のうえ、もう一度お試しください。";
 const GENERIC_DOWNLOAD_ERROR =
   "ダウンロードに失敗しました。もう一度お試しください。";
-
-function triggerBlobDownload(bytes: Uint8Array, filename: string) {
-  const blob = new Blob([bytes as BlobPart]);
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
 
 export default function DownloadPage({
   shareId,
@@ -241,8 +230,7 @@ export default function DownloadPage({
     setError("");
 
     try {
-      const bytes = await fetchAndDecrypt(file, key);
-      triggerBlobDownload(bytes, file.name);
+      await saveDecryptedFile(file, key, file.name);
     } catch (err) {
       if (err instanceof FileGoneError) {
         setFiles((prev) => prev.filter((f) => f.id !== file.id));
@@ -349,7 +337,7 @@ export default function DownloadPage({
 
       const zipped = await zipFiles(zipInput);
 
-      triggerBlobDownload(zipped, "anzdrop.zip");
+      triggerBlobDownload([zipped], "anzdrop.zip");
     } catch (err) {
       setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
     } finally {

@@ -4,6 +4,7 @@ import {
   decryptFileList,
   unwrapKeyWithPassword,
   fetchAndDecrypt,
+  fetchDecryptedStream,
   type RawFile,
 } from "@/lib/download/decrypt";
 import { FileGoneError, FriendlyError, FILE_GONE_ERROR } from "@/lib/download/errors";
@@ -110,6 +111,125 @@ describe("unwrapKeyWithPassword", () => {
     await expect(
       unwrapKeyWithPassword(wrappedKey, keySalt, "wrong-password")
     ).rejects.toThrow();
+  });
+});
+
+async function packEncrypted(file: File, key: CryptoKey): Promise<Uint8Array> {
+  const packedChunks: Uint8Array[] = [];
+  for await (const chunk of iterateEncryptedChunks(file, key)) {
+    packedChunks.push(chunk);
+  }
+  return concatBytes(packedChunks);
+}
+
+function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
+async function drainStream(
+  stream: ReadableStream<Uint8Array>
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const parts: Uint8Array[] = [];
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  return concatBytes(parts);
+}
+
+describe("fetchDecryptedStream", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("streams the decrypted plaintext in order", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode(
+      "some streamed content that is decrypted progressively"
+    );
+    const packed = await packEncrypted(new File([content], "s.bin"), key);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(streamOf(packed), { status: 200 }))
+    );
+
+    const stream = await fetchDecryptedStream(
+      { id: "f1", name: "s.bin", size: content.byteLength, isOneTime: false },
+      key
+    );
+
+    expect(await drainStream(stream)).toEqual(content);
+  });
+
+  it("errors the stream when the final packet is corrupted (GCM auth fails)", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("abcdefghij".repeat(10));
+    const packed = await packEncrypted(new File([content], "t.bin"), key);
+
+    // 末尾4バイト(GCMタグの一部)を削ると認証タグが一致しなくなる。
+    const corrupted = packed.subarray(0, packed.byteLength - 4);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(streamOf(corrupted), { status: 200 }))
+    );
+
+    const stream = await fetchDecryptedStream(
+      { id: "f2", name: "t.bin", size: content.byteLength, isOneTime: false },
+      key
+    );
+
+    await expect(drainStream(stream)).rejects.toThrow();
+  });
+
+  it("errors the stream when fewer bytes arrive than the file's declared size (silent truncation)", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("complete payload, served in full");
+    const packed = await packEncrypted(new File([content], "u.bin"), key);
+
+    // 本体は完全だが、DBが伝える平文サイズ(file.size)より小さい。
+    // 末尾パケットが丸ごと欠落した無音の切り詰めと同じ状況で、
+    // fetchDecryptedStream が file.size を expectedTotalBytes として
+    // 渡していれば検出できる。
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(streamOf(packed), { status: 200 }))
+    );
+
+    const stream = await fetchDecryptedStream(
+      {
+        id: "f3",
+        name: "u.bin",
+        size: content.byteLength + 100,
+        isOneTime: false,
+      },
+      key
+    );
+
+    await expect(drainStream(stream)).rejects.toThrow(/途中で切断/);
+  });
+
+  it("throws a FileGoneError before returning a stream on 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 }))
+    );
+    const key = await generateKey();
+
+    await expect(
+      fetchDecryptedStream(
+        { id: "gone", name: "x", size: 0, isOneTime: false },
+        key
+      )
+    ).rejects.toThrow(FileGoneError);
   });
 });
 

@@ -56,7 +56,8 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
-- [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号(`fetchAndDecrypt`)。
+- [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。
+- [`lib/download/saveFile.ts`](../lib/download/saveFile.ts): 復号済みファイルの保存(`saveDecryptedFile`)。`showSaveFilePicker`が使える環境(Chromium系)では保存先を選ばせてディスクへ逐次書き込み、ファイル全体をメモリに載せない。それ以外の環境ではBlobフォールバック(`triggerBlobDownload`)。
 - [`lib/download/errors.ts`](../lib/download/errors.ts): ユーザーに表示してよい文言だけを持つ`FriendlyError`/`FileGoneError`と、それ以外の例外を汎用メッセージへ丸める`toFriendlyMessage`。
 - [`lib/download/zipDownload.ts`](../lib/download/zipDownload.ts): 複数ファイル一括ダウンロード時のZIP圧縮(fflateのラップ)と重複ファイル名の連番付与。
 - [`lib/admin/reportLabels.ts`](../lib/admin/reportLabels.ts): 通報カテゴリ・権利種別・共有状態・日時の表示用ラベル整形(純粋関数)。
@@ -76,7 +77,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 1. `GET /api/download/[shareId]` で共有の有効期限・ファイル一覧(暗号化済みファイル名・サイズ)・パスワード保護の有無(`wrappedKey`/`keySalt` の有無)を取得。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
-3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。
+3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文は、`showSaveFilePicker` が使える環境ではユーザーが選んだ保存先へ逐次書き込み、それ以外の環境では Blob に集めてから保存する(`lib/download/saveFile.ts`)。前者ではファイル全体をメモリに保持しないため、大容量ファイルでもメモリ不足になりにくい。
 4. 保存期間「1回」のファイルは、ダウンロード回数が上限に達した時点で `ctx.waitUntil()` により裏でR2オブジェクトとDBレコードを削除(レスポンスのストリーミングはブロックしない)。
 
 ## 掃除(Cleanup)

@@ -166,94 +166,101 @@ export async function* iterateDecryptedChunks(
     return { size: available, isLast: true };
   };
 
-  await fillTo(FILE_SALT_LENGTH);
+  // 正常終了・エラー・呼び出し側からの早期キャンセル(generator.return())の
+  // いずれの場合でも、元ストリーム(HTTPレスポンス本体など)のリーダーを解放し、
+  // 未読分の受信を打ち切る。
+  try {
+    await fillTo(FILE_SALT_LENGTH);
 
-  if (pendingLength === 0) {
-    // 空のダウンロード(0バイトのオブジェクト)。
-    return;
-  }
+    if (pendingLength === 0) {
+      // 空のダウンロード(0バイトのオブジェクト)。
+      return;
+    }
 
-  // ---- 1. 先頭パケットで新形式(salt + AAD)を試し、ダメなら旧形式に
-  //         フォールバックする ----
-  const candidateSalt =
-    pendingLength >= FILE_SALT_LENGTH ? peek(FILE_SALT_LENGTH) : null;
-  const newFormatBounds = candidateSalt
-    ? await nextPacketBounds(FILE_SALT_LENGTH)
-    : null;
+    // ---- 1. 先頭パケットで新形式(salt + AAD)を試し、ダメなら旧形式に
+    //         フォールバックする ----
+    const candidateSalt =
+      pendingLength >= FILE_SALT_LENGTH ? peek(FILE_SALT_LENGTH) : null;
+    const newFormatBounds = candidateSalt
+      ? await nextPacketBounds(FILE_SALT_LENGTH)
+      : null;
 
-  let fileSalt: Uint8Array | null = null;
-  let index = 0;
+    let fileSalt: Uint8Array | null = null;
+    let index = 0;
 
-  if (candidateSalt && newFormatBounds) {
-    const candidatePacket = peek(
-      FILE_SALT_LENGTH + newFormatBounds.size
-    ).subarray(FILE_SALT_LENGTH);
+    if (candidateSalt && newFormatBounds) {
+      const candidatePacket = peek(
+        FILE_SALT_LENGTH + newFormatBounds.size
+      ).subarray(FILE_SALT_LENGTH);
 
-    try {
-      const { iv, ciphertext } = unpackChunk(candidatePacket);
-      const aad = buildChunkAad({
-        fileSalt: candidateSalt,
-        index: 0,
-        isLast: newFormatBounds.isLast,
-      });
-      const decrypted = new Uint8Array(
-        await decryptChunk(ciphertext, iv, key, aad)
-      );
+      try {
+        const { iv, ciphertext } = unpackChunk(candidatePacket);
+        const aad = buildChunkAad({
+          fileSalt: candidateSalt,
+          index: 0,
+          isLast: newFormatBounds.isLast,
+        });
+        const decrypted = new Uint8Array(
+          await decryptChunk(ciphertext, iv, key, aad)
+        );
 
-      fileSalt = candidateSalt;
-      drop(FILE_SALT_LENGTH + newFormatBounds.size);
+        fileSalt = candidateSalt;
+        drop(FILE_SALT_LENGTH + newFormatBounds.size);
+        decryptedTotal += decrypted.byteLength;
+        yield decrypted;
+        index = 1;
+      } catch {
+        // 新形式としては検証できなかった。pendingは未消費のまま、下の
+        // メインループで旧形式(先頭からAADなし)として読み直す。
+      }
+    }
+
+    // ---- 2. 残りのパケット(新形式なら2チャンク目以降、旧形式ならすべて)
+    //         を、確定したフォーマットで順番に処理する ----
+    while (true) {
+      const bounds = await nextPacketBounds(0);
+
+      if (!bounds) {
+        break;
+      }
+
+      const packet = peek(bounds.size);
+
+      let decrypted: Uint8Array;
+
+      try {
+        const { iv, ciphertext } = unpackChunk(packet);
+        const aad =
+          fileSalt !== null
+            ? buildChunkAad({ fileSalt, index, isLast: bounds.isLast })
+            : undefined;
+
+        decrypted = new Uint8Array(
+          await decryptChunk(ciphertext, iv, key, aad)
+        );
+      } catch {
+        throw corruptedDataError();
+      }
+
+      drop(bounds.size);
       decryptedTotal += decrypted.byteLength;
       yield decrypted;
-      index = 1;
-    } catch {
-      // 新形式としては検証できなかった。pendingは未消費のまま、下の
-      // メインループで旧形式(先頭からAADなし)として読み直す。
-    }
-  }
+      index++;
 
-  // ---- 2. 残りのパケット(新形式なら2チャンク目以降、旧形式ならすべて)
-  //         を、確定したフォーマットで順番に処理する ----
-  while (true) {
-    const bounds = await nextPacketBounds(0);
-
-    if (!bounds) {
-      break;
+      if (bounds.isLast) {
+        break;
+      }
     }
 
-    const packet = peek(bounds.size);
-
-    let decrypted: Uint8Array;
-
-    try {
-      const { iv, ciphertext } = unpackChunk(packet);
-      const aad =
-        fileSalt !== null
-          ? buildChunkAad({ fileSalt, index, isLast: bounds.isLast })
-          : undefined;
-
-      decrypted = new Uint8Array(
-        await decryptChunk(ciphertext, iv, key, aad)
+    if (
+      expectedTotalBytes !== undefined &&
+      decryptedTotal !== expectedTotalBytes
+    ) {
+      throw new Error(
+        `ダウンロードが途中で切断されました(受信 ${decryptedTotal} / 期待 ${expectedTotalBytes} バイト)。`
       );
-    } catch {
-      throw corruptedDataError();
     }
-
-    drop(bounds.size);
-    decryptedTotal += decrypted.byteLength;
-    yield decrypted;
-    index++;
-
-    if (bounds.isLast) {
-      break;
-    }
-  }
-
-  if (
-    expectedTotalBytes !== undefined &&
-    decryptedTotal !== expectedTotalBytes
-  ) {
-    throw new Error(
-      `ダウンロードが途中で切断されました(受信 ${decryptedTotal} / 期待 ${expectedTotalBytes} バイト)。`
-    );
+  } finally {
+    await reader.cancel().catch(() => {});
   }
 }
