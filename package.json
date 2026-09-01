@@ -15,13 +15,13 @@
   },
   "dependencies": {
     "@cloudflare/workers-types": "^5.20260827.1",
-    "@opennextjs/cloudflare": "^1.19.11",
+    "@opennextjs/cloudflare": "^1.20.4",
     "@stripe/react-stripe-js": "^6.8.2",
     "@stripe/stripe-js": "^9.14.0",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
     "nanoid": "^6.0.1",
-    "next": "16.2.9",
+    "next": "16.3.3",
     "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -43,6 +43,6 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11",
-    "wrangler": "^4.86.0"
+    "wrangler": "^4.127.0"
   }
 }
