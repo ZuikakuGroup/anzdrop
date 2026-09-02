@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -46,6 +47,10 @@ beforeEach(async () => {
   await clearAllTables(env);
   waitUntilPromises = [];
   routeEnvOverride = null;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function flushWaitUntil(): Promise<void> {
@@ -106,6 +111,36 @@ function envWithGatedObjectBody(
     env: { ...(env as object), FILES_BUCKET: bucket } as TestEnv,
     openGate: releaseGate,
     cancelled: () => cancelled,
+  };
+}
+
+// 指定した storageKey に対する FILES_BUCKET.get だけを1回 reject させる env。
+// R2 の一時障害を決定的に再現する。
+function envWithRejectingGet(
+  storageKey: string,
+  error: Error
+): { env: TestEnv; getCallCount: () => number } {
+  let calls = 0;
+  const realGet = env.FILES_BUCKET.get.bind(env.FILES_BUCKET);
+  const bucket = new Proxy(env.FILES_BUCKET, {
+    get(target, prop, receiver) {
+      if (prop === "get") {
+        return async (key: string) => {
+          if (key !== storageKey) {
+            return realGet(key);
+          }
+          calls += 1;
+          throw error;
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
+  return {
+    env: { ...(env as object), FILES_BUCKET: bucket } as TestEnv,
+    getCallCount: () => calls,
   };
 }
 
@@ -377,6 +412,41 @@ describe("GET /api/file/[fileId]", () => {
 
     // 加算は戻っており、再取得できる状態(まだ 404 だが download_count は 0)。
     expect(await downloadCountOf(fileId)).toBe(0);
+  });
+
+  it("FILES_BUCKET.get 自体が reject したときも、回数を数えるファイルは加算を戻す", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("one time secret");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    // R2 の一時障害を模して get を reject させる。
+    const rejecting = envWithRejectingGet(
+      storageKey,
+      new Error("R2 unavailable")
+    );
+    routeEnvOverride = rejecting.env;
+
+    // withApiHandler の共通エラー処理により 500。
+    const response = await getFile(fileId);
+    expect(response.status).toBe(500);
+
+    await flushWaitUntil();
+    routeEnvOverride = null;
+
+    // 加算は戻っており、障害復旧後に再取得できる。
+    expect(rejecting.getCallCount()).toBe(1);
+    expect(await downloadCountOf(fileId)).toBe(0);
+
+    const retry = await getFile(fileId);
+    expect(retry.status).toBe(200);
+    expect(await readBody(retry)).toEqual(content);
+    await flushWaitUntil();
+    expect(await downloadCountOf(fileId)).toBeNull();
   });
 
   it("全バイト届いた直後に接続が切れた場合は、pipeTo が reject でも完走扱いで削除する", async () => {

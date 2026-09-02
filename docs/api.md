@@ -64,6 +64,7 @@
 - 回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、転送が最後まで完了したときだけ後処理を行う(GitHub issue #62)。
   - 完走かつ最後の1回だった場合: レスポンスをブロックせず `ctx.waitUntil()` で裏からR2オブジェクトとDBレコードを削除。
   - 通信断などで中断された場合: 加算しておいた `download_count` を1つ戻し、再取得できるようにする(削除は完走時のみ)。
+  - R2 からオブジェクトを取得できなかった場合(`get` が `null` を返す/一時障害で reject する)も、加算を戻してから 404(reject 時は 500)を返す。R2 側の一時的な不整合で取得し直せる。
 - レスポンスの `Content-Type` は常に `application/octet-stream` 固定(`X-Content-Type-Options: nosniff` と合わせて sniffing を防ぐ)。
 - レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。
 

@@ -140,12 +140,23 @@ export const GET = withApiHandler(
 
     const isCountedDownload = downloadCount.max_downloads !== null;
 
-    const object = await env.FILES_BUCKET.get(file.storage_key);
+    // 回数は既に原子的に加算済み。ここから先で本文を返せずに終わる経路
+    // (R2 が null を返す/get 自体が reject する)では、回数を数えるファイルは
+    // 加算を戻して再取得できるようにする(GitHub issue #62)。
+    let object: R2ObjectBody | null;
+
+    try {
+      object = await env.FILES_BUCKET.get(file.storage_key);
+    } catch (error) {
+      if (isCountedDownload) {
+        ctx.waitUntil(restoreDownloadCount(env, fileId));
+      }
+
+      // withApiHandler 側の共通エラー処理(500)に委ねる。
+      throw error;
+    }
 
     if (!object) {
-      // 回数は既に原子的に加算済み。R2 側の一時的な不整合で本文を返せなかった
-      // だけかもしれないので、回数を数えるファイルは加算を戻して再取得できる
-      // ようにする(GitHub issue #62)。
       if (isCountedDownload) {
         ctx.waitUntil(restoreDownloadCount(env, fileId));
       }
