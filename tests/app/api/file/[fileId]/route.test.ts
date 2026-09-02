@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -18,9 +19,12 @@ let dispose: () => Promise<void>;
 // 確定的に待ち合わせられるようにする。
 let waitUntilPromises: Promise<unknown>[];
 
+// 特定のテストだけルートに渡す env を差し替えたいとき(R2 body の制御など)に使う。
+let routeEnvOverride: TestEnv | null = null;
+
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({
-    env,
+    env: routeEnvOverride ?? env,
     ctx: {
       waitUntil: (promise: Promise<unknown>) => {
         waitUntilPromises.push(promise);
@@ -42,10 +46,112 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
   waitUntilPromises = [];
+  routeEnvOverride = null;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 async function flushWaitUntil(): Promise<void> {
   await Promise.all(waitUntilPromises);
+}
+
+// レスポンス本体を最後まで読み切る(= クライアントが正常に受信しきった状態)。
+async function readBody(response: Response): Promise<Uint8Array> {
+  if (!response.body) {
+    return new Uint8Array();
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+// FILES_BUCKET.get が返すオブジェクトの body を、テスト側で制御できる
+// 「1チャンク出したあと gate が解けるまで待つ」ストリームに差し替えた env。
+// 大容量ファイルのダウンロードが途中で中断されるケースを決定的に再現する。
+function envWithGatedObjectBody(
+  storageKey: string,
+  firstChunk: Uint8Array,
+  totalSize: number
+): { env: TestEnv; openGate: () => void; cancelled: () => boolean } {
+  let cancelled = false;
+  let releaseGate: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(firstChunk);
+      await gate;
+      controller.close();
+    },
+    cancel() {
+      cancelled = true;
+      releaseGate();
+    },
+  });
+
+  const realGet = env.FILES_BUCKET.get.bind(env.FILES_BUCKET);
+  const bucket = new Proxy(env.FILES_BUCKET, {
+    get(target, prop, receiver) {
+      if (prop === "get") {
+        return async (key: string) => {
+          if (key !== storageKey) {
+            return realGet(key);
+          }
+          return { body, size: totalSize };
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
+  return {
+    env: { ...(env as object), FILES_BUCKET: bucket } as TestEnv,
+    openGate: releaseGate,
+    cancelled: () => cancelled,
+  };
+}
+
+// 指定した storageKey に対する FILES_BUCKET.get を reject させる env
+// (他のキーは素通し)。R2 の一時障害を決定的に再現する。呼び出し回数は
+// getCallCount() で確認できる。
+function envWithRejectingGet(
+  storageKey: string,
+  error: Error
+): { env: TestEnv; getCallCount: () => number } {
+  let calls = 0;
+  const realGet = env.FILES_BUCKET.get.bind(env.FILES_BUCKET);
+  const bucket = new Proxy(env.FILES_BUCKET, {
+    get(target, prop, receiver) {
+      if (prop === "get") {
+        return async (key: string) => {
+          if (key !== storageKey) {
+            return realGet(key);
+          }
+          calls += 1;
+          throw error;
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
+  return {
+    env: { ...(env as object), FILES_BUCKET: bucket } as TestEnv,
+    getCallCount: () => calls,
+  };
+}
+
+async function downloadCountOf(fileId: string): Promise<number | null> {
+  const row = await env.DB.prepare(
+    `SELECT download_count FROM files WHERE id = ?`
+  )
+    .bind(fileId)
+    .first<{ download_count: number }>();
+  return row ? row.download_count : null;
 }
 
 type ShareOverrides = {
@@ -117,23 +223,8 @@ async function insertFile(overrides: FileOverrides = {}): Promise<{
 async function getFile(fileId: string) {
   const { GET } = await import("@/app/api/file/[fileId]/route");
 
-  const response = await GET(new Request(`http://localhost/api/file/${fileId}`), {
+  return GET(new Request(`http://localhost/api/file/${fileId}`), {
     params: Promise.resolve({ fileId }),
-  });
-
-  // 本番の Workers ランタイムは返却された Response の本体をクライアントへ
-  // 必ず読み出す。「1回」ファイルの削除は本体の配信完了後にスケジュールされる
-  // ため(GitHub issue #77)、テストでもここで本体を読み切ってから、同じバイト列で
-  // Response を組み直して返す(呼び出し側は従来どおり arrayBuffer()/json() できる)。
-  if (!response.body) {
-    return response;
-  }
-
-  const buffer = await response.arrayBuffer();
-
-  return new Response(buffer, {
-    status: response.status,
-    headers: response.headers,
   });
 }
 
@@ -240,9 +331,10 @@ describe("GET /api/file/[fileId]", () => {
     );
   });
 
-  it("allows exactly max_downloads successful downloads, then deletes the file on the final one and rejects further attempts", async () => {
-    // ルートは「上限に達した最後の1回」でファイルを削除するため、maxDownloadsの
-    // 値に関わらず(1回限りでなくても)最終回のダウンロード後にR2/D1から消える。
+  it("allows exactly max_downloads fully-received downloads, then deletes the file on the final one and rejects further attempts", async () => {
+    // ルートは「上限に達した最後の1回」を"最後まで受信"した時点でファイルを
+    // 削除するため、maxDownloadsの値に関わらず(1回限りでなくても)最終回の
+    // ダウンロード完走後にR2/D1から消える。
     const shareId = await insertShare();
     const content = new TextEncoder().encode("limited content");
     const { id: fileId, storageKey } = await insertFile({
@@ -254,44 +346,32 @@ describe("GET /api/file/[fileId]", () => {
 
     const first = await getFile(fileId);
     expect(first.status).toBe(200);
+    expect(await readBody(first)).toEqual(content);
     await flushWaitUntil();
-    const afterFirst = await env.DB.prepare(
-      `SELECT download_count FROM files WHERE id = ?`
-    )
-      .bind(fileId)
-      .first<{ download_count: number }>();
-    expect(afterFirst?.download_count).toBe(1);
+    expect(await downloadCountOf(fileId)).toBe(1);
     expect(await env.FILES_BUCKET.get(storageKey)).not.toBeNull();
 
     const second = await getFile(fileId);
     expect(second.status).toBe(200);
+    expect(await readBody(second)).toEqual(content);
     await flushWaitUntil();
-    const afterSecond = await env.DB.prepare(
-      `SELECT download_count FROM files WHERE id = ?`
-    )
-      .bind(fileId)
-      .first<{ download_count: number }>();
-    expect(afterSecond?.download_count).toBe(2);
+    expect(await downloadCountOf(fileId)).toBe(2);
     expect(await env.FILES_BUCKET.get(storageKey)).not.toBeNull();
 
     const third = await getFile(fileId);
     expect(third.status).toBe(200);
+    expect(await readBody(third)).toEqual(content);
     await flushWaitUntil();
 
-    // 3回目(上限)を消費したので、DB行・R2オブジェクトとも削除されている。
-    const afterThird = await env.DB.prepare(
-      `SELECT id FROM files WHERE id = ?`
-    )
-      .bind(fileId)
-      .first();
-    expect(afterThird).toBeNull();
+    // 3回目(上限)を完走したので、DB行・R2オブジェクトとも削除されている。
+    expect(await downloadCountOf(fileId)).toBeNull();
     expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
 
     const fourth = await getFile(fileId);
     expect(fourth.status).toBe(404);
   });
 
-  it("deletes a one-time file (max_downloads=1) from R2 and D1 after it is served once", async () => {
+  it("deletes a one-time file (max_downloads=1) from R2 and D1 after it is fully received once", async () => {
     const shareId = await insertShare();
     const content = new TextEncoder().encode("one time secret");
     const { id: fileId, storageKey } = await insertFile({
@@ -303,30 +383,84 @@ describe("GET /api/file/[fileId]", () => {
 
     const response = await getFile(fileId);
     expect(response.status).toBe(200);
-    const body = new Uint8Array(await response.arrayBuffer());
-    expect(body).toEqual(content);
+    expect(await readBody(response)).toEqual(content);
 
     await flushWaitUntil();
 
-    const object = await env.FILES_BUCKET.get(storageKey);
-    expect(object).toBeNull();
-
-    const row = await env.DB.prepare(`SELECT id FROM files WHERE id = ?`)
-      .bind(fileId)
-      .first();
-    expect(row).toBeNull();
+    expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
+    expect(await downloadCountOf(fileId)).toBeNull();
 
     const again = await getFile(fileId);
     expect(again.status).toBe(404);
   });
 
-  it("still deletes a one-time file when the client aborts the download mid-stream (no leak/hang)", async () => {
-    // getFile ヘルパーは本体を読み切ってしまうため、ここは GET を直接呼び、
-    // 本体を途中で cancel する。issue #77 の修正で削除は本体配信の「決着」後
-    // (完走 or 切断)に走るため、切断でも確実に削除される(= pipeTo の reject
-    // 経路でも waitUntil がリーク/ハングしない)ことを確認する。
+  it("does not delete a one-time file if the download is interrupted, and lets it be re-fetched", async () => {
     const shareId = await insertShare();
-    const content = new Uint8Array(64 * 1024).fill(7);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: 5_000_000,
+    });
+    // R2 に実体は不要(body は gated stream で差し替えるため)だが、
+    // ルートの object 取得が null にならないよう一応入れておく。
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([0]));
+
+    const gated = envWithGatedObjectBody(
+      storageKey,
+      new Uint8Array(64).fill(7),
+      5_000_000
+    );
+    routeEnvOverride = gated.env;
+
+    const response = await getFile(fileId);
+    expect(response.status).toBe(200);
+    // 原子的加算は先に行われている。
+    expect(await downloadCountOf(fileId)).toBe(1);
+
+    // 先頭だけ受け取って、残りを受け取らずに切断する。
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+
+    await flushWaitUntil();
+    routeEnvOverride = null;
+
+    // ファイルは消えておらず、消費した回数も戻っている。
+    expect(gated.cancelled()).toBe(true);
+    expect(await downloadCountOf(fileId)).toBe(0);
+    expect(await env.FILES_BUCKET.get(storageKey)).not.toBeNull();
+
+    // もう一度取得でき、今度は完走できる。
+    const retry = await getFile(fileId);
+    expect(retry.status).toBe(200);
+    expect((await readBody(retry)).byteLength).toBe(1);
+    await flushWaitUntil();
+
+    // 完走したので今度こそ削除される。
+    expect(await downloadCountOf(fileId)).toBeNull();
+    expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
+  });
+
+  it("R2 オブジェクトが取得できず 404 のとき、回数を数えるファイルは加算を戻す", async () => {
+    const shareId = await insertShare();
+    const { id: fileId } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      // R2 に put しない → FILES_BUCKET.get が null を返す。
+    });
+
+    const response = await getFile(fileId);
+    expect(response.status).toBe(404);
+
+    await flushWaitUntil();
+
+    // 加算は戻っており、再取得できる状態(まだ 404 だが download_count は 0)。
+    expect(await downloadCountOf(fileId)).toBe(0);
+  });
+
+  it("FILES_BUCKET.get 自体が reject したときも、回数を数えるファイルは加算を戻す", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("one time secret");
     const { id: fileId, storageKey } = await insertFile({
       shareId,
       maxDownloads: 1,
@@ -334,23 +468,92 @@ describe("GET /api/file/[fileId]", () => {
     });
     await env.FILES_BUCKET.put(storageKey, content);
 
-    const { GET } = await import("@/app/api/file/[fileId]/route");
-    const response = await GET(
-      new Request(`http://localhost/api/file/${fileId}`),
-      { params: Promise.resolve({ fileId }) }
+    // R2 の一時障害を模して get を reject させる。
+    const rejecting = envWithRejectingGet(
+      storageKey,
+      new Error("R2 unavailable")
     );
-    expect(response.status).toBe(200);
+    routeEnvOverride = rejecting.env;
 
-    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
-    await reader.read();
+    // withApiHandler の共通エラー処理により 500。
+    const response = await getFile(fileId);
+    expect(response.status).toBe(500);
+
+    await flushWaitUntil();
+    routeEnvOverride = null;
+
+    // 加算は戻っており、障害復旧後に再取得できる。
+    expect(rejecting.getCallCount()).toBe(1);
+    expect(await downloadCountOf(fileId)).toBe(0);
+
+    const retry = await getFile(fileId);
+    expect(retry.status).toBe(200);
+    expect(await readBody(retry)).toEqual(content);
+    await flushWaitUntil();
+    expect(await downloadCountOf(fileId)).toBeNull();
+  });
+
+  it("全バイト届いた直後に接続が切れた場合は、pipeTo が reject でも完走扱いで削除する", async () => {
+    const shareId = await insertShare();
+    const fullContent = new Uint8Array(128).fill(9);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: fullContent.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([0]));
+
+    // 全バイトを1チャンクで出したあと、close する前に gate で待たせる。
+    const gated = envWithGatedObjectBody(
+      storageKey,
+      fullContent,
+      fullContent.byteLength
+    );
+    routeEnvOverride = gated.env;
+
+    const response = await getFile(fileId);
+    const reader = response.body!.getReader();
+    // 全バイトを受け取る。
+    const received = await reader.read();
+    expect(received.value?.byteLength).toBe(fullContent.byteLength);
+    // まだ close していない状態で接続を切る(pipeTo は reject する)。
     await reader.cancel();
 
     await flushWaitUntil();
+    routeEnvOverride = null;
 
+    // 全バイト届いていたので、回数は戻さず削除される。
+    expect(await downloadCountOf(fileId)).toBeNull();
     expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
-    const row = await env.DB.prepare(`SELECT id FROM files WHERE id = ?`)
-      .bind(fileId)
-      .first();
-    expect(row).toBeNull();
+  });
+
+  it("rejects a concurrent second download of a one-time file while the first is still streaming", async () => {
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: 1_000_000,
+    });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([0]));
+
+    const gated = envWithGatedObjectBody(
+      storageKey,
+      new Uint8Array(16).fill(3),
+      1_000_000
+    );
+    routeEnvOverride = gated.env;
+
+    const first = await getFile(fileId);
+    expect(first.status).toBe(200);
+
+    // 1回目がまだ流れている間に来た2回目は 404(原子的加算で弾かれる)。
+    const second = await getFile(fileId);
+    expect(second.status).toBe(404);
+
+    // 後片付け: 1回目を完走させる。
+    gated.openGate();
+    await readBody(first);
+    await flushWaitUntil();
+    routeEnvOverride = null;
   });
 });

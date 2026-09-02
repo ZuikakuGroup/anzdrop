@@ -25,8 +25,9 @@ import {
   type DecryptedFile,
   type RawFile,
 } from "@/lib/download/decrypt";
-import { saveDecryptedFile } from "@/lib/download/saveFile";
+import { getShowSaveFilePicker, saveDecryptedFile } from "@/lib/download/saveFile";
 import { downloadAllFiles } from "@/lib/download/downloadAll";
+import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSaver";
 
 type DownloadPageProps = {
   shareId: string;
@@ -97,6 +98,17 @@ export default function DownloadPage({
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isUnlocking, setIsUnlocking] = useState(false);
+
+  // showSaveFilePicker が使えないブラウザ(Firefox/Safari)向けに、
+  // 大容量ファイルをメモリに載せずに保存するための Service Worker を登録する
+  // (GitHub issue #61)。失敗しても Blob フォールバックがあるので無視でよい。
+  // showSaveFilePicker が使える環境(Chromium 系)は SW 経路を使わないため
+  // 登録しない(全 fetch に介入する SW の常駐を最小限にする)。
+  useEffect(() => {
+    if (!getShowSaveFilePicker()) {
+      registerDownloadServiceWorker();
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {

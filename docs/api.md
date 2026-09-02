@@ -65,8 +65,12 @@
 
 - 共有が期限切れの場合410、一時停止中の場合403。ファイル/共有が存在しない場合404。
 - ダウンロード回数の上限チェックと加算を1つの `UPDATE ... RETURNING` で原子的に行い、条件を満たさない(既に上限到達)場合は404扱い。
-- このリクエストが許可された最後の1回だった場合、レスポンス本体をそのまま返さず恒等 `TransformStream` を挟み、本体の配信が終わって(完走 or 切断)から `ctx.waitUntil()` でR2オブジェクトとDBレコードを削除する。配信中に `FILES_BUCKET.delete()` が走ってこのダウンロード自体が途中で切れるのを防ぐため(GitHub issue #77)。中断時に削除する挙動自体は従来どおり(「1回」ファイルの中断時の扱いは GitHub issue #62)。
-- レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。
+- 回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、転送が最後まで完了したときだけ後処理を行う(GitHub issue #62)。
+  - 完走かつ最後の1回だった場合: レスポンスをブロックせず `ctx.waitUntil()` で裏からR2オブジェクトとDBレコードを削除。
+  - 通信断などで中断された場合: 加算しておいた `download_count` を1つ戻し、再取得できるようにする(削除は完走時のみ)。
+  - R2 からオブジェクトを取得できなかった場合(`get` が `null` を返す/一時障害で reject する)も、加算を戻してから 404(reject 時は 500)を返す。R2 側の一時的な不整合で取得し直せる。
+- レスポンスの `Content-Type` は常に `application/octet-stream` 固定(`X-Content-Type-Options: nosniff` と合わせて sniffing を防ぐ)。
+- レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。ヘッダ生成直前に `safeAttachmentFilename` で安全な文字集合へ丸める(制御文字・改行・`"` の混入対策。GitHub issue #75)。
 
 ## 通報
 
