@@ -48,6 +48,12 @@ async function collect(
   return out;
 }
 
+// リトライのバックオフ待ちを実時間なしで回すためのテスト用オプション。
+const noBackoff = {
+  backoffMs: () => 0,
+  sleep: async () => {},
+};
+
 describe("UPLOAD_PART_SIZE", () => {
   it("meets R2's 5MiB minimum size for non-final multipart parts", () => {
     // repartition は最終パート以外を必ず UPLOAD_PART_SIZE ちょうどにする。
@@ -203,7 +209,7 @@ describe("uploadChunksFromStream", () => {
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
-  it("throws with the path and part number when a part upload fails", async () => {
+  it("throws with the path and part number when a part upload keeps failing", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 500 }))
@@ -216,9 +222,97 @@ describe("uploadChunksFromStream", () => {
         "token-1",
         "broken.bin",
         8,
-        () => {}
+        () => {},
+        noBackoff
       )
     ).rejects.toThrow("broken.bin のパート 1 アップロードに失敗しました");
+  });
+
+  it("retries a part on a transient 503 and succeeds without failing the upload", async () => {
+    let attemptsForPart1 = 0;
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+      const partNumber = Number(
+        (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+      );
+      if (partNumber === 1) {
+        attemptsForPart1++;
+        if (attemptsForPart1 < 3) {
+          return new Response(null, { status: 503 });
+        }
+      }
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const onBytesUploaded = vi.fn();
+
+    await uploadChunksFromStream(
+      fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+      "session-1",
+      "token-1",
+      "flaky.bin",
+      8,
+      onBytesUploaded,
+      noBackoff
+    );
+
+    expect(attemptsForPart1).toBe(3);
+    // 2パート分のバイト数がちょうど1回ずつ数えられている(リトライで
+    // 二重カウントしない)。
+    expect(
+      onBytesUploaded.mock.calls.reduce((sum, call) => sum + call[0], 0)
+    ).toBe(UPLOAD_PART_SIZE + 50);
+  });
+
+  it("retries a part when fetch itself throws (network drop), then recovers", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw new TypeError("Failed to fetch");
+        }
+        return new Response(null, { status: 200 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "session-1",
+        "token-1",
+        "recovers.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+  });
+
+  it("does not retry a non-retryable 4xx (e.g. bad token) and fails fast", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        return new Response(null, { status: 403 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "session-1",
+        "token-1",
+        "forbidden.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).rejects.toThrow("forbidden.bin のパート 1 アップロードに失敗しました");
+    expect(attempts).toBe(1);
   });
 
   it("propagates an error thrown while generating the next chunk", async () => {

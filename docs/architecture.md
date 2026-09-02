@@ -53,7 +53,8 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 `components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。
 
-- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。
+- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・5xx・429 など)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+- [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。失敗時は呼び出し側がそのまま再試行でき、再試行のたびに必ずファイル先頭からの新しいストリームで送り直す(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
 - [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。
@@ -65,11 +66,13 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## アップロードの流れ
 
-1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。
+1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大64MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `64MiB × ファイル数` にならない(GitHub issue #60)。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。新規共有作成時のみTurnstile検証が必須。
 3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
+
+アップロードが途中で失敗しても「アップロードする」を押し直すだけで再試行できる。まだ `complete` まで到達していないファイルだけを対象に、暗号化パイプラインを作り直して `start` からやり直す(部分的に消費されたストリームを持ち越さないため、リトライでファイルがサイレント破損することはない。GitHub issue #58)。既に完了したファイルや、作成済み共有のパスワード保護の有無は再試行をまたいで保持される。1 回目で失敗した `start` 済みのセッションは掃除(Cleanup)で回収される。
 
 複数ファイルを1つの共有にまとめる場合、2回目以降のファイルは同じ `shareId` へ「相乗り」します。`shareId`自体はURLに露出する公開識別子のため所有権の証明には使えず、代わりにサーバー生成の `uploadToken`(クライアントのメモリ上にのみ存在)の一致で認可します([`lib/share-auth.ts`](../lib/share-auth.ts))。
 
