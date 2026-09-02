@@ -5,8 +5,10 @@ import { isValidAccountId } from "@/lib/account/id";
 const ACCOUNT_ID_ERROR =
   "Account ID must be 3-32 characters and contain only letters, numbers, hyphens, and underscores";
 
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 200;
+// 共有パスワード側(lib/passwordPolicy.ts)がこの下限・上限に揃えている。
+// ずれていないことは tests/lib/passwordPolicy.test.ts で突き合わせる。
+export const MIN_PASSWORD_LENGTH = 8;
+export const MAX_PASSWORD_LENGTH = 200;
 const PASSWORD_LENGTH_ERROR = `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters`;
 
 export const SignupRequestSchema = z.object({

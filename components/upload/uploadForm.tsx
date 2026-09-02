@@ -39,8 +39,15 @@ import {
   collectDataTransferFiles,
 } from "@/lib/upload/dragDropFiles";
 import { encryptFileName, wrapKeyWithPassword } from "@/lib/upload/encrypt";
+import {
+  checkSharePasswordBeforeUpload,
+  MIN_SHARE_PASSWORD_LENGTH,
+} from "@/lib/passwordPolicy";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
+
+// パスワード欄の注記(長さ要件)を aria-describedby で入力欄に紐付けるためのid。
+const SHARE_PASSWORD_HINT_ID = "share-password-hint";
 
 // "15d"はStandard/Premium限定、"30d"はPremium限定。実際に選択肢として出すか
 // どうかはisRetentionAllowedForPlanで絞る。
@@ -240,8 +247,16 @@ export default function UploadForm() {
       return;
     }
 
-    if (usePassword && !password.trim()) {
-      setError("パスワードを入力してください。");
+    // 検証の条件と理由は lib/passwordPolicy.ts の
+    // checkSharePasswordBeforeUpload を参照(共有作成後の再試行では検証しない)。
+    const passwordCheck = checkSharePasswordBeforeUpload({
+      isNewShare: !shareIdRef.current,
+      usePassword,
+      password,
+    });
+
+    if (!passwordCheck.ok) {
+      setError(passwordCheck.error);
       return;
     }
 
@@ -615,8 +630,24 @@ export default function UploadForm() {
                             onChange={setPassword}
                             placeholder="パスワード"
                             autoComplete="new-password"
-                            className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
+                            disabled={hasCreatedShare}
+                            describedBy={
+                              hasCreatedShare
+                                ? undefined
+                                : SHARE_PASSWORD_HINT_ID
+                            }
+                            className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand disabled:opacity-50 sm:text-sm"
                           />
+                          {/* 共有作成後はパスワードを変更できないので、長さ要件の
+                              案内は出さない(上の「変更できません」だけ残す)。 */}
+                          {!hasCreatedShare && (
+                            <p
+                              id={SHARE_PASSWORD_HINT_ID}
+                              className="mt-1 text-xs text-ink/40"
+                            >
+                              {`${MIN_SHARE_PASSWORD_LENGTH}文字以上。推測されにくいパスワードにしてください。`}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

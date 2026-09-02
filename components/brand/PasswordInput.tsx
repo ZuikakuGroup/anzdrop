@@ -11,6 +11,8 @@ type PasswordInputProps = {
   onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
   placeholder?: string;
   autoComplete?: string;
+  disabled?: boolean;
+  describedBy?: string;
   className?: string;
 };
 
@@ -25,6 +27,8 @@ export default function PasswordInput({
   onKeyDown,
   placeholder,
   autoComplete,
+  disabled = false,
+  describedBy,
   className = "",
 }: PasswordInputProps) {
   const [isVisible, setIsVisible] = useState(false);
@@ -40,6 +44,8 @@ export default function PasswordInput({
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        disabled={disabled}
+        aria-describedby={describedBy}
         className={className}
       />
       <button
