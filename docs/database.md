@@ -58,7 +58,7 @@
 | `encrypted_file_name` | TEXT | 暗号化済みファイル名 |
 | `size` | INTEGER | ファイルサイズ(バイト) |
 | `max_downloads` | INTEGER (nullable) | 保存期間「1回」の場合`1`(migration 0004) |
-| `download_count` | INTEGER NOT NULL DEFAULT 0 | ダウンロード回数。`GET /api/file/[fileId]`で原子的にインクリメント(migration 0004) |
+| `download_count` | INTEGER NOT NULL DEFAULT 0 | ダウンロード回数。`GET /api/file/[fileId]`で原子的にインクリメントし、転送が途中で中断された場合はデクリメントして戻す(GitHub issue #62。migration 0004) |
 | `created_at` | TEXT | 作成日時 |
 
 ### `reports`
