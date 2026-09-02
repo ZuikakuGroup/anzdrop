@@ -221,6 +221,25 @@ describe("GET /api/file/[fileId]", () => {
     expect(body).toEqual(content);
   });
 
+  it("limits a sanitized encrypted_file_name to 4096 characters", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("hello anzdrop");
+    const safeName = "a".repeat(4096);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      encryptedFileName: `${safeName}\r\ntruncated`,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="${safeName}"`
+    );
+  });
+
   it("allows exactly max_downloads successful downloads, then deletes the file on the final one and rejects further attempts", async () => {
     // ルートは「上限に達した最後の1回」でファイルを削除するため、maxDownloadsの
     // 値に関わらず(1回限りでなくても)最終回のダウンロード後にR2/D1から消える。

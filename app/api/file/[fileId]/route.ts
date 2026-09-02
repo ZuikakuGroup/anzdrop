@@ -22,6 +22,8 @@ type Share = {
   suspended_at: string | null;
 };
 
+const MAX_ENCRYPTED_FILE_NAME_LENGTH = 4096;
+
 // encrypted_file_name は本来 lib/crypto/base64.ts の base64url(A-Za-z0-9_-)だが、
 // AAD 保護導入前の古い行や、スキーマ検証を追加する前に作られた行に想定外の文字が
 // 混ざっていても、Content-Disposition ヘッダに制御文字・改行・" が入って
@@ -29,7 +31,9 @@ type Share = {
 // ヘッダに載せる直前に安全な文字集合へ丸める。値自体は復号前の不透明な文字列で、
 // クライアントは保存時に復号済みの本名で付け直すため、表示名としての意味は無い。
 function safeAttachmentFilename(encryptedFileName: string): string {
-  const cleaned = encryptedFileName.replace(/[^A-Za-z0-9_.-]/g, "");
+  const cleaned = encryptedFileName
+    .replace(/[^A-Za-z0-9_.-]/g, "")
+    .slice(0, MAX_ENCRYPTED_FILE_NAME_LENGTH);
 
   return cleaned.length > 0 ? cleaned : "download";
 }
