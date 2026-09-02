@@ -4,6 +4,7 @@ import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import { isDeadSubscriptionStatus } from "@/lib/stripe-subscription";
+import { isPurchasablePlan } from "@/lib/plan";
 import {
   SubscriptionRequestSchema,
   type SubscriptionResponse,
@@ -42,6 +43,15 @@ export const POST = withApiHandler(
 
     if (!parsed.ok) {
       return parsed.response;
+    }
+
+    // スキーマは standard/premium の両方を型として受けるが、実際に購入導線へ
+    // 出しているプランだけを決済対象にする(Standard は提供準備中。Issue #5)。
+    if (!isPurchasablePlan(parsed.data.plan)) {
+      return Response.json(
+        { success: false, error: "このプランは現在購入できません" },
+        { status: 400 }
+      );
     }
 
     const priceId = env[STRIPE_PRICE_ID_BY_PLAN[parsed.data.plan]];

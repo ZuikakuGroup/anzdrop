@@ -1,7 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
 import { createCharge } from "@/lib/opennode";
-import { PLAN_LABELS } from "@/lib/plan";
+import { isPurchasablePlan, PLAN_LABELS } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
@@ -34,6 +34,16 @@ export const POST = withApiHandler(
     }
 
     const { plan } = parsed.data;
+
+    // スキーマは standard/premium の両方を型として受けるが、実際に購入導線へ
+    // 出しているプランだけを決済対象にする(Standard は提供準備中。Issue #5)。
+    if (!isPurchasablePlan(plan)) {
+      return Response.json(
+        { success: false, error: "このプランは現在購入できません" },
+        { status: 400 }
+      );
+    }
+
     const amountUsd =
       env[OPENNODE_BTC_CHARGE_AMOUNT_USD_BY_PLAN[plan]];
 

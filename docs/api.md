@@ -131,6 +131,7 @@
 ログイン必須。指定プランのStripe Subscriptionを`payment_behavior: "default_incomplete"`で作成し、支払い確定用の値を`clientSecret`として返す(値はInvoiceの`latest_invoice.confirmation_secret.client_secret`から取得したもの)。クライアントはこの`clientSecret`でStripe Elements(Payment Element)をマウントし、自サイト内のフォームで決済を確定する(ホスト型Checkoutへのリダイレクトはしない)。
 
 - リクエスト: `{ plan: "standard"|"premium" }`
+  - 型としては両方受けるが、実際に決済へ進めるのは購入導線に出しているプランのみ(`PURCHASABLE_PLANS`、[`lib/plan.ts`](../lib/plan.ts))。現状は `premium` のみで、`standard`(提供準備中。Issue #5)は購入UIを迂回して直接叩いても400で拒否する。`btc/charge` も同じ判定。
 - レスポンス: `{ success: true, clientSecret }`
 
 ### `POST /api/billing/stripe/webhook`
@@ -158,7 +159,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 ログイン必須。OpenNodeでBitcoin決済のchargeを作成する(「期間チャージ」方式、自動更新なし)。
 
-- リクエスト: `{ plan: "standard"|"premium" }`
+- リクエスト: `{ plan: "standard"|"premium" }`(`subscription` と同じく、実際に受理するのは `PURCHASABLE_PLANS` のプランのみ。現状 `premium`。`standard` は400)
 - レスポンス: `{ success: true, hostedCheckoutUrl }`
 
 ### `POST /api/billing/btc/webhook`
