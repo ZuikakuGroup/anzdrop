@@ -107,7 +107,7 @@
 
 - リクエスト: `{ accountId, password, turnstileToken }`
 - 成功時、セッションCookie(`anzdrop_session`)を発行する。レスポンス: `{ success: true }`
-- 同一アカウントIDで5回連続してログインに失敗すると、5分間はパスワードが正しくても403になる([`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)参照)。
+- 同一アカウントIDで5回連続してログインに失敗すると、5分間はそのIDでのログインを制限する。ただしロック中でも正しいパスワード(と Turnstile)を提示できる本人は通す(標的型ロックアウト嫌がらせの緩和。[`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)参照)。
 
 ### `POST /api/account/logout`
 

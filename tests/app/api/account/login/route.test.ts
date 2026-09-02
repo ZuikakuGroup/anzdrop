@@ -18,6 +18,7 @@ import {
   type TestEnv,
 } from "@/test/env";
 import { SESSION_COOKIE_NAME } from "@/lib/account/session";
+import { verifyPassword } from "@/lib/account/password";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -26,7 +27,25 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
+// verifyPassword は既定では本物の実装をそのまま呼ぶ。並行リクエストの
+// レースを決定的に再現したいテストだけ、この関数の内部でリクエストの
+// 足並みを揃える(下記「concurrent failed attempts...」テストを参照)。
+vi.mock("@/lib/account/password", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/account/password")>();
+
+  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+});
+
+let realVerifyPassword: typeof verifyPassword;
+
 beforeAll(async () => {
+  realVerifyPassword = (
+    await vi.importActual<typeof import("@/lib/account/password")>(
+      "@/lib/account/password"
+    )
+  ).verifyPassword;
+
   const handle = await createTestEnv();
   env = handle.env;
   dispose = handle.dispose;
@@ -42,6 +61,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // 個別テストで差し替えた実装が後続テストへ漏れないよう、必ず本物へ戻す。
+  vi.mocked(verifyPassword).mockImplementation(realVerifyPassword);
 });
 
 async function postLogin(body: unknown) {
@@ -226,9 +247,9 @@ describe("POST /api/account/login", () => {
     expect(response.status).toBe(200);
   });
 
-  it("locks the account after 5 consecutive failed attempts, rejecting even the correct password while locked", async () => {
+  it("locks the account after 5 consecutive failed attempts", async () => {
     stubTurnstileSuccess();
-    const { accountId, password } = await insertTestAccount(env, {
+    const { accountId } = await insertTestAccount(env, {
       password: "correct-password",
     });
 
@@ -247,29 +268,209 @@ describe("POST /api/account/login", () => {
     expect(new Date(state.locked_until!).getTime()).toBeGreaterThan(
       Date.now()
     );
+  });
 
-    // ロック中は正しいパスワードでもログインできない。
-    const responseWithCorrectPassword = await postLogin({
+  it("while locked, rejects a wrong password without a distinguishable response, and never extends the lock", async () => {
+    stubTurnstileSuccess();
+    const lockedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil,
+      failedLoginAttempts: 0,
+    });
+
+    const lockedWrong = await postLogin({
       accountId,
-      password,
+      password: "wrong",
       turnstileToken: "tok",
     });
-    expect(responseWithCorrectPassword.status).toBe(403);
-
-    // ロック中の応答は、通常の認証失敗と同じメッセージ・ステータスにする。
-    // 失敗回数によるロックは実在するアカウントにしか発生しないため、
-    // 専用のメッセージを返すとアカウントIDの実在を判別できてしまう
-    // (user enumeration)ため。
-    const bodyWithCorrectPassword = await readJson<{ error: string }>(
-      responseWithCorrectPassword
-    );
     const unknownAccount = await postLogin({
       accountId: "no-such-account-id",
       password: "whatever",
       turnstileToken: "tok",
     });
-    const unknownBody = await readJson<{ error: string }>(unknownAccount);
-    expect(bodyWithCorrectPassword.error).toBe(unknownBody.error);
+
+    expect(lockedWrong.status).toBe(403);
+    expect(lockedWrong.status).toBe(unknownAccount.status);
+    expect((await readJson<{ error: string }>(lockedWrong)).error).toBe(
+      (await readJson<{ error: string }>(unknownAccount)).error
+    );
+
+    // ロック期限は1バイトも変わらない(嫌がらせでロックが延び続けない)。
+    const state = await getFailedLoginState(accountId);
+    expect(state.locked_until).toBe(lockedUntil);
+    // ロック期間内の試行としてカウントはされる(タイミングを通常の失敗と
+    // 揃えるための DB write が走っている証跡)。
+    expect(state.failed_login_attempts).toBe(1);
+  });
+
+  it("concurrent failed attempts that both cross the threshold do not extend the lock past the first", async () => {
+    stubTurnstileSuccess();
+    const { accountId } = await insertTestAccount(env, {
+      password: "correct-password",
+      // 閾値ちょうど手前。2本同時に来ると両方 isLocked=false のスナップショットを
+      // 見たうえで、片方が施錠したあともう片方が locked_until を上書きしようとする。
+      failedLoginAttempts: 4,
+    });
+
+    // レースを決定的に再現する。試行枠の予約(reserveLoginAttempt)で
+    // 6 を得たリクエストは verifyPassword に到達せず先に施錠する。
+    // 5 を得たリクエストは verifyPassword まで進むので、そこで足を止め、
+    // もう片方の施錠が DB に着地したことを確認してから解放する。これにより
+    // 「後発リクエストが施錠済みの locked_until を上書きしようとする」
+    // 経路を必ず通す。
+    let releaseVerify!: () => void;
+    const verifyGate = new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+    });
+    let verifyReached!: () => void;
+    const verifyReachedPromise = new Promise<void>((resolve) => {
+      verifyReached = resolve;
+    });
+
+    const verifySpy = vi.mocked(verifyPassword);
+    verifySpy.mockImplementation(async (password, stored) => {
+      verifyReached();
+      await verifyGate;
+
+      return realVerifyPassword(password, stored);
+    });
+
+    try {
+      const pending = Promise.all([
+        postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+        postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+      ]);
+
+      // 閾値ちょうどのリクエストが verifyPassword で停止している。
+      await verifyReachedPromise;
+
+      // 閾値超えのリクエストは verifyPassword を経由せず施錠する。
+      // その施錠が DB に反映されるまで待つ。
+      await vi.waitFor(
+        async () => {
+          expect(
+            (await getFailedLoginState(accountId)).locked_until
+          ).not.toBeNull();
+        },
+        { timeout: 5000, interval: 25 }
+      );
+      const lockedAfterFirst = (await getFailedLoginState(accountId))
+        .locked_until;
+
+      // ここで解放すると、停止していたリクエストが認証失敗後に lockAccount を
+      // 呼ぶ。DB 上はすでにロック中なので WHERE ガードで 0 行更新になる。
+      releaseVerify();
+      const [firstResponse, secondResponse] = await pending;
+      expect(firstResponse.status).toBe(403);
+      expect(secondResponse.status).toBe(403);
+
+      const final = await getFailedLoginState(accountId);
+      // WHERE ガードが効いている証拠。ガードを外すと後発の lockAccount が
+      // 新しい locked_until で上書きしてこのアサーションが落ちる
+      // (failed_login_attempts は lockAccount がガード有無に関わらず 0 に
+      //  するので、判定には使わない)。
+      expect(final.locked_until).toBe(lockedAfterFirst);
+    } finally {
+      // 例外で抜けても停止中の 2 リクエストが永久に待たないよう必ず解放する。
+      releaseVerify();
+      verifySpy.mockImplementation(realVerifyPassword);
+    }
+
+    // ロック中のさらなる誤試行でも locked_until は書き換わらない
+    // (WHERE ガードの直接確認)。
+    const before = await getFailedLoginState(accountId);
+    await postLogin({ accountId, password: "wrong", turnstileToken: "tok" });
+    const after = await getFailedLoginState(accountId);
+    expect(after.locked_until).toBe(before.locked_until);
+  });
+
+  it("while locked, the correct password succeeds at the verify budget boundary but not past it", async () => {
+    stubTurnstileSuccess();
+    const lockedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    // LOCKOUT_VERIFY_BUDGET = LOGIN_LOCKOUT_THRESHOLD(5) * 4 = 20。
+    // reserveLoginAttempt は照合前に +1 するので、開始値 19 → 予約後 20 で
+    // ちょうど予算内、開始値 20 → 予約後 21 で予算超過になる。
+    const atBoundary = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil,
+      failedLoginAttempts: 19,
+    });
+    const boundaryResponse = await postLogin({
+      accountId: atBoundary.accountId,
+      password: atBoundary.password,
+      turnstileToken: "tok",
+    });
+    expect(boundaryResponse.status).toBe(200);
+
+    const pastBudget = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil,
+      failedLoginAttempts: 20,
+    });
+    const pastResponse = await postLogin({
+      accountId: pastBudget.accountId,
+      password: pastBudget.password,
+      turnstileToken: "tok",
+    });
+    expect(pastResponse.status).toBe(403);
+  });
+
+  it("while locked, once too many attempts are made, even the correct password is rejected (bounded brute-force)", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      // ロック期間内の試行枠(LOGIN_LOCKOUT_THRESHOLD * 4 = 20)を使い切った状態。
+      failedLoginAttempts: 25,
+    });
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(403);
+
+    // ロック期限が過ぎれば、正しいパスワードは(カウンタが大きくても)通る。
+    await env.DB.prepare(
+      `UPDATE accounts SET locked_until = ? WHERE id = ?`
+    )
+      .bind(new Date(Date.now() - 1000).toISOString(), accountId)
+      .run();
+
+    const afterExpiry = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+    expect(afterExpiry.status).toBe(200);
+  });
+
+  it("while locked, lets the real owner in with the correct password and clears the lock (#66 targeted-lockout mitigation)", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      failedLoginAttempts: 0,
+    });
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toContain(
+      `${SESSION_COOKIE_NAME}=`
+    );
+
+    const state = await getFailedLoginState(accountId);
+    expect(state.failed_login_attempts).toBe(0);
+    expect(state.locked_until).toBeNull();
   });
 
   it("allows login again once the lockout window has passed", async () => {
