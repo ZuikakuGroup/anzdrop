@@ -12,6 +12,8 @@ type UploadSession = {
   upload_id: string;
 };
 
+const R2_DELETE_BATCH_SIZE = 1_000;
+
 // R2の未完了マルチパートアップロードは、完了/中断しない限りパートが課金対象の
 // ストレージとして残り続けるため、中断してから対応するDB行を消す。
 // abortは「既に完了済み/既に中断済み/そもそも存在しない」でも失敗しうるが、
@@ -47,11 +49,12 @@ export async function deleteShare(
 
   const storageKeys = (files.results ?? []).map((file) => file.storage_key);
 
-  if (storageKeys.length > 0) {
-    // R2 の delete はキー配列を1回で受け付ける。共有ごとの R2 サブリクエストを
-    // 1回に抑え、掃除バッチが Workers のサブリクエスト上限に余裕をもって収まる
-    // ようにする。
-    await env.FILES_BUCKET.delete(storageKeys);
+  // R2 の一括 delete は1回に最大1000キーまで。各バッチを完了させてから
+  // 次へ進み、すべての R2 削除が成功した後にだけ D1 行を削除する。
+  for (let start = 0; start < storageKeys.length; start += R2_DELETE_BATCH_SIZE) {
+    await env.FILES_BUCKET.delete(
+      storageKeys.slice(start, start + R2_DELETE_BATCH_SIZE)
+    );
   }
 
   // 完了しないまま共有が削除される場合も、R2に未完了マルチパートアップロード
@@ -82,8 +85,8 @@ export async function deleteShare(
 // 上限(1回の呼び出しあたり1000)内で確実に一部を消化し、残りは次回以降の実行で
 // 片付ける(GitHub issue #63)。
 //
-// 1件の `deleteShare` は SELECT×2 + R2 delete×(ファイル数) + abort×(未完了
-// アップロード数) + D1 batch で、概ね5〜10サブリクエスト。期限切れ共有と
+// 1件の `deleteShare` は SELECT×2 + R2 delete×(ファイル数/1000の切り上げ) +
+// abort×(未完了アップロード数) + D1 batch で、通常は概ね5〜10サブリクエスト。期限切れ共有と
 // 放置アップロードの掃除は同じ scheduled 呼び出し内で連続実行されるため、
 // 両者あわせても上限に収まるよう控えめに設定する(6時間ごとに実行されるので
 // 1回で消化しきれなくても実用上問題ない)。

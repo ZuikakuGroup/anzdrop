@@ -40,6 +40,8 @@
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
+`npm run deploy` は Wrangler の `--var` を通じて `DEPLOYMENT_ENV=production` を本番 Worker にだけ注入する。共有の `wrangler.jsonc` には定義しないため、ローカルプレビューや未指定の環境には引き継がれない。
+
 ## Cloudflareリソース
 
 [`wrangler.jsonc`](../wrangler.jsonc) で以下を宣言している。
@@ -56,6 +58,7 @@
 全レスポンスに CSP などのセキュリティヘッダを付与する [`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。詳細は [`architecture.md`](./architecture.md#セキュリティレスポンスヘッダ))について、デプロイ運用上の注意:
 
 - **OpenNext 上では「Node.js middleware」として扱われ、OpenNext 側のサポートは実験的・非公式**(`opennextjs-cloudflare build` 時に `Node.js middleware support is experimental` の警告が出る)。本番相当のプレビュー(`npm run preview`)で「レスポンスの CSP 内の nonce と HTML 内の全 `<script nonce>` が一致し、リクエストごとに変わる」ことをスモーク確認し、**OpenNext / Next を更新したときは同じ確認を行う**こと。
+- HSTS (`Strict-Transport-Security`) は `npm run deploy` が本番 Worker に注入する `DEPLOYMENT_ENV=production` の場合のみ付与する。未設定・staging・preview・test では付与しない。
 - CSP は既定で enforce(ブロックする)。新しい外部フローを入れた直後など、まず観測だけしたい場合は Worker の環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` になり、違反はブラウザ devtools に出るだけでブロックされない。問題ないことを確認したらこの変数を外す。
 - enforce 切り替え・大きめの変更の前に実ブラウザで最低限確認する導線: Turnstile のインタラクティブチャレンジ表示、Stripe Payment Element(3D セキュア含む)、複数ファイルの一括 ZIP ダウンロード、画像/動画/音声プレビュー、BTC hosted checkout への遷移。
 

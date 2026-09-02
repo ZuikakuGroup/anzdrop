@@ -109,18 +109,32 @@ describe("proxy — CSP", () => {
 
 describe("proxy — その他のセキュリティヘッダ", () => {
   it("クリックジャッキング・sniffing・Referer 漏洩の対策ヘッダを付与する", () => {
-    vi.stubEnv("NODE_ENV", "production");
     const { headers } = runProxy();
 
     expect(headers.get("X-Frame-Options")).toBe("DENY");
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(headers.get("Permissions-Policy")).toContain("camera=()");
+  });
+
+  it("DEPLOYMENT_ENV=production の本番でのみ HSTS を付ける", () => {
+    vi.stubEnv("DEPLOYMENT_ENV", "production");
+
+    const { headers } = runProxy();
+
     expect(headers.get("Strict-Transport-Security")).toContain("max-age=");
   });
 
-  it("開発では HSTS を付けない(http では無意味なため)", () => {
-    vi.stubEnv("NODE_ENV", "development");
+  it.each([
+    { name: "未設定", value: undefined },
+    { name: "staging", value: "staging" },
+    { name: "preview", value: "preview" },
+    { name: "test", value: "test" },
+  ])("DEPLOYMENT_ENV=$name では HSTS を付けない", ({ value }) => {
+    // NODE_ENV=production でもデプロイ環境が本番でなければ付与しない。
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DEPLOYMENT_ENV", value);
+
     expect(runProxy().headers.get("Strict-Transport-Security")).toBeNull();
   });
 });

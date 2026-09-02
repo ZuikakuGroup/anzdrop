@@ -215,6 +215,61 @@ describe("deleteShare", () => {
     await expect(deleteShare(env, "no-such-share")).resolves.not.toThrow();
   });
 
+  it("deletes more than 1000 R2 keys in awaited batches before deleting D1 rows", async () => {
+    const storageKeys = Array.from(
+      { length: 1_001 },
+      (_, index) => `files/share-many/file-${index}`
+    );
+    const deleteBatches: string[][] = [];
+    const events: string[] = [];
+
+    const bucket = wrapBinding(env.FILES_BUCKET, {
+      delete: async (keys: string | string[]) => {
+        const batch = Array.isArray(keys) ? keys : [keys];
+        const batchNumber = deleteBatches.length + 1;
+        events.push(`r2-${batchNumber}-start`);
+        await Promise.resolve();
+        deleteBatches.push(batch);
+        events.push(`r2-${batchNumber}-end`);
+      },
+    });
+    const db = wrapBinding(env.DB, {
+      prepare: (query: string) => {
+        if (query.includes("SELECT storage_key FROM files")) {
+          return {
+            bind: () => ({
+              all: async () => ({
+                results: storageKeys.map((storage_key) => ({ storage_key })),
+              }),
+            }),
+          };
+        }
+        return (env.DB.prepare as (q: string) => D1PreparedStatement)(query);
+      },
+      batch: async (statements: D1PreparedStatement[]) => {
+        events.push("d1");
+        return env.DB.batch(statements);
+      },
+    });
+    const batchedEnv = {
+      ...(env as object),
+      FILES_BUCKET: bucket,
+      DB: db,
+    } as TestEnv;
+
+    await deleteShare(batchedEnv, "share-many");
+
+    expect(deleteBatches.map((batch) => batch.length)).toEqual([1_000, 1]);
+    expect(deleteBatches.flat()).toEqual(storageKeys);
+    expect(events).toEqual([
+      "r2-1-start",
+      "r2-1-end",
+      "r2-2-start",
+      "r2-2-end",
+      "d1",
+    ]);
+  });
+
   it("aborts an in-progress multipart upload and removes its uploads row", async () => {
     const shareId = "share-multipart";
     const storageKey = `files/${shareId}/incomplete`;

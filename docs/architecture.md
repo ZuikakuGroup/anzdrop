@@ -98,7 +98,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - **Content-Security-Policy**: nonce ベースの厳格な CSP。`script-src` は `'self' 'nonce-<リクエストごと>' 'strict-dynamic'` を基本とし、`'unsafe-inline'` を許可しません。ダウンロード画面が URL フラグメントの E2E 復号鍵をメモリに保持するため、この origin 上の XSS を多層防御で抑えることが目的です(`'strict-dynamic'` により、nonce 付きスクリプトが読み込む Turnstile / Stripe.js の子スクリプトは追加のホスト許可なしで動きます)。
 - **frame-ancestors 'none' / X-Frame-Options: DENY**: クリックジャッキング対策。
 - **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
-- **Referrer-Policy: no-referrer** / **Strict-Transport-Security** / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
+- **Referrer-Policy: no-referrer** / **Strict-Transport-Security** (`DEPLOYMENT_ENV=production` のみ) / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
 
 nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません。Workers 上の低トラフィックな用途なので影響は小さいと判断)。
 

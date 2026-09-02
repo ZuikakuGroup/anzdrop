@@ -27,7 +27,13 @@ function isCspReportOnly(): boolean {
   return value === "1" || value === "true";
 }
 
-function buildStaticSecurityHeaders(isDev: boolean): Record<string, string> {
+function isProductionDeployment(): boolean {
+  return process.env.DEPLOYMENT_ENV === "production";
+}
+
+function buildStaticSecurityHeaders(
+  isProduction: boolean
+): Record<string, string> {
   const headers: Record<string, string> = {
     // frame-ancestors 'none' と重複するが、CSP 非対応の古いブラウザ向けに併記する。
     "X-Frame-Options": "DENY",
@@ -41,8 +47,8 @@ function buildStaticSecurityHeaders(isDev: boolean): Record<string, string> {
       'camera=(), microphone=(), geolocation=(), browsing-topics=(), payment=(self "https://js.stripe.com")',
   };
 
-  // HSTS は HTTPS 前提。開発(http://localhost)では意味がなく紛らわしいので付けない。
-  if (!isDev) {
+  // HSTS は HTTPS が保証される明示的な本番デプロイでのみ付与する。
+  if (isProduction) {
     headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
   }
 
@@ -110,6 +116,7 @@ function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
 
 export function proxy(request: NextRequest): NextResponse {
   const isDev = process.env.NODE_ENV === "development";
+  const isProduction = isProductionDeployment();
   // Next.js 公式の nonce レシピと同じ生成方法(base64)。Next の CSP パーサが
   // 期待する `'nonce-<value>'` 形式に確実に合致させる。
   const nonce = btoa(crypto.randomUUID());
@@ -130,7 +137,7 @@ export function proxy(request: NextRequest): NextResponse {
 
   response.headers.set(responseCspHeader, csp);
   for (const [key, value] of Object.entries(
-    buildStaticSecurityHeaders(isDev)
+    buildStaticSecurityHeaders(isProduction)
   )) {
     response.headers.set(key, value);
   }
