@@ -88,7 +88,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
    - `showSaveFilePicker` が使える環境(Chromium 系): ユーザーが選んだ保存先へ逐次書き込み。ファイル全体をメモリに載せない。
    - それ以外で Service Worker が使える環境(Firefox/Safari): 復号済みストリームを Service Worker(`public/download-sw.js`)へ転送し、`Content-Disposition: attachment` の Response としてストリーミングダウンロードさせる(`lib/download/streamDownloadSaver.ts`。GitHub issue #61)。これもファイル全体をメモリに載せない。Service Worker はダウンロードページのマウント時に登録され、初回訪問直後などまだページを制御していない間は次の Blob 経路になる。
    - どちらも使えない場合: Blob に集めてから保存(最後の手段。大容量ファイルではタブが落ちうる)。
-   - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え ZIP が zip64 不要な範囲(単体・合計とも約 4GiB = `0xFFFFFFFF` バイト以内)なら選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。`showSaveFilePicker` が無く Service Worker が使えるなら SW 経由でストリーミング ZIP をダウンロード(issue #61)。zip64 が必要な(約 4GiB を超える)場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。いずれも不可なら合計サイズが上限(512MiB)以内でメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
+   - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え ZIP が zip64 不要な範囲(単体・合計とも約 4GiB = `0xFFFFFFFF` バイト以内)なら選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。`showSaveFilePicker` が無く Service Worker が使えるなら SW 経由でストリーミング ZIP をダウンロード(issue #61)。SW への受け渡しは ZIP 生成(= ファイルの fetch)を始める前に行うため、一過性の不通で失敗しても 1回限りファイルの枠を消費しておらず、下のメモリ内 ZIP へ安全にフォールバックできる。zip64 が必要な(約 4GiB を超える)場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。いずれも不可なら合計サイズが上限(512MiB)以内でメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
 4. 保存期間「1回」のファイルは、ダウンロード回数が上限に達した時点で `ctx.waitUntil()` により裏でR2オブジェクトとDBレコードを削除(レスポンスのストリーミングはブロックしない)。
 
 ## 掃除(Cleanup)

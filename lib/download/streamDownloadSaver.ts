@@ -7,6 +7,8 @@
 
 const SERVICE_WORKER_URL = "/download-sw.js";
 const STREAM_DOWNLOAD_MESSAGE = "ANZDROP_STREAM_DOWNLOAD";
+// 転送済みの復号ストリームを Service Worker 側で即時解放させるための中止通知。
+const STREAM_DOWNLOAD_ABORT_MESSAGE = "ANZDROP_STREAM_DOWNLOAD_ABORT";
 const PING_MESSAGE = "ANZDROP_PING";
 // ping の応答待ち上限。ローカルの Service Worker との往復なので短くてよい。
 const PING_TIMEOUT_MS = 2_000;
@@ -31,13 +33,22 @@ function hasServiceWorker(): boolean {
   );
 }
 
-function timeout(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    const timer = setTimeout(
+// promise か「ms 経過」のどちらか早い方で解決する。タイムアウト用タイマーは
+// どちらの経路でも必ず後始末する(ブラウザには unref が無く、放置すると勝った
+// 側の解決後もタイマーが残り続けるため)。
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
       () => reject(new Error("タイムアウトしました")),
       ms
     );
     (timer as unknown as { unref?: () => void }).unref?.();
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timer);
   });
 }
 
@@ -98,10 +109,10 @@ export async function canSaveViaServiceWorker(): Promise<boolean> {
 
   try {
     // ready は登録が成立しないと永久 pending なので、必ずタイムアウトと競わせる。
-    await Promise.race([
+    await withTimeout(
       navigator.serviceWorker.ready,
-      timeout(SERVICE_WORKER_READY_TIMEOUT_MS),
-    ]);
+      SERVICE_WORKER_READY_TIMEOUT_MS
+    );
   } catch {
     return false;
   }
@@ -131,10 +142,7 @@ async function pingServiceWorker(controller: ServiceWorker): Promise<boolean> {
 
     controller.postMessage({ type: PING_MESSAGE }, [channel.port2]);
 
-    return await Promise.race([
-      pong,
-      timeout(PING_TIMEOUT_MS).catch(() => false),
-    ]);
+    return await withTimeout(pong, PING_TIMEOUT_MS).catch(() => false);
   } catch {
     return false;
   } finally {
@@ -191,7 +199,7 @@ export async function saveViaServiceWorker(
   let frame: { done: () => void } | null = null;
 
   try {
-    const downloadUrl = await Promise.race([
+    const downloadUrl = await withTimeout(
       new Promise<string>((resolve, reject) => {
         channel.port1.onmessage = (event: MessageEvent) => {
           const data = event.data as
@@ -223,13 +231,20 @@ export async function saveViaServiceWorker(
           [channel.port2, readable as unknown as Transferable]
         );
       }),
-      timeout(DOWNLOAD_URL_TIMEOUT_MS),
-    ]);
+      DOWNLOAD_URL_TIMEOUT_MS
+    );
 
     frame = appendHiddenDownloadFrame(downloadUrl);
   } catch (err) {
-    // URL が返らなかった/タイムアウトした。完了通知を待つ相手もいないので
-    // ポートを閉じてからエラーを伝播する。
+    // URL が返らなかった/タイムアウトした。readable と port2 は既に Service
+    // Worker へ転送済みで、呼び出し側の stream.cancel() は detached のため
+    // 効かない。SW にこの id の中止を伝え、復号ストリームを TTL を待たずに
+    // 解放させる。完了通知を待つ相手もいないのでポートも閉じる。
+    try {
+      controller.postMessage({ type: STREAM_DOWNLOAD_ABORT_MESSAGE, id });
+    } catch {
+      // 制御 SW が既に消えている等。TTL 側の後始末に任せる。
+    }
     channel.port1.close();
     throw err;
   }

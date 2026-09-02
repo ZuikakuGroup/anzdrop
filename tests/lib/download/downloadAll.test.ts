@@ -16,8 +16,13 @@ const { downloadAllFiles, IN_MEMORY_ZIP_MAX_BYTES } = await import(
 );
 const { unzipSync } = await import("fflate");
 
-function file(id: string, name: string, size: number): DecryptedFile {
-  return { id, name, size, isOneTime: false };
+function file(
+  id: string,
+  name: string,
+  size: number,
+  isOneTime = false
+): DecryptedFile {
+  return { id, name, size, isOneTime };
 }
 
 function streamOf(text: string): ReadableStream<Uint8Array> {
@@ -287,8 +292,7 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("sw-b");
   });
 
-  it("SW 経由の受け渡しに失敗したら、メモリ内 ZIP へ落とさずリトライを促すエラーを投げる", async () => {
-    // ping には応答するが、STREAM_DOWNLOAD には URL を返さない controller。
+  it("SW 受け渡し成功後に ZIP 生成が 404 で中断したら、onFileGone 通知後に中止エラーを投げる", async () => {
     class FakePort {
       onmessage: ((e: MessageEvent) => void) | null = null;
       postMessage() {}
@@ -315,6 +319,81 @@ describe("downloadAllFiles — 経路の選択", () => {
           );
           return;
         }
+        // SW が readable を消費するのを模し、URL を返して受け渡しを成功させる。
+        void (message.readable as ReadableStream<Uint8Array>)
+          .pipeTo(new WritableStream({ write() {} }))
+          .catch(() => {});
+        queueMicrotask(() =>
+          latestPort1?.onmessage?.({
+            data: { url: "/_anzdrop_download/z" },
+          } as MessageEvent)
+        );
+      },
+    };
+
+    vi.stubGlobal("document", {
+      createElement: () => ({ src: "", hidden: false, remove: vi.fn() }),
+      body: { appendChild: vi.fn() },
+    });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", {
+      serviceWorker: {
+        register: vi.fn(async () => ({})),
+        ready: Promise.resolve({}),
+        controller,
+      },
+    });
+
+    const gone: string[] = [];
+    fetchDecryptedStream.mockImplementation(async (f: DecryptedFile) => {
+      if (f.id === "b") throw new FileGoneError("gone");
+      return streamOf("ok");
+    });
+
+    await expect(
+      downloadAllFiles([file("a", "a.txt", 10), file("b", "b.txt", 10)], KEY, {
+        onFileGone: (id) => gone.push(id),
+      })
+    ).rejects.toThrow(/中止/);
+
+    expect(gone).toEqual(["b"]);
+    // 受け渡しは成功しているので、メモリ内 ZIP へは落とさない。
+    expect(fetchAndDecrypt).not.toHaveBeenCalled();
+  });
+
+  it("SW 経由の受け渡しに失敗したら、まだ何も fetch していないのでメモリ内 ZIP へフォールバックする", async () => {
+    // ping には応答するが、STREAM_DOWNLOAD には URL を返さない controller。
+    class FakePort {
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      postMessage() {}
+      close() {}
+    }
+    let latestPort1: FakePort | null = null;
+    const abortMessages: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "MessageChannel",
+      class {
+        port1 = new FakePort();
+        port2 = new FakePort();
+        constructor() {
+          latestPort1 = this.port1;
+        }
+      }
+    );
+    vi.stubGlobal("crypto", { randomUUID: () => "abcd-abcd" });
+
+    const controller = {
+      postMessage: (message: Record<string, unknown>) => {
+        if (message.type === "ANZDROP_PING") {
+          queueMicrotask(() =>
+            latestPort1?.onmessage?.({ data: { pong: true } } as MessageEvent)
+          );
+          return;
+        }
+        if (message.type === "ANZDROP_STREAM_DOWNLOAD_ABORT") {
+          abortMessages.push(message);
+          return;
+        }
         // URL を返さない → saveViaServiceWorker が reject する。
         (message.readable as ReadableStream<Uint8Array>).cancel().catch(() => {});
         queueMicrotask(() =>
@@ -337,14 +416,27 @@ describe("downloadAllFiles — 経路の選択", () => {
     fetchDecryptedStream.mockImplementation(async (f: DecryptedFile) =>
       streamOf(`x-${f.id}`)
     );
+    fetchAndDecrypt.mockImplementation(async (f: DecryptedFile) =>
+      new TextEncoder().encode(`mem-${f.id}`)
+    );
 
-    await expect(
-      downloadAllFiles([file("a", "a.txt", 10), file("b", "b.txt", 10)], KEY)
-    ).rejects.toThrow(/開き直/);
+    // 1回限りファイルでも、受け渡し前に fetch していないので取り直せる。
+    const result = await downloadAllFiles(
+      [file("a", "a.txt", 10, true), file("b", "b.txt", 10, true)],
+      KEY
+    );
 
-    // メモリ内 ZIP の Blob フォールバックは走っていない(再 fetch で1回限り
-    // ファイルを失わせないため)。
-    expect(blob.blobParts()).toHaveLength(0);
+    expect(result.started).toBe(true);
+    // ストリーミング ZIP 経路は 1件も fetch していない(SW 受け渡しが先)。
+    expect(fetchDecryptedStream).not.toHaveBeenCalled();
+    // SW には転送済みストリームの中止を通知している。
+    expect(abortMessages).toHaveLength(1);
+    expect(abortMessages[0].id).toBe("abcdabcd");
+
+    // メモリ内 ZIP の Blob フォールバックで取り直して保存できている。
+    const unzipped = unzipSync(blob.blobParts()[0] as Uint8Array);
+    expect(new TextDecoder().decode(unzipped["a.txt"])).toBe("mem-a");
+    expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("mem-b");
   });
 
   it("File System Access API 非対応 かつ 合計が上限内なら、メモリ内 ZIP を Blob で落とす", async () => {

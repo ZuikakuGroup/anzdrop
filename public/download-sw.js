@@ -14,11 +14,30 @@
 
 const DOWNLOAD_PREFIX = "/_anzdrop_download/";
 
-// id -> { readable, filename, size, port }
+// id -> { readable, filename, size, port, timer }
 const pendingDownloads = new Map();
 
 // 受け取ったストリームが引き取られないまま残り続けないよう、一定時間で破棄する。
 const PENDING_TTL_MS = 60_000;
+
+// pending エントリを1件解放する。ストリームを読み捨て、必要なら完了を通知し、
+// TTL タイマーを止める。
+function releasePending(id, notify) {
+  const entry = pendingDownloads.get(id);
+  if (!entry) {
+    return;
+  }
+  pendingDownloads.delete(id);
+  clearTimeout(entry.timer);
+  entry.readable.cancel().catch(() => {});
+  if (notify) {
+    try {
+      if (entry.port) entry.port.postMessage({ done: true });
+    } catch {
+      // port が既に閉じられていても無視。
+    }
+  }
+}
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -42,6 +61,13 @@ self.addEventListener("message", (event) => {
     return;
   }
 
+  // ページ側で URL 待ちがタイムアウトした等で、転送済みストリームを引き取れ
+  // なくなった場合の即時解放通知。TTL を待たずにここで捨てる。
+  if (data && data.type === "ANZDROP_STREAM_DOWNLOAD_ABORT") {
+    releasePending(data.id, true);
+    return;
+  }
+
   if (!data || data.type !== "ANZDROP_STREAM_DOWNLOAD") {
     return;
   }
@@ -49,21 +75,12 @@ self.addEventListener("message", (event) => {
   const { id, readable, filename, size } = data;
   const port = replyPort;
 
-  pendingDownloads.set(id, { readable, filename, size, port });
-
-  setTimeout(() => {
-    const entry = pendingDownloads.get(id);
-    if (entry) {
-      pendingDownloads.delete(id);
-      // 引き取られなかったストリームは読み捨てて解放する。
-      entry.readable.cancel().catch(() => {});
-      try {
-        if (entry.port) entry.port.postMessage({ done: true });
-      } catch {
-        // port が既に閉じられていても無視。
-      }
-    }
+  const entry = { readable, filename, size, port, timer: undefined };
+  entry.timer = setTimeout(() => {
+    // 引き取られなかったストリームは読み捨てて解放する。
+    releasePending(id, true);
   }, PENDING_TTL_MS);
+  pendingDownloads.set(id, entry);
 
   if (port) {
     port.postMessage({ url: DOWNLOAD_PREFIX + id });
@@ -104,6 +121,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   pendingDownloads.delete(id);
+  clearTimeout(entry.timer);
 
   const headers = new Headers({
     "Content-Type": "application/octet-stream",

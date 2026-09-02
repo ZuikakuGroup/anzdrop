@@ -147,41 +147,31 @@ export async function downloadAllFiles(
     const transform = new TransformStream<Uint8Array, Uint8Array>();
     const sink = writableStreamToSink(transform.writable);
 
-    // 先に ZIP 生成を走らせておく(SW がまだ readable を消費していない間は
-    // writable のバックプレッシャーで自然に待つ)。unhandledrejection を
-    // 避けるため .catch でエラーを受けておき、下で必ず待つ。
-    let zipError: unknown = null;
-    const zipPromise = streamFilesAsZip(zipEntries, sink).catch(
-      (err: unknown) => {
-        zipError = err;
-      }
-    );
-
+    // 先に SW へ readable を渡してダウンロードを開始させる。ここが成功する
+    // までは zipEntries を一切開かない(= fetch しない)ため、受け渡しに
+    // 失敗しても 1回限りファイルのダウンロード枠は消費されておらず、下の
+    // メモリ内 ZIP へ安全にフォールバックできる。
+    let handedOff = false;
     try {
       await saveViaServiceWorker(transform.readable, "anzdrop.zip", null);
-    } catch (swError) {
-      // SW への受け渡しに失敗。ZIP 生成側を止めてから後始末する。
-      await sink.abort(swError).catch(() => {});
-      await zipPromise;
-
-      // canSaveViaServiceWorker() で SW との往復は確認済みなので、ここで失敗
-      // するのはまれな一過性。この時点で zipEntries の一部は既に fetch 済み
-      // (1回限りファイルならダウンロード枠を消費済み)。メモリ内 ZIP へ
-      // フォールバックすると再 fetch でそれらを失わせるため、中止する。
-      throw swError instanceof FriendlyError
-        ? swError
-        : new FriendlyError(
-            "一括ダウンロードを開始できませんでした。共有ページを開き直してください。"
-          );
+      handedOff = true;
+    } catch {
+      // SW への受け渡しに失敗(URL 未返却・一過性の不通など)。writable を
+      // 閉じてから、下のメモリ内 ZIP フォールバックへ回す。
+      await sink
+        .abort(new Error("service worker handoff failed"))
+        .catch(() => {});
     }
 
-    await zipPromise;
+    if (handedOff) {
+      try {
+        await streamFilesAsZip(zipEntries, sink);
+      } catch (err) {
+        throw toStreamingZipMidwayError(err);
+      }
 
-    if (zipError) {
-      throw toStreamingZipMidwayError(zipError);
+      return { cancelled: false, goneFileIds, started: true };
     }
-
-    return { cancelled: false, goneFileIds, started: true };
   }
 
   // --- 3. フォルダへ1ファイルずつストリーミング保存 ---

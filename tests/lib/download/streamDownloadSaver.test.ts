@@ -242,9 +242,10 @@ describe("saveViaServiceWorker", () => {
     expect(appended[0].hidden).toBe(true);
   });
 
-  it("SW が URL を返さなければ reject し、ポートを閉じる", async () => {
+  it("SW が URL を返さなければ reject し、ポートを閉じて SW へ中止を通知する", async () => {
+    const postMessage = vi.fn();
     vi.stubGlobal("navigator", {
-      serviceWorker: { controller: { postMessage: vi.fn() } },
+      serviceWorker: { controller: { postMessage } },
     });
     const channel = stubChannel();
     vi.stubGlobal("crypto", { randomUUID: () => "x" });
@@ -263,6 +264,11 @@ describe("saveViaServiceWorker", () => {
 
     await expect(p).rejects.toThrow(/ダウンロードURL/);
     expect(channel.port1.close).toHaveBeenCalled();
+    // 転送済みストリームを SW 側で即時解放させる中止通知。
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "ANZDROP_STREAM_DOWNLOAD_ABORT",
+      id: "x",
+    });
   });
 
   it("SW がページを制御していなければ即座に throw する", async () => {
@@ -274,12 +280,13 @@ describe("saveViaServiceWorker", () => {
     ).rejects.toThrow(/制御/);
   });
 
-  it("SW から何の応答も来なければタイムアウトして reject する", async () => {
+  it("SW から何の応答も来なければタイムアウトして reject し、ポートを閉じて中止を通知する", async () => {
     vi.useFakeTimers();
+    const postMessage = vi.fn();
+    const channel = stubChannel();
     vi.stubGlobal("navigator", {
-      serviceWorker: { controller: { postMessage: vi.fn() } },
+      serviceWorker: { controller: { postMessage } },
     });
-    stubChannel();
     vi.stubGlobal("crypto", { randomUUID: () => "x" });
     vi.stubGlobal("document", {
       createElement: () => ({ src: "", hidden: false }),
@@ -295,6 +302,12 @@ describe("saveViaServiceWorker", () => {
     const assertion = expect(p).rejects.toThrow(/タイムアウト/);
     await vi.advanceTimersByTimeAsync(5_000);
     await assertion;
+
+    expect(channel.port1.close).toHaveBeenCalled();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: "ANZDROP_STREAM_DOWNLOAD_ABORT",
+      id: "x",
+    });
     vi.useRealTimers();
   });
 

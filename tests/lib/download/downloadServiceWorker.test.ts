@@ -270,5 +270,32 @@ describe("download-sw.js", () => {
       expect(cancel).toHaveBeenCalled();
       expect(port.postMessage).toHaveBeenCalledWith({ done: true });
     });
+
+    it("ANZDROP_STREAM_DOWNLOAD_ABORT で転送済みストリームを即時 cancel し done を通知する", () => {
+      vi.useFakeTimers();
+      const sw = createServiceWorker();
+      const cancel = vi.fn(() => Promise.resolve());
+      const port = { postMessage: vi.fn() };
+      sw.message(
+        {
+          type: "ANZDROP_STREAM_DOWNLOAD",
+          id: "aborted",
+          readable: { cancel } as unknown as ReadableStream<Uint8Array>,
+          filename: "a.bin",
+          size: 3,
+        },
+        port
+      );
+      port.postMessage.mockClear();
+
+      sw.message({ type: "ANZDROP_STREAM_DOWNLOAD_ABORT", id: "aborted" });
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(port.postMessage).toHaveBeenCalledWith({ done: true });
+
+      // TTL タイマーは止まっており、後から二重に cancel/通知しない。
+      vi.advanceTimersByTime(60_000);
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
   });
 });
