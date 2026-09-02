@@ -29,7 +29,7 @@
 
 暗号化済みバイト列の一部をR2マルチパートアップロードの1パートとして送信する。
 
-- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(16MiB = 暗号化チャンク2つ分、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。パートを大きくするほど、パートごとの固定コスト(D1クエリ2本・`resumeMultipartUpload`)の総数が減り実効アップロード速度が上がる。同時送信本数は実効プラン別(free/standard: 6、premium: 8。[`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)で、`並列数 × 16MiB` が送信中に同時展開されるためモバイル端末のメモリを考えて控えめにしている。
+- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
 - ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
 - ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
 - レスポンス: `{ success: true, partNumber }`

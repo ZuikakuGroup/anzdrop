@@ -54,13 +54,11 @@ const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
 ];
 
 // アップロード中、暗号化1チャンクあたり最大この件数まで、送信側の消費を待たずに
-// 先読みしておく(6チャンク = 48MiB上限)。ファイル全体を暗号化してからアップロード
+// 先読みしておく(8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロード
 // を始めるのではなく、暗号化とアップロードを重ねて進めるためのバッファ上限。
 // この先読みは「アップロードする」を押したあと、実際に処理中のファイル1つ分に
-// ついてのみ走る(GitHub issue #60)。UPLOAD_PART_SIZE を 16 MiB(暗号化チャンク
-// 2つ分)に広げたため、6 チャンクあれば送信ワーカーが次のパートを組み立てる
-// 分を常に先読みできる。
-const ENCRYPT_PREFETCH_CHUNKS = 6;
+// ついてのみ走る(GitHub issue #60)。
+const ENCRYPT_PREFETCH_CHUNKS = 8;
 
 type QueuedFile = {
   pendingFile: PendingFile;
@@ -129,8 +127,8 @@ export default function UploadForm() {
   // ファイル本体を暗号化しながら先読みバッファ付きで流すストリームを作る。
   // ファイル追加時ではなく、upload() が実際にそのファイルを処理する直前に
   // 呼ぶ。こうすることで、同時に選択したファイル数によらず、先読みバッファ
-  // (ENCRYPT_PREFETCH_CHUNKS = 48MiB)が走るのは常に1ファイル分だけになる
-  // (数十〜数百ファイルのフォルダを追加してもメモリが 48MiB×N にならない。
+  // (ENCRYPT_PREFETCH_CHUNKS = 64MiB)が走るのは常に1ファイル分だけになる
+  // (数十〜数百ファイルのフォルダを追加してもメモリが 64MiB×N にならない。
   // GitHub issue #60)。
   //
   // 失敗後のリトライでは毎回この関数で作り直す。途中まで消費したストリームを

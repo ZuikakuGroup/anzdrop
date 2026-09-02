@@ -619,10 +619,119 @@ describe("GET /api/file/[fileId] (Range / 並列ダウンロード)", () => {
     for (const [start, end] of windows) {
       const response = await getFileWithRange(fileId, `bytes=${start}-${end}`);
       expect(response.status).toBe(206);
-      collected.push(...new Uint8Array(await response.arrayBuffer()));
+
+      // 実際に返るのはオブジェクト末尾までにクランプされた分だけ。
+      // Content-Length / Content-Range は必ず本体の長さと一致していること。
+      const body = new Uint8Array(await response.arrayBuffer());
+      const servedEnd = Math.min(end, content.byteLength - 1);
+
+      expect(body.byteLength).toBe(servedEnd - start + 1);
+      expect(response.headers.get("Content-Length")).toBe(
+        String(body.byteLength)
+      );
+      expect(response.headers.get("Content-Range")).toBe(
+        `bytes ${start}-${servedEnd}/${content.byteLength}`
+      );
+
+      collected.push(...body);
     }
 
     expect(new Uint8Array(collected)).toEqual(content);
+  });
+
+  it("clamps a range whose end is past the object and reports the served length", async () => {
+    const shareId = await insertShare();
+    const content = new Uint8Array(1000).map((_, i) => i % 251);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=800-1099");
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe("bytes 800-999/1000");
+    expect(response.headers.get("Content-Length")).toBe("200");
+
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(content.slice(800));
+  });
+
+  it("serves a suffix range with headers matching the body", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("0123456789abcdefghij");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=-8");
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe(
+      `bytes 12-19/${content.byteLength}`
+    );
+    expect(response.headers.get("Content-Length")).toBe("8");
+
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(content.slice(-8));
+  });
+
+  it("clamps a suffix range larger than the object to the whole object", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("short");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=-1000");
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe(
+      `bytes 0-${content.byteLength - 1}/${content.byteLength}`
+    );
+    expect(response.headers.get("Content-Length")).toBe(
+      String(content.byteLength)
+    );
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(content);
+  });
+
+  it("returns 416 (not 500) for a range starting past the end of the object", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("tiny file");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=1000000000-");
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("Content-Range")).toBe(
+      `bytes */${content.byteLength}`
+    );
+  });
+
+  it("returns 416 for a range with an explicit end that also starts past the object", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("tiny file");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=500-600");
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("Content-Range")).toBe(
+      `bytes */${content.byteLength}`
+    );
   });
 
   it("does not increment download_count for range requests on a non-counted file", async () => {

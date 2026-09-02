@@ -13,12 +13,4 @@ import { CHUNK_SIZE } from "@/lib/crypto/types";
 // 固定サイズで詰め直すことでこれを防ぐ。ストレージ上のバイト列自体は
 // 「salt + 全パケットの連結」で従来と一切変わらないため、ダウンロード・復号側の
 // 実装には影響しない。
-//
-// 1パート = 暗号化チャンク2つ分(16 MiB)。パートを大きくするほど、パートごとに
-// 発生する固定コスト(/api/upload/chunk の D1 クエリ2本・R2 の
-// resumeMultipartUpload)の総数が減り、実効アップロード速度が上がる。8 MiB から
-// 16 MiB にすると同じファイルでリクエスト数が半分になる。これ以上大きくすると、
-// 送信中に同時展開されるパート(並列数 × このサイズ)と Worker 側で
-// 1パートを arrayBuffer() で受けるメモリが増えるため、並列数(lib/plan.ts の
-// uploadConcurrency)と合わせてモバイル端末でも無理のない範囲に収めている。
-export const UPLOAD_PART_SIZE = 2 * CHUNK_SIZE; // 16 MiB
+export const UPLOAD_PART_SIZE = CHUNK_SIZE; // 8 MiB

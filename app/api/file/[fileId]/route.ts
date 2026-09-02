@@ -39,13 +39,17 @@ function safeAttachmentFilename(encryptedFileName: string): string {
   return cleaned.length > 0 ? cleaned : "download";
 }
 
+type SingleRange = { offset: number; length?: number } | { suffix: number };
+
 // "Range: bytes=..." を R2 の range 指定へ変換する。単一の範囲だけ対応し、
 // 解釈できないもの(複数レンジ・不正な形式)は null を返して呼び出し側が
-// 全体応答へフォールバックできるようにする。end がオブジェクト長を超えていても
-// R2 が length を実際のサイズへクランプするので、ここでのクランプは不要。
-function parseSingleRange(
-  header: string
-): { offset: number; length?: number } | { suffix: number } | null {
+// 全体応答へフォールバックできるようにする。
+//
+// end がオブジェクト長を超えていても R2 が length を実際のサイズへクランプ
+// するのでここでのクランプは不要だが、offset がオブジェクト長以上の場合は
+// R2 が「無効な範囲」として reject する。オブジェクト長はこの時点では
+// 分からないため、その判定は呼び出し側(416 応答)に委ねる。
+function parseSingleRange(header: string): SingleRange | null {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
 
   if (!match) {
@@ -83,6 +87,64 @@ function parseSingleRange(
   return { offset, length: end - offset + 1 };
 }
 
+// その Range が「1バイトも返せない」ものか。RFC 9110 では、開始位置が
+// オブジェクト長以上の範囲(0バイトのオブジェクトへの範囲指定を含む)が
+// これにあたる。末尾が長さを超えているだけの範囲は満たせる(クランプされる)。
+function isUnsatisfiableRange(range: SingleRange, size: number): boolean {
+  if ("suffix" in range) {
+    return size === 0;
+  }
+
+  return range.offset >= size;
+}
+
+// 416 応答。RFC 9110 は満たせない Range に対して、実際のオブジェクト長を
+// 伝える `Content-Range: bytes */<size>` を付けることを求めている。
+function unsatisfiableRangeResponse(size: number): Response {
+  return new Response(null, {
+    status: 416,
+    headers: {
+      "Content-Range": `bytes */${size}`,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+// R2 が実際に返したバイト範囲を求める。`R2Range` は
+// `{offset, length?}` / `{offset?, length}` / `{suffix}` の3つの形を取りうる
+// ため、どの形でも `{offset, length}` へ正規化する。R2 は要求が末尾を超える
+// 場合に length を実際のサイズへクランプして返すので、Content-Length /
+// Content-Range が本体長とズレないようここでも同じクランプを掛け直す。
+function resolveServedRange(
+  range: R2Range | undefined,
+  size: number
+): { offset: number; length: number } | null {
+  if (!range) {
+    return null;
+  }
+
+  const raw = range as { offset?: number; length?: number; suffix?: number };
+
+  // 末尾 N バイト。N がオブジェクト長を超える場合は全体になる。
+  if (raw.suffix !== undefined) {
+    const suffix = Math.min(Math.max(raw.suffix, 0), size);
+    return { offset: size - suffix, length: suffix };
+  }
+
+  if (raw.offset === undefined && raw.length === undefined) {
+    return null;
+  }
+
+  const offset = Math.min(Math.max(raw.offset ?? 0, 0), size);
+  const length = Math.min(
+    Math.max(raw.length ?? size - offset, 0),
+    size - offset
+  );
+
+  return { offset, length };
+}
+
 // R2 が返した(範囲指定つきの可能性がある)オブジェクトを HTTP レスポンスへ
 // 変換する。range が付いていれば 206 + Content-Range、無ければ(R2 が範囲を
 // 解釈できず全体を返した場合)200 + 全長を返す。ボディは常に暗号文なので
@@ -100,17 +162,18 @@ function buildRangeResponse(
     "Accept-Ranges": "bytes",
   };
 
-  const range = object.range as
-    | { offset?: number; length?: number }
-    | undefined;
+  const served = resolveServedRange(object.range, object.size);
 
-  if (range && (range.offset !== undefined || range.length !== undefined)) {
-    const offset = range.offset ?? 0;
-    const length = range.length ?? object.size - offset;
+  if (served) {
+    // 1バイトも返せない範囲を 206 で返すと Content-Range が組み立てられない
+    // (末尾が offset-1 になる)。RFC 9110 どおり 416 として扱う。
+    if (served.length === 0) {
+      return unsatisfiableRangeResponse(object.size);
+    }
 
-    headers["Content-Length"] = String(length);
-    headers["Content-Range"] = `bytes ${offset}-${
-      offset + length - 1
+    headers["Content-Length"] = String(served.length);
+    headers["Content-Range"] = `bytes ${served.offset}-${
+      served.offset + served.length - 1
     }/${object.size}`;
 
     return new Response(object.body, { status: 206, headers });
@@ -242,11 +305,27 @@ export const GET = withApiHandler(
     const parsedRange = rangeHeader ? parseSingleRange(rangeHeader) : null;
 
     if (parsedRange && file.max_downloads === null) {
-      // get 自体が reject した場合は withApiHandler 側の共通エラー処理(500)
-      // に委ねる(回数を数えないファイルなので戻すべきカウントもない)。
-      const ranged = await env.FILES_BUCKET.get(file.storage_key, {
-        range: parsedRange,
-      });
+      let ranged: R2ObjectBody | null;
+
+      try {
+        ranged = await env.FILES_BUCKET.get(file.storage_key, {
+          range: parsedRange,
+        });
+      } catch (error) {
+        // R2 はオブジェクト長以上の offset を「無効な範囲」として reject する。
+        // そのまま投げると 500 になってしまうので、本当に範囲外なのかを確かめて
+        // RFC 9110 どおり 416 を返す。head を呼ぶのはこのエラー経路だけなので、
+        // 正常時の R2 操作は 1 リクエストあたり get 1 回のまま。
+        const meta = await env.FILES_BUCKET.head(file.storage_key);
+
+        if (meta && isUnsatisfiableRange(parsedRange, meta.size)) {
+          return unsatisfiableRangeResponse(meta.size);
+        }
+
+        // 範囲外ではない = R2 の一時障害など。共通エラー処理(500)へ委ねる
+        // (回数を数えないファイルなので戻すべきカウントもない)。
+        throw error;
+      }
 
       if (!ranged) {
         return Response.json(
