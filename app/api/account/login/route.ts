@@ -54,6 +54,27 @@ async function lockAccount(env: CloudflareEnv, accountId: string): Promise<void>
     .run();
 }
 
+// ログイン成功時の共通処理。失敗カウンタ・ロックをリセットし、セッション
+// Cookie を発行する。
+async function grantSession(
+  env: CloudflareEnv,
+  accountId: string,
+  sessionVersion: number
+): Promise<Response> {
+  await env.DB.prepare(
+    `UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`
+  )
+    .bind(accountId)
+    .run();
+
+  const setCookie = await createSessionCookie(accountId, sessionVersion, env);
+  const responseBody: LoginResponse = { success: true };
+
+  return Response.json(responseBody, {
+    headers: { "Set-Cookie": setCookie },
+  });
+}
+
 export const POST = withApiHandler(
   "POST /api/account/login",
   async (request: Request): Promise<Response> => {
@@ -86,16 +107,30 @@ export const POST = withApiHandler(
         locked_until: string | null;
       }>();
 
-    // ロック中かどうかをそのままメッセージに出すと、失敗回数によるロックは
-    // 実在するアカウントにしか発生しないため、応答メッセージの違いだけで
-    // アカウントIDの実在を判別できてしまう(user enumeration)。そのため
-    // ロック中も通常の認証失敗と同じメッセージ・ステータスで応答する。
-    // メッセージだけでなく、ここで即座に返すと通常の認証失敗(Argon2id照合を
-    // 伴う数十ms)より高速に応答してしまい、応答時間の差から同じことが
-    // 推測できてしまう。そのため、ここでも(結果を使わない)ダミーの照合を
-    // 行って応答時間を揃える。
-    if (account?.locked_until && new Date(account.locked_until) > new Date()) {
-      await verifyPassword(password, DUMMY_PASSWORD_HASH);
+    // ロック中の応答も、通常の認証失敗と同じメッセージ・ステータス・応答時間
+    // (Argon2id 照合を伴う)にする。失敗回数によるロックは実在アカウントにしか
+    // 起きないため、違いがあるとアカウントIDの実在を判別できてしまう
+    // (user enumeration)。
+    //
+    // ただしロック中でも、正しいパスワードを提示できる本人はログインを通す。
+    // アカウントIDは本人が自由に決める公開されうる文字列なので、第三者が
+    // 対象IDへ誤ったパスワードを連打するだけで正規ユーザーを継続的に締め出せる
+    // (標的型ロックアウト嫌がらせ)。これを緩和する。総当たりに対する主たる
+    // 防御は Turnstile 必須(1回ごとにトークンが必要)+ Argon2id であり、
+    // ロックはあくまで補助。誤ったパスワードはロック中も 403 で、ロックと
+    // 失敗カウンタはそのまま残す(時間経過で自然に解除される)。GitHub issue #66。
+    if (
+      account?.locked_until &&
+      new Date(account.locked_until) > new Date()
+    ) {
+      const passwordMatches = await verifyPassword(
+        password,
+        account.password_hash
+      );
+
+      if (passwordMatches) {
+        return grantSession(env, accountId, account.session_version);
+      }
 
       return Response.json(
         { success: false, error: INVALID_CREDENTIALS_ERROR },
@@ -136,21 +171,6 @@ export const POST = withApiHandler(
       );
     }
 
-    await env.DB.prepare(
-      `UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`
-    )
-      .bind(accountId)
-      .run();
-
-    const setCookie = await createSessionCookie(
-      accountId,
-      account.session_version,
-      env
-    );
-    const responseBody: LoginResponse = { success: true };
-
-    return Response.json(responseBody, {
-      headers: { "Set-Cookie": setCookie },
-    });
+    return grantSession(env, accountId, account.session_version);
   }
 );

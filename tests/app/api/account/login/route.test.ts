@@ -226,9 +226,9 @@ describe("POST /api/account/login", () => {
     expect(response.status).toBe(200);
   });
 
-  it("locks the account after 5 consecutive failed attempts, rejecting even the correct password while locked", async () => {
+  it("locks the account after 5 consecutive failed attempts", async () => {
     stubTurnstileSuccess();
-    const { accountId, password } = await insertTestAccount(env, {
+    const { accountId } = await insertTestAccount(env, {
       password: "correct-password",
     });
 
@@ -247,29 +247,61 @@ describe("POST /api/account/login", () => {
     expect(new Date(state.locked_until!).getTime()).toBeGreaterThan(
       Date.now()
     );
+  });
 
-    // ロック中は正しいパスワードでもログインできない。
-    const responseWithCorrectPassword = await postLogin({
+  it("while locked, still rejects a wrong password without a distinguishable response (no user enumeration)", async () => {
+    stubTurnstileSuccess();
+    const { accountId } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      failedLoginAttempts: 0,
+    });
+
+    const lockedWrong = await postLogin({
       accountId,
-      password,
+      password: "wrong",
       turnstileToken: "tok",
     });
-    expect(responseWithCorrectPassword.status).toBe(403);
-
-    // ロック中の応答は、通常の認証失敗と同じメッセージ・ステータスにする。
-    // 失敗回数によるロックは実在するアカウントにしか発生しないため、
-    // 専用のメッセージを返すとアカウントIDの実在を判別できてしまう
-    // (user enumeration)ため。
-    const bodyWithCorrectPassword = await readJson<{ error: string }>(
-      responseWithCorrectPassword
-    );
     const unknownAccount = await postLogin({
       accountId: "no-such-account-id",
       password: "whatever",
       turnstileToken: "tok",
     });
-    const unknownBody = await readJson<{ error: string }>(unknownAccount);
-    expect(bodyWithCorrectPassword.error).toBe(unknownBody.error);
+
+    expect(lockedWrong.status).toBe(403);
+    expect(lockedWrong.status).toBe(unknownAccount.status);
+    expect((await readJson<{ error: string }>(lockedWrong)).error).toBe(
+      (await readJson<{ error: string }>(unknownAccount)).error
+    );
+
+    // ロックはそのまま残る(嫌がらせで延びることも、誤った入力で解除される
+    // こともない)。
+    const state = await getFailedLoginState(accountId);
+    expect(state.locked_until).not.toBeNull();
+  });
+
+  it("while locked, lets the real owner in with the correct password and clears the lock (#66 targeted-lockout mitigation)", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      failedLoginAttempts: 0,
+    });
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toContain(
+      `${SESSION_COOKIE_NAME}=`
+    );
+
+    const state = await getFailedLoginState(accountId);
+    expect(state.failed_login_attempts).toBe(0);
+    expect(state.locked_until).toBeNull();
   });
 
   it("allows login again once the lockout window has passed", async () => {
