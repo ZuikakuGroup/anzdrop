@@ -126,6 +126,20 @@ describe("uploadEncryptedFile", () => {
     expect(factory.createdCount()).toBe(0);
   });
 
+  it("start が非JSONエラーを返したら既定の開始失敗メッセージで throw する", async () => {
+    const factory = makeChunkStreamFactory();
+    const { calls } = stubFetch(() =>
+      new Response("Bad Gateway", { status: 502 })
+    );
+
+    await expect(
+      uploadEncryptedFile({ ...baseParams, createChunkStream: factory.create })
+    ).rejects.toThrow("photo.jpg の開始に失敗しました");
+
+    expect(calls.map((call) => call.url)).toEqual(["/api/upload/start"]);
+    expect(factory.createdCount()).toBe(0);
+  });
+
   it("complete が失敗したら throw する", async () => {
     const factory = makeChunkStreamFactory();
     stubFetch((url) => {
@@ -146,6 +160,28 @@ describe("uploadEncryptedFile", () => {
     await expect(
       uploadEncryptedFile({ ...baseParams, createChunkStream: factory.create })
     ).rejects.toThrow("パートが足りません");
+  });
+
+  it("complete が非JSONエラーを返したら既定の完了失敗メッセージで throw する", async () => {
+    const factory = makeChunkStreamFactory();
+    stubFetch((url) => {
+      if (url === "/api/upload/start") {
+        return json({
+          success: true,
+          shareId: "s",
+          uploadToken: "t",
+          uploadSessionId: "sess",
+        });
+      }
+      if (url === "/api/upload/chunk") {
+        return new Response(null, { status: 200 });
+      }
+      return new Response("Bad Gateway", { status: 502 });
+    });
+
+    await expect(
+      uploadEncryptedFile({ ...baseParams, createChunkStream: factory.create })
+    ).rejects.toThrow("photo.jpg の完了処理に失敗しました");
   });
 
   it("リトライで呼び直すと毎回ストリームを作り直し、2 回目も先頭パートから送る (#58)", async () => {

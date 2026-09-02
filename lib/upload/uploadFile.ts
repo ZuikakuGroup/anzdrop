@@ -48,6 +48,14 @@ export type UploadEncryptedFileResult = {
   uploadToken: string;
 };
 
+async function parseJsonOrEmpty<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return {} as T;
+  }
+}
+
 // 1 ファイルを「/api/upload/start → チャンク送信 → /api/upload/complete」の
 // 順で R2 のマルチパートアップロードへ送り切る。失敗すると Error を throw する
 // ため、呼び出し側はこの関数をそのまま再試行できる(start を含めて毎回やり直す
@@ -70,7 +78,7 @@ export async function uploadEncryptedFile(
     }),
   });
 
-  const startResult = (await startResponse.json()) as UploadStartResponse;
+  const startResult = await parseJsonOrEmpty<UploadStartResponse>(startResponse);
 
   if (
     !startResponse.ok ||
@@ -99,7 +107,7 @@ export async function uploadEncryptedFile(
   });
 
   const completeResult =
-    (await completeResponse.json()) as UploadCompleteResponse;
+    await parseJsonOrEmpty<UploadCompleteResponse>(completeResponse);
 
   if (!completeResponse.ok || !completeResult.success) {
     throw new Error(

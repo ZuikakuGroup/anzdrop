@@ -264,6 +264,47 @@ describe("uploadChunksFromStream", () => {
     ).toBe(UPLOAD_PART_SIZE + 50);
   });
 
+  it("does not retry or report a part that was waiting after another part fails", async () => {
+    const attempts = new Map<number, number>();
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+      const partNumber = Number(
+        (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+      );
+      attempts.set(partNumber, (attempts.get(partNumber) ?? 0) + 1);
+
+      if (partNumber === 1) {
+        return attempts.get(partNumber) === 1
+          ? new Response(null, { status: 503 })
+          : new Response(null, { status: 200 });
+      }
+
+      return new Response(null, { status: 403 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const onBytesUploaded = vi.fn();
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+        "session-1",
+        "token-1",
+        "part-fails.bin",
+        2,
+        onBytesUploaded,
+        {
+          backoffMs: () => 0,
+          // パート1が待機している間にパート2の403を処理させる。
+          sleep: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        }
+      )
+    ).rejects.toThrow("part-fails.bin のパート 2 アップロードに失敗しました");
+
+    expect(attempts.get(1)).toBe(1);
+    expect(attempts.get(2)).toBe(1);
+    expect(onBytesUploaded).not.toHaveBeenCalled();
+  });
+
   it("retries a part when fetch itself throws (network drop), then recovers", async () => {
     let attempts = 0;
     vi.stubGlobal(

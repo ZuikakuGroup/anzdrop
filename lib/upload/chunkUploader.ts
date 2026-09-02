@@ -118,6 +118,10 @@ export async function uploadChunksFromStream(
     body: Uint8Array<ArrayBuffer>
   ): Promise<void> => {
     for (let attempt = 1; ; attempt++) {
+      if (firstError !== null) {
+        return;
+      }
+
       let response: Response;
 
       try {

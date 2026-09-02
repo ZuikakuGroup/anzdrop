@@ -81,6 +81,7 @@ export default function UploadForm() {
   );
   const [retention, setRetention] = useState<Retention>("7d");
   const [usePassword, setUsePassword] = useState(false);
+  const [hasCreatedShare, setHasCreatedShare] = useState(false);
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [plan, setPlan] = useState<Plan>("free");
@@ -310,6 +311,7 @@ export default function UploadForm() {
 
         shareIdRef.current = result.shareId;
         uploadTokenRef.current = result.uploadToken;
+        setHasCreatedShare(true);
         if (isNewShare && passwordWrap) {
           passwordProtectedRef.current = true;
         }
@@ -357,6 +359,7 @@ export default function UploadForm() {
     setProgress(0);
     setCopyState("idle");
     setUsePassword(false);
+    setHasCreatedShare(false);
     setPassword("");
     setRetention("7d");
     setShowAdvanced(false);
@@ -585,6 +588,7 @@ export default function UploadForm() {
                         <input
                           type="checkbox"
                           checked={usePassword}
+                          disabled={hasCreatedShare}
                           onChange={(event) =>
                             setUsePassword(event.target.checked)
                           }
@@ -592,6 +596,11 @@ export default function UploadForm() {
                         />
                         パスワードを設定する
                       </label>
+                      {hasCreatedShare && (
+                        <p className="mt-1.5 text-xs text-ink/50">
+                          共有作成後はパスワード設定を変更できません。
+                        </p>
+                      )}
                       <div
                         className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
                           usePassword ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
