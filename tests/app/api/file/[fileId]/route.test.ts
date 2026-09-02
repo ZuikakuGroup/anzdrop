@@ -114,8 +114,9 @@ function envWithGatedObjectBody(
   };
 }
 
-// 指定した storageKey に対する FILES_BUCKET.get だけを1回 reject させる env。
-// R2 の一時障害を決定的に再現する。
+// 指定した storageKey に対する FILES_BUCKET.get を reject させる env
+// (他のキーは素通し)。R2 の一時障害を決定的に再現する。呼び出し回数は
+// getCallCount() で確認できる。
 function envWithRejectingGet(
   storageKey: string,
   error: Error

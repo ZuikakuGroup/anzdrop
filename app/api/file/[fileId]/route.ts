@@ -48,6 +48,24 @@ async function restoreDownloadCount(
     .run();
 }
 
+// restoreDownloadCount を ctx.waitUntil へ直接渡すと、D1 が reject したとき
+// Worker 側で unhandled rejection になる。復元失敗はログに残すだけにして
+// 握りつぶす(復元できなくても最悪「1回」ファイルが1回分早く消えるだけで、
+// 情報漏洩やサーバー状態の破壊にはならない)。
+async function safeRestoreDownloadCount(
+  env: CloudflareEnv,
+  fileId: string
+): Promise<void> {
+  try {
+    await restoreDownloadCount(env, fileId);
+  } catch (error) {
+    console.error(
+      `GET /api/file/[fileId]: failed to restore download_count for ${fileId}:`,
+      error
+    );
+  }
+}
+
 export const GET = withApiHandler(
   "GET /api/file/[fileId]",
   async (
@@ -149,7 +167,7 @@ export const GET = withApiHandler(
       object = await env.FILES_BUCKET.get(file.storage_key);
     } catch (error) {
       if (isCountedDownload) {
-        ctx.waitUntil(restoreDownloadCount(env, fileId));
+        ctx.waitUntil(safeRestoreDownloadCount(env, fileId));
       }
 
       // withApiHandler 側の共通エラー処理(500)に委ねる。
@@ -158,7 +176,7 @@ export const GET = withApiHandler(
 
     if (!object) {
       if (isCountedDownload) {
-        ctx.waitUntil(restoreDownloadCount(env, fileId));
+        ctx.waitUntil(safeRestoreDownloadCount(env, fileId));
       }
 
       return Response.json(
@@ -222,14 +240,7 @@ export const GET = withApiHandler(
           await onFullyDelivered();
           return;
         }
-        try {
-          await restoreDownloadCount(env, fileId);
-        } catch (restoreError) {
-          console.error(
-            `GET /api/file/[fileId]: failed to restore download_count for ${fileId}:`,
-            restoreError
-          );
-        }
+        await safeRestoreDownloadCount(env, fileId);
         console.error(
           `GET /api/file/[fileId]: streaming aborted for ${fileId} at ${deliveredBytes}/${object.size} bytes:`,
           error
