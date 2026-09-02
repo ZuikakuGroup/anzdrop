@@ -155,6 +155,10 @@ export async function uploadChunksFromStream(
         continue;
       }
 
+      if (firstError !== null) {
+        return;
+      }
+
       if (response.ok) {
         onBytesUploaded(body.byteLength);
         return;

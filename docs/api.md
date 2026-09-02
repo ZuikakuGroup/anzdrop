@@ -32,7 +32,7 @@
 - ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
 - ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
 - レスポンス: `{ success: true, partNumber }`
-- **同じパート番号の再POSTに冪等**(`resumeMultipartUpload().uploadPart()` + `upload_parts` への `INSERT OR REPLACE`)。クライアント([`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts))は一時エラー(通信断・5xx・429・520-524)時にパート単位で指数バックオフ付きリトライする(GitHub issue #65)。
+- **同じパート番号の再POSTに冪等**(`resumeMultipartUpload().uploadPart()` + `upload_parts` への `INSERT OR REPLACE`)。クライアント([`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts))は通信断、HTTP 408・425・429、または5xxのうち500・502・503・504・520-524の場合に、パート単位で指数バックオフ付きリトライする(GitHub issue #65)。
 
 ### `POST /api/upload/complete`
 

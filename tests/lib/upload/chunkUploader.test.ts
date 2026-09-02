@@ -305,6 +305,52 @@ describe("uploadChunksFromStream", () => {
     expect(onBytesUploaded).not.toHaveBeenCalled();
   });
 
+  it("does not report a successful part whose request finishes after another part fails", async () => {
+    let resolvePart1: (response: Response) => void = () => {};
+    const part1Response = new Promise<Response>((resolve) => {
+      resolvePart1 = resolve;
+    });
+    let signalPart2Request: () => void = () => {};
+    const part2Requested = new Promise<void>((resolve) => {
+      signalPart2Request = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        const partNumber = Number(
+          (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+        );
+        if (partNumber === 1) {
+          return part1Response;
+        }
+
+        signalPart2Request();
+        return Promise.resolve(new Response(null, { status: 403 }));
+      })
+    );
+
+    const onBytesUploaded = vi.fn();
+    const upload = uploadChunksFromStream(
+      fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+      "session-1",
+      "token-1",
+      "concurrent-failure.bin",
+      2,
+      onBytesUploaded,
+      noBackoff
+    );
+
+    await part2Requested;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolvePart1(new Response(null, { status: 200 }));
+
+    await expect(upload).rejects.toThrow(
+      "concurrent-failure.bin のパート 2 アップロードに失敗しました"
+    );
+    expect(onBytesUploaded).not.toHaveBeenCalled();
+  });
+
   it("retries a Cloudflare 522 (edge timeout) and recovers", async () => {
     let attempts = 0;
     vi.stubGlobal(
