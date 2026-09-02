@@ -53,7 +53,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 `components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。
 
-- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・5xx・429 など)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
 - [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。失敗時は呼び出し側がそのまま再試行でき、再試行のたびに必ずファイル先頭からの新しいストリームで送り直す(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
@@ -72,7 +72,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
 
-各パートの送信は一時エラー(通信断・5xx・429・Cloudflare の 520-524)時に指数バックオフ付きで最大 6 回・合計 ~15.5 秒までリトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+各パートの送信は一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで最大 6 回・合計 ~15.5 秒までリトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
 
 これを超える通信断でアップロードが失敗しても、「アップロードする」を押し直すだけで再試行できる。まだ `complete` まで到達していないファイルだけを対象に、暗号化パイプラインを作り直して `start` からやり直す(部分的に消費されたストリームを持ち越さないため、リトライでファイルがサイレント破損することはない。GitHub issue #58)。既に完了したファイルや、作成済み共有のパスワード保護の有無は再試行をまたいで保持される。1 回目で失敗した `start` 済みのセッションは掃除(Cleanup)で回収される。なお押し直しでの再試行は毎回ファイルの先頭から送り直す(送信済みパートだけをスキップする本格的な「再開」は、パケットの IV がパートごとに乱数で、パケット境界とパート境界が一致しないため暗号化フォーマットの再設計が必要。別 issue)。
 
