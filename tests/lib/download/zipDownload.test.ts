@@ -186,6 +186,43 @@ describe("streamFilesAsZip", () => {
     expect(sink.closed).toBe(false);
   });
 
+  it("空の entries でも有効な(空の)ZIP を書き出して close する", async () => {
+    const sink = collectingSink();
+    await streamFilesAsZip([], sink);
+
+    expect(sink.closed).toBe(true);
+    expect(Object.keys(unzipSync(sink.bytes()))).toEqual([]);
+  });
+
+  it("書き込みが途中で失敗したら、まだ読める元ストリームを cancel して投げ直す", async () => {
+    const sink = collectingSink();
+    // 2 回目の書き込みで失敗させる。
+    sink.write
+      .mockImplementationOnce(async () => {})
+      .mockImplementationOnce(async () => {})
+      .mockRejectedValueOnce(new Error("disk full"));
+
+    let cancelled = false;
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(10).fill(1));
+        controller.enqueue(new Uint8Array(10).fill(2));
+        controller.enqueue(new Uint8Array(10).fill(3));
+        controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    await expect(
+      streamFilesAsZip([{ name: "x.bin", open: async () => source }], sink)
+    ).rejects.toThrow("disk full");
+
+    expect(cancelled).toBe(true);
+    expect(sink.aborted).toBeTruthy();
+  });
+
   it("sink への書き込みが失敗したら例外を投げ直す", async () => {
     const sink = collectingSink();
     sink.write.mockRejectedValueOnce(new Error("disk full"));
