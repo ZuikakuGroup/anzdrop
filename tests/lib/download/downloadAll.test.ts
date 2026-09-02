@@ -186,6 +186,98 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(result.started).toBe(true);
   });
 
+  it("showSaveFilePicker が無く Service Worker が使えるなら、SW 経由でストリーミング ZIP を落とす", async () => {
+    // 転送可能ストリーム対応チェックと SW コントローラを模す。
+    class FakePort {
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      postMessage() {}
+    }
+    class FakeMessageChannel {
+      port1 = new FakePort();
+      port2 = new FakePort();
+    }
+    vi.stubGlobal("MessageChannel", FakeMessageChannel);
+
+    const posted: { message: Record<string, unknown> }[] = [];
+    let latestPort1: FakePort | null = null;
+    const receivedZip: Uint8Array[] = [];
+    const controller = {
+      postMessage: (message: Record<string, unknown>) => {
+        posted.push({ message });
+        // SW / ブラウザが転送された readable を消費するのを模す。
+        void (message.readable as ReadableStream<Uint8Array>)
+          .pipeTo(
+            new WritableStream({
+              write(chunk) {
+                receivedZip.push(chunk.slice());
+              },
+            })
+          )
+          .catch(() => {});
+        // 直近に作られた MessageChannel の port1 へ返信する。
+        queueMicrotask(() => {
+          latestPort1?.onmessage?.({
+            data: { url: "/_anzdrop_download/z" },
+          } as MessageEvent);
+        });
+      },
+    };
+    // saveViaServiceWorker は new MessageChannel() を1回作る。その port1 を捕まえる。
+    const OrigChannel = FakeMessageChannel;
+    vi.stubGlobal(
+      "MessageChannel",
+      class extends OrigChannel {
+        constructor() {
+          super();
+          latestPort1 = this.port1;
+        }
+      }
+    );
+    vi.stubGlobal("crypto", { randomUUID: () => "abcd-abcd" });
+
+    const iframes: { src: string }[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => ({ src: "", hidden: false, remove: vi.fn() }),
+      body: { appendChild: (el: { src: string }) => iframes.push(el) },
+    });
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", {
+      serviceWorker: {
+        register: vi.fn(async () => ({})),
+        ready: Promise.resolve({}),
+        controller,
+      },
+    });
+
+    fetchDecryptedStream.mockImplementation(async (f: DecryptedFile) =>
+      streamOf(`sw-${f.id}`)
+    );
+
+    const result = await downloadAllFiles(
+      [file("a", "a.txt", 10), file("b", "b.txt", 10)],
+      KEY
+    );
+
+    expect(result.started).toBe(true);
+    expect(fetchAndDecrypt).not.toHaveBeenCalled();
+    expect(posted).toHaveLength(1);
+    expect(posted[0].message.type).toBe("ANZDROP_STREAM_DOWNLOAD");
+    expect(posted[0].message.filename).toBe("anzdrop.zip");
+    expect(iframes[0].src).toBe("/_anzdrop_download/z");
+
+    // SW へ流れたバイト列が展開可能な ZIP になっている。
+    const total = receivedZip.reduce((n, c) => n + c.byteLength, 0);
+    const zipBytes = new Uint8Array(total);
+    let off = 0;
+    for (const c of receivedZip) {
+      zipBytes.set(c, off);
+      off += c.byteLength;
+    }
+    const unzipped = unzipSync(zipBytes);
+    expect(new TextDecoder().decode(unzipped["a.txt"])).toBe("sw-a");
+    expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("sw-b");
+  });
+
   it("File System Access API 非対応 かつ 合計が上限内なら、メモリ内 ZIP を Blob で落とす", async () => {
     vi.stubGlobal("window", {});
     const blob = stubBlobDownload();
@@ -227,7 +319,7 @@ describe("downloadAllFiles — 経路の選択", () => {
         [file("a", "huge.bin", IN_MEMORY_ZIP_MAX_BYTES + 1)],
         KEY
       )
-    ).rejects.toThrow(/Chrome/);
+    ).rejects.toThrow(/1つずつダウンロード/);
 
     expect(fetchAndDecrypt).not.toHaveBeenCalled();
   });
