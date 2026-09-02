@@ -85,7 +85,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
 3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文は、`showSaveFilePicker` が使える環境ではユーザーが選んだ保存先へ逐次書き込み、それ以外の環境では Blob に集めてから保存する(`lib/download/saveFile.ts`)。前者ではファイル全体をメモリに保持しないため、大容量ファイルでもメモリ不足になりにくい(非 Chromium 系の大容量単一ファイルは現状 Blob 経由。Service Worker による疑似ストリーミングは issue #61 で対応予定)。
    - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え、かつ ZIP が zip64 不要な範囲(単体・合計とも 4GiB 未満)なら、選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。4GiB を超える場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。File System Access API 非対応(Firefox/Safari)の場合は合計サイズが上限(1GiB)以内ならメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
-4. 保存期間「1回」のファイルは、ダウンロード回数が上限に達した時点で `ctx.waitUntil()` により裏でR2オブジェクトとDBレコードを削除(レスポンスのストリーミングはブロックしない)。
+4. 保存期間「1回」のファイルは、ダウンロード回数が上限に達したリクエストのレスポンス本体を配信し終えて(完走 or 切断)から、`ctx.waitUntil()` により裏でR2オブジェクトとDBレコードを削除する。配信中に `FILES_BUCKET.delete()` が走ってそのダウンロード自体が途中で切れるのを防ぐため(GitHub issue #77)。中断時に削除する挙動は従来どおり(「1回」ファイルの中断時の扱いは GitHub issue #62)。
 
 ## 掃除(Cleanup)
 

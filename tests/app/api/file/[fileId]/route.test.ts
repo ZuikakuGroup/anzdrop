@@ -117,8 +117,23 @@ async function insertFile(overrides: FileOverrides = {}): Promise<{
 async function getFile(fileId: string) {
   const { GET } = await import("@/app/api/file/[fileId]/route");
 
-  return GET(new Request(`http://localhost/api/file/${fileId}`), {
+  const response = await GET(new Request(`http://localhost/api/file/${fileId}`), {
     params: Promise.resolve({ fileId }),
+  });
+
+  // 本番の Workers ランタイムは返却された Response の本体をクライアントへ
+  // 必ず読み出す。「1回」ファイルの削除は本体の配信完了後にスケジュールされる
+  // ため(GitHub issue #77)、テストでもここで本体を読み切ってから、同じバイト列で
+  // Response を組み直して返す(呼び出し側は従来どおり arrayBuffer()/json() できる)。
+  if (!response.body) {
+    return response;
+  }
+
+  const buffer = await response.arrayBuffer();
+
+  return new Response(buffer, {
+    status: response.status,
+    headers: response.headers,
   });
 }
 
@@ -284,5 +299,39 @@ describe("GET /api/file/[fileId]", () => {
 
     const again = await getFile(fileId);
     expect(again.status).toBe(404);
+  });
+
+  it("still deletes a one-time file when the client aborts the download mid-stream (no leak/hang)", async () => {
+    // getFile ヘルパーは本体を読み切ってしまうため、ここは GET を直接呼び、
+    // 本体を途中で cancel する。issue #77 の修正で削除は本体配信の「決着」後
+    // (完走 or 切断)に走るため、切断でも確実に削除される(= pipeTo の reject
+    // 経路でも waitUntil がリーク/ハングしない)ことを確認する。
+    const shareId = await insertShare();
+    const content = new Uint8Array(64 * 1024).fill(7);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const { GET } = await import("@/app/api/file/[fileId]/route");
+    const response = await GET(
+      new Request(`http://localhost/api/file/${fileId}`),
+      { params: Promise.resolve({ fileId }) }
+    );
+    expect(response.status).toBe(200);
+
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    await reader.read();
+    await reader.cancel();
+
+    await flushWaitUntil();
+
+    expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
+    const row = await env.DB.prepare(`SELECT id FROM files WHERE id = ?`)
+      .bind(fileId)
+      .first();
+    expect(row).toBeNull();
   });
 });

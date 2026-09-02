@@ -147,16 +147,40 @@ export const GET = withApiHandler(
       );
     }
 
-    if (
+    const isLastAllowedDownload =
       downloadCount.max_downloads !== null &&
-      downloadCount.download_count >= downloadCount.max_downloads
-    ) {
-      // 許可された最後の1回のダウンロードだったので、レスポンスは遅延させずに
-      // 裏でR2オブジェクトとDBレコードを削除する。
-      ctx.waitUntil(deleteOneTimeFile(env, fileId, file.storage_key));
+      downloadCount.download_count >= downloadCount.max_downloads;
+
+    let responseBody: ReadableStream = object.body;
+
+    if (isLastAllowedDownload) {
+      // 許可された最後の1回のダウンロード。R2オブジェクトとDBレコードは
+      // 削除するが、レスポンス本体をまだ配信し終えていないうちに
+      // FILES_BUCKET.delete() を走らせると、R2 からの後続チャンク読み出しが
+      // 失敗してこのダウンロード自体が途中で切れるおそれがある。恒等
+      // TransformStream を挟んで本体の配信が終わって(=完走 or 切断)から
+      // 削除をスケジュールする。中断時に削除する挙動自体は従来どおり
+      // (「1回」ファイルの中断時の扱いは GitHub issue #62)。
+      const { readable, writable } = new TransformStream<
+        Uint8Array,
+        Uint8Array
+      >();
+
+      const bodyStreamed = object.body.pipeTo(writable).then(
+        () => {},
+        () => {}
+      );
+
+      responseBody = readable;
+
+      ctx.waitUntil(
+        bodyStreamed.then(() =>
+          deleteOneTimeFile(env, fileId, file.storage_key)
+        )
+      );
     }
 
-    return new Response(object.body, {
+    return new Response(responseBody, {
       headers: {
         "Content-Type":
           object.httpMetadata?.contentType ?? "application/octet-stream",
