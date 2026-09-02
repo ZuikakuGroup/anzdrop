@@ -15,6 +15,8 @@ initOpenNextCloudflareForDev({
 });
 
 const nextConfig: NextConfig = {
+  // `X-Powered-By: Next.js` を返さない(不要な実装情報の露出を避ける。issue #64)。
+  poweredByHeader: false,
   // lib/account/wasm-argon2/*.wasm を静的importするため(next dev --webpack用)。
   //
   // webpackのexperiments.asyncWebAssemblyも試したが、Next.jsの開発モードは
