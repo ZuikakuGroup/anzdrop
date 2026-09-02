@@ -6,7 +6,7 @@ import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
 
 // R2のマルチパートアップロードは、最終パートを除きパートサイズが最小5MiB
 // 以上でなければならない制約がある。クライアントは暗号化ストリームを
-// UPLOAD_PART_SIZE(8MiB)ちょうどで切り出して送る(最終パートのみ小さい)。
+// UPLOAD_PART_SIZE(16MiB)ちょうどで切り出して送る(最終パートのみ小さい)。
 // declaredFileSizeから許容するパート数の上限を、より小さいこの最小粒度で
 // 見積もることで、正当なアップロードを弾かずに上限を保守的に定める。
 const R2_MULTIPART_MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
@@ -131,9 +131,10 @@ export const POST = withApiHandler(
     // 有効なパート番号の上限を導く。これにより、completeを呼ばずにチャンクを
     // 送り続けてストレージを無制限に消費する(cleanupの猶予時間まで居座る)
     // 濫用を、各リクエスト単位でも防ぐ。実パート数は
-    // ceil(暗号文サイズ / UPLOAD_PART_SIZE(8MiB)) だが、暗号文はsalt・IV・
-    // GCMタグの分だけ平文より大きいため、より小さい5MiB粒度で見積もって
-    // 正当なアップロードを弾かないようにする。
+    // ceil(暗号文サイズ / UPLOAD_PART_SIZE(16MiB)) だが、暗号文はsalt・IV・
+    // GCMタグの分だけ平文より大きく、かつパートサイズを大きくすると実パート数が
+    // 減るため、より小さい5MiB粒度で見積もって正当なアップロードを弾かない
+    // ようにする(保守的な上限)。
     const declaredFileSize = upload.file_size ?? 0;
     const maxPartNumber = Math.max(
       1,

@@ -29,7 +29,7 @@
 
 暗号化済みバイト列の一部をR2マルチパートアップロードの1パートとして送信する。
 
-- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
+- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(16MiB = 暗号化チャンク2つ分、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。パートを大きくするほど、パートごとの固定コスト(D1クエリ2本・`resumeMultipartUpload`)の総数が減り実効アップロード速度が上がる。同時送信本数は実効プラン別(free/standard: 6、premium: 8。[`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)で、`並列数 × 16MiB` が送信中に同時展開されるためモバイル端末のメモリを考えて控えめにしている。
 - ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
 - ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
 - レスポンス: `{ success: true, partNumber }`
@@ -64,6 +64,7 @@
 ファイル本体を暗号化済みバイナリのままストリーミング返却する。
 
 - 共有が期限切れの場合410、一時停止中の場合403。ファイル/共有が存在しない場合404。
+- **`Range` リクエスト(並列ダウンロード)**: 回数を数えないファイル(`max_downloads IS NULL`)への `Range: bytes=...` は、有効期限・一時停止の確認だけを済ませて部分応答(206 + `Content-Range`)を返す。1回の論理的なダウンロードが複数のサブリクエストに分かれるだけなので `download_count` は加算しない。クライアント([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))は暗号文を既定8MiBのウィンドウに分けて複数本並列取得し、順番に連結し直してから復号する(単一コネクションの逐次ダウンロードより実効速度が上がる)。回数を数えるファイルは `Range` を無視して全体を返し、下記の単一GET+原子的加算の経路を通る(クライアントも回数制限ファイルには `Range` を使わない)。回数を数えないファイルの通常(非Range)応答には `Accept-Ranges: bytes` を付ける。
 - ダウンロード回数の上限チェックと加算を1つの `UPDATE ... RETURNING` で原子的に行い、条件を満たさない(既に上限到達)場合は404扱い。
 - 回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、転送が最後まで完了したときだけ後処理を行う(GitHub issue #62)。
   - 完走かつ最後の1回だった場合: レスポンスをブロックせず `ctx.waitUntil()` で裏からR2オブジェクトとDBレコードを削除。

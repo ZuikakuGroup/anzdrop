@@ -57,7 +57,8 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。失敗時は呼び出し側がそのまま再試行でき、再試行のたびに必ずファイル先頭からの新しいストリームで送り直す(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
-- [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。
+- [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。回数を数えないファイルは暗号文の取得を`parallelFetch.ts`へ委ね、消費側が現在のチャンクを処理する間に次のチャンクの復号を1段先読みする。
+- [`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts): 暗号化済みファイル本体を複数のHTTP `Range` リクエストで並列取得し、順番どおりの1本の`ReadableStream`として返す`createParallelCiphertextStream`。各リクエスト(先頭のプローブ含む)は一時エラー時に指数バックオフ付きで数回リトライし、buffered+in-flightのウィンドウ数を並列数+余裕に制限してメモリを抑える(消費が遅ければ新しい取得を止めてバックプレッシャーをかける)。先頭リクエストにサーバーが`Range`を無視して200を返した場合はその本体を単一ストリームとしてそのまま返すが、2本目以降で206以外が返った場合は(全体本体をウィンドウ位置へ混ぜて壊さないよう)そのダウンロードを失敗させ、呼び出し側の再試行に委ねる。
 - [`lib/download/saveFile.ts`](../lib/download/saveFile.ts): 復号済みファイルの保存(`saveDecryptedFile`)。保存経路は環境に応じて (1) `showSaveFilePicker`(Chromium系)で保存先を選ばせてディスクへ逐次書き込み、(2) Service Worker 経由のストリーミング(Firefox/Safari。`streamDownloadSaver.ts`)、(3) Blob フォールバック(`triggerBlobDownload`。最後の手段)。(1)(2)はファイル全体をメモリに載せない。フォルダへ複数ファイルを一括保存する `saveDecryptedFilesToDirectory` も。
 - [`lib/download/streamDownloadSaver.ts`](../lib/download/streamDownloadSaver.ts): `showSaveFilePicker` が使えないブラウザ向けの Service Worker(`public/download-sw.js`)登録と、復号済みストリームを Service Worker へ転送して `Content-Disposition: attachment` の Response としてダウンロードさせる `saveViaServiceWorker`(GitHub issue #61)。transferable stream 非対応の古いブラウザや Service Worker がまだページを制御していない場合は使わない(Blob フォールバックへ)。
 - [`lib/download/errors.ts`](../lib/download/errors.ts): ユーザーに表示してよい文言だけを持つ`FriendlyError`/`FileGoneError`と、それ以外の例外を汎用メッセージへ丸める`toFriendlyMessage`。
@@ -68,9 +69,9 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## アップロードの流れ
 
-1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大64MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `64MiB × ファイル数` にならない(GitHub issue #60)。
+1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大48MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `48MiB × ファイル数` にならない(GitHub issue #60)。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
-3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
+3. 暗号化ストリームを `UPLOAD_PART_SIZE`(16MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。パートは実効プラン別の本数(free/standard: 6、premium: 8)で並列送信する。パートを大きく(8→16MiB)することで、パートごとの固定コスト(D1クエリ2本・`resumeMultipartUpload`)の総数を半減させ、実効速度を上げている。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。`start`・`chunk` と同じく `uploadToken` の一致で認可し、`start` より後に共有が期限切れ/一時停止された場合は完了させない。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
 
@@ -84,7 +85,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 1. `GET /api/download/[shareId]` で共有の有効期限・ファイル一覧(暗号化済みファイル名・サイズ)・パスワード保護の有無(`wrappedKey`/`keySalt` の有無)を取得。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
-3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文の保存経路(`lib/download/saveFile.ts`):
+3. ファイル本体は `GET /api/file/[fileId]` からダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。回数を数えないファイルは、暗号文を複数のHTTP `Range` リクエスト(既定8MiBのウィンドウ・6本並列)で並列取得し、順番に連結し直してから復号する(`lib/download/parallelFetch.ts`。単一コネクションの逐次ダウンロードより実効速度が上がる。連結後のバイト列は単一ストリームと同一なので復号側は変更なし)。回数を数えるファイル(保存期間「1回」など)は、サーバー側のダウンロード数カウントを1回に保つため単一の `GET` のまま取得する。復号済み平文の保存経路(`lib/download/saveFile.ts`):
    - `showSaveFilePicker` が使える環境(Chromium 系): ユーザーが選んだ保存先へ逐次書き込み。ファイル全体をメモリに載せない。
    - それ以外で Service Worker が使える環境(Firefox/Safari): 復号済みストリームを Service Worker(`public/download-sw.js`)へ転送し、`Content-Disposition: attachment` の Response としてストリーミングダウンロードさせる(`lib/download/streamDownloadSaver.ts`。GitHub issue #61)。これもファイル全体をメモリに載せない。Service Worker はダウンロードページのマウント時に登録され、初回訪問直後などまだページを制御していない間は次の Blob 経路になる。
    - どちらも使えない場合: Blob に集めてから保存(最後の手段。大容量ファイルではタブが落ちうる)。

@@ -217,6 +217,65 @@ describe("fetchDecryptedStream", () => {
     await expect(drainStream(stream)).rejects.toThrow(/途中で切断/);
   });
 
+  it("uses a single non-range request for a one-time file", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("one-time payload");
+    const packed = await packEncrypted(new File([content], "o.bin"), key);
+
+    const fetchMock = vi.fn(
+      async (_url: string, init?: RequestInit) =>
+        new Response(streamOf(packed), { status: 200, ...init })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stream = await fetchDecryptedStream(
+      { id: "one", name: "o.bin", size: content.byteLength, isOneTime: true },
+      key
+    );
+
+    expect(await drainStream(stream)).toEqual(content);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Range ヘッダを付けずに取得する(サーバーのダウンロード数カウントを1回に保つ)。
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect((init?.headers as Record<string, string> | undefined)?.Range).toBeUndefined();
+  });
+
+  it("decrypts correctly when the server answers the range request with a 206 slice", async () => {
+    // 大容量の暗号処理は jsdom の crypto.subtle が遅すぎて現実的でないため、
+    // ここでは「206 応答からでも復号が成立する」ことだけを小さいデータで確認する。
+    // ウィンドウ境界をまたぐ並列再構成のバイト一致は parallelFetch.test.ts が担保する。
+    const key = await generateKey();
+    const content = new TextEncoder().encode(
+      "served as a partial-content response"
+    );
+    const packed = await packEncrypted(new File([content], "p.bin"), key);
+
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const range = (init?.headers as Record<string, string> | undefined)?.Range;
+      const m = /^bytes=(\d+)-(\d+)$/.exec(range ?? "")!;
+      const start = Number(m[1]);
+      const end = Math.min(Number(m[2]), packed.byteLength - 1);
+      return new Response(packed.slice(start, end + 1), {
+        status: 206,
+        headers: {
+          "Content-Range": `bytes ${start}-${end}/${packed.byteLength}`,
+        },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const stream = await fetchDecryptedStream(
+      { id: "p", name: "p.bin", size: content.byteLength, isOneTime: false },
+      key
+    );
+
+    expect(await drainStream(stream)).toEqual(content);
+    const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+    expect(
+      (init?.headers as Record<string, string> | undefined)?.Range
+    ).toMatch(/^bytes=0-/);
+  });
+
   it("throws a FileGoneError before returning a stream on 404", async () => {
     vi.stubGlobal(
       "fetch",

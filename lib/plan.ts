@@ -12,6 +12,11 @@ export const PLAN_LIMITS: Record<
     allowedRetentions: Retention[];
     previewEnabled: boolean;
     skipTurnstile: boolean;
+    // 1ファイルのパートを同時に何本まで送るか(lib/upload/chunkUploader.ts)。
+    // 送信中は最大 uploadConcurrency × UPLOAD_PART_SIZE(16 MiB)が同時に
+    // 展開されるため、モバイル端末のメモリを考えて控えめにする。パートを
+    // 8→16 MiB に大きくした分、本数を減らしても実効スループットはほぼ変わらない
+    // (同一オリジンへの HTTP/2 単一コネクション上で多重化されるため)。
     uploadConcurrency: number;
   }
 > = {
@@ -20,21 +25,21 @@ export const PLAN_LIMITS: Record<
     allowedRetentions: ["once", "1d", "3d", "7d"],
     previewEnabled: false,
     skipTurnstile: false,
-    uploadConcurrency: 8,
+    uploadConcurrency: 6,
   },
   standard: {
     maxFileSizeBytes: 20 * 1024 * 1024 * 1024, // 20GB
     allowedRetentions: ["once", "1d", "3d", "7d", "15d"],
     previewEnabled: false,
     skipTurnstile: true,
-    uploadConcurrency: 8,
+    uploadConcurrency: 6,
   },
   premium: {
     maxFileSizeBytes: 50 * 1024 * 1024 * 1024, // 50GB(暫定)
     allowedRetentions: ["once", "1d", "3d", "7d", "15d", "30d"],
     previewEnabled: true,
     skipTurnstile: true,
-    uploadConcurrency: 12,
+    uploadConcurrency: 8,
   },
 };
 

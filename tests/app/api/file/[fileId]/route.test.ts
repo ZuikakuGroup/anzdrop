@@ -557,3 +557,124 @@ describe("GET /api/file/[fileId]", () => {
     routeEnvOverride = null;
   });
 });
+
+async function getFileWithRange(
+  fileId: string,
+  range: string
+): Promise<Response> {
+  const { GET } = await import("@/app/api/file/[fileId]/route");
+
+  return GET(
+    new Request(`http://localhost/api/file/${fileId}`, {
+      headers: { Range: range },
+    }),
+    { params: Promise.resolve({ fileId }) }
+  );
+}
+
+describe("GET /api/file/[fileId] (Range / 並列ダウンロード)", () => {
+  it("returns a 206 partial slice with Content-Range for a range request on a non-counted file", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode(
+      "0123456789abcdefghijklmnopqrstuvwxyz"
+    );
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=5-14");
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe(
+      `bytes 5-14/${content.byteLength}`
+    );
+    expect(response.headers.get("Content-Length")).toBe("10");
+    expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/octet-stream"
+    );
+
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(content.slice(5, 15));
+  });
+
+  it("reassembles to the exact original bytes across several sequential range requests", async () => {
+    const shareId = await insertShare();
+    const content = new Uint8Array(1000).map((_, i) => i % 251);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const windows: number[][] = [
+      [0, 399],
+      [400, 799],
+      [800, 1099], // 末尾はオブジェクト長を超える指定でもクランプされる
+    ];
+
+    const collected: number[] = [];
+    for (const [start, end] of windows) {
+      const response = await getFileWithRange(fileId, `bytes=${start}-${end}`);
+      expect(response.status).toBe(206);
+      collected.push(...new Uint8Array(await response.arrayBuffer()));
+    }
+
+    expect(new Uint8Array(collected)).toEqual(content);
+  });
+
+  it("does not increment download_count for range requests on a non-counted file", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("no counting for plain files");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+      downloadCount: 0,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    for (let i = 0; i < 5; i++) {
+      const response = await getFileWithRange(fileId, `bytes=0-3`);
+      expect(response.status).toBe(206);
+      await response.arrayBuffer();
+    }
+
+    expect(await downloadCountOf(fileId)).toBe(0);
+  });
+
+  it("ignores the Range header for a counted file and serves the full body with one counted download", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("counted file body");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      size: content.byteLength,
+      maxDownloads: 3,
+      downloadCount: 0,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFileWithRange(fileId, "bytes=0-3");
+
+    // 回数制限ファイルは Range を無視して全体を返す(単一 GET 経路)。
+    expect(response.status).toBe(200);
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(content);
+    await flushWaitUntil();
+
+    expect(await downloadCountOf(fileId)).toBe(1);
+  });
+
+  it("still enforces expiry/suspension for range requests", async () => {
+    const shareId = await insertShare({
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    const { id: fileId, storageKey } = await insertFile({ shareId });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array(64));
+
+    const response = await getFileWithRange(fileId, "bytes=0-3");
+
+    expect(response.status).toBe(410);
+  });
+});

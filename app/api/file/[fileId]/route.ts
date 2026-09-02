@@ -8,6 +8,7 @@ type FileRecord = {
   share_id: string;
   storage_key: string;
   encrypted_file_name: string;
+  max_downloads: number | null;
 };
 
 type DownloadCountResult = {
@@ -36,6 +37,88 @@ function safeAttachmentFilename(encryptedFileName: string): string {
     .slice(0, MAX_ENCRYPTED_FILE_NAME_LENGTH);
 
   return cleaned.length > 0 ? cleaned : "download";
+}
+
+// "Range: bytes=..." を R2 の range 指定へ変換する。単一の範囲だけ対応し、
+// 解釈できないもの(複数レンジ・不正な形式)は null を返して呼び出し側が
+// 全体応答へフォールバックできるようにする。end がオブジェクト長を超えていても
+// R2 が length を実際のサイズへクランプするので、ここでのクランプは不要。
+function parseSingleRange(
+  header: string
+): { offset: number; length?: number } | { suffix: number } | null {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+
+  if (!match) {
+    return null;
+  }
+
+  const [, startText, endText] = match;
+
+  if (startText === "" && endText === "") {
+    return null;
+  }
+
+  // 末尾 N バイト: "bytes=-500"
+  if (startText === "") {
+    const suffix = Number(endText);
+    return Number.isSafeInteger(suffix) && suffix > 0 ? { suffix } : null;
+  }
+
+  const offset = Number(startText);
+
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    return null;
+  }
+
+  if (endText === "") {
+    return { offset };
+  }
+
+  const end = Number(endText);
+
+  if (!Number.isSafeInteger(end) || end < offset) {
+    return null;
+  }
+
+  return { offset, length: end - offset + 1 };
+}
+
+// R2 が返した(範囲指定つきの可能性がある)オブジェクトを HTTP レスポンスへ
+// 変換する。range が付いていれば 206 + Content-Range、無ければ(R2 が範囲を
+// 解釈できず全体を返した場合)200 + 全長を返す。ボディは常に暗号文なので
+// Content-Type は固定、キャッシュも無効のまま。
+function buildRangeResponse(
+  object: R2ObjectBody,
+  encryptedFileName: string
+): Response {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/octet-stream",
+    "Content-Disposition": `attachment; filename="${safeAttachmentFilename(
+      encryptedFileName
+    )}"`,
+    "Cache-Control": "no-store",
+    "Accept-Ranges": "bytes",
+  };
+
+  const range = object.range as
+    | { offset?: number; length?: number }
+    | undefined;
+
+  if (range && (range.offset !== undefined || range.length !== undefined)) {
+    const offset = range.offset ?? 0;
+    const length = range.length ?? object.size - offset;
+
+    headers["Content-Length"] = String(length);
+    headers["Content-Range"] = `bytes ${offset}-${
+      offset + length - 1
+    }/${object.size}`;
+
+    return new Response(object.body, { status: 206, headers });
+  }
+
+  headers["Content-Length"] = String(object.size);
+
+  return new Response(object.body, { status: 200, headers });
 }
 
 async function deleteOneTimeFile(
@@ -98,7 +181,8 @@ export const GET = withApiHandler(
         id,
         share_id,
         storage_key,
-        encrypted_file_name
+        encrypted_file_name,
+        max_downloads
       FROM files
       WHERE id = ?
       `
@@ -146,6 +230,35 @@ export const GET = withApiHandler(
         { success: false, error: access.error },
         { status: access.status }
       );
+    }
+
+    // 回数制限のないファイルへの Range リクエストは、並列ダウンロード
+    // (lib/download/parallelFetch.ts)の1つのサブリクエスト。1回の論理的な
+    // ダウンロードが複数リクエストに分かれるだけなので download_count は
+    // 加算せず、有効期限・一時停止の確認だけを済ませて部分応答(206)を返す。
+    // 回数を数えるファイルはこの分岐に入れず、下の単一 GET + 原子的加算の
+    // 経路をそのまま通す(クライアントも回数制限ファイルには Range を使わない)。
+    const rangeHeader = request.headers.get("Range");
+    const parsedRange = rangeHeader ? parseSingleRange(rangeHeader) : null;
+
+    if (parsedRange && file.max_downloads === null) {
+      // get 自体が reject した場合は withApiHandler 側の共通エラー処理(500)
+      // に委ねる(回数を数えないファイルなので戻すべきカウントもない)。
+      const ranged = await env.FILES_BUCKET.get(file.storage_key, {
+        range: parsedRange,
+      });
+
+      if (!ranged) {
+        return Response.json(
+          {
+            success: false,
+            error: "ファイルデータが見つかりません",
+          },
+          { status: 404 }
+        );
+      }
+
+      return buildRangeResponse(ranged, file.encrypted_file_name);
     }
 
     // ダウンロード回数の上限チェックと加算を1つのUPDATEで原子的に行う。
@@ -220,9 +333,12 @@ export const GET = withApiHandler(
       "Cache-Control": "no-store",
     };
 
-    // 回数上限のないファイルは、R2のボディをそのまま素通しする。
+    // 回数上限のないファイルは、R2のボディをそのまま素通しする。並列
+    // ダウンロード(Range)に対応していることをクライアント/ブラウザへ知らせる。
     if (!isCountedDownload) {
-      return new Response(object.body, { headers });
+      return new Response(object.body, {
+        headers: { ...headers, "Accept-Ranges": "bytes" },
+      });
     }
 
     const isFinalDownload =
