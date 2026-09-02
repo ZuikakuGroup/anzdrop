@@ -13,19 +13,16 @@ import {
   PLAN_LABELS,
   PLAN_LIMITS,
   PLAN_MONTHLY_PRICE_JPY,
+  PURCHASABLE_PLANS,
+  type PurchasablePlan,
 } from "@/lib/plan";
 import { formatBytes } from "@/lib/format";
 import { getStripe, STRIPE_PUBLISHABLE_KEY } from "@/lib/stripe-client";
 import type { StripeSubscriptionSummary } from "@/lib/stripe-subscription";
 import { loadPlanStatus, type PlanStatus } from "@/lib/account/planStatus";
 
-type PurchasablePlan = "standard" | "premium";
-
-// Standardプランは提供準備中(Issue #5)のため、購入導線には出さない。
-// スキーマ・APIルート・環境変数(STRIPE_PRICE_ID_STANDARD 等)はStandardも
-// 受け付けられる状態のまま残してあるので、提供開始時はこの配列に "standard" を
-// 戻すだけでよい。/pricing でも Standard は「準備中」表示のみ。
-const PURCHASABLE_PLANS: PurchasablePlan[] = ["premium"];
+// 購入可能プランは lib/plan.ts の PURCHASABLE_PLANS を単一の情報源とする
+// (決済API側の受理判定と揃える)。Standard は提供準備中(Issue #5)。
 
 // Webhook反映はStripeからの非同期通知を待つ必要があるため、決済確定直後は
 // 少し間を空けて数回だけ最新のプランを取り直す(反映が間に合わなくても

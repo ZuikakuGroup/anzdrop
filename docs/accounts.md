@@ -47,7 +47,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 
 すべて`lib/plan.ts`の`PLAN_LIMITS`に集約されており、ここを変更するだけでアップロードフロー全体・料金表示に反映される。具体的な容量・金額は暫定値。変更する場合は`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`STRIPE_PRICE_ID_*`/`OPENNODE_BTC_CHARGE_AMOUNT_USD_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
 
-**Standardプランは現在提供準備中**(Issue #5)。`/pricing`では「準備中」表示のみ、`/mypage/billing`の購入導線(`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)にも出していない。スキーマ・APIルート・環境変数はStandardも受け付けられる状態のまま残してあり、提供開始時は`PURCHASABLE_PLANS`に`"standard"`を戻すだけでよい。上の表のStandard列は提供開始後の想定値。
+**Standardプランは現在提供準備中**(Issue #5)。購入可能なプランは`lib/plan.ts`の`PURCHASABLE_PLANS`(現状`["premium"]`)を単一の情報源とし、`/mypage/billing`の購入導線(`components/billing/BillingPage.tsx`)と決済API(`POST /api/billing/stripe/subscription`・`POST /api/billing/btc/charge`)の受理判定がこれを共有する。購入UIを迂回して`{ plan: "standard" }`を直接POSTしても400で拒否される。Stripe Price ID・OpenNode金額などの環境変数はStandard分も設定済みなので、提供開始時に決済経路を有効化するのは`PURCHASABLE_PLANS`に`"standard"`を戻すだけでよい(`/pricing`の「準備中」カード表示・上限値は`components/pricing/PricingPage.tsx`にハードコードされているため、そちらは別途手修正が必要)。上の表のStandard列は提供開始後の想定値。
 
 ブラウザ内プレビューの可否(`shares.preview_allowed`)も、保存期間の上限と同じく共有作成時のアップローダーの実効プランから一度だけ判定して共有に焼き込む(`lib/preview.ts`)。以後アカウントの状態が変わっても、既に作成済みの共有の値は変わらない。ダウンロード側は完全に匿名なので、この判定は「プレビューする人」ではなく「共有を作ったアップローダー」のプランに基づく。保存期間「1回」のファイルは、プレビューが`GET /api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、共有がプレビュー可であっても無条件でプレビューを非表示にする。
 
@@ -84,7 +84,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 
 > **現在、OpenNode側の審査待ちのため、`/mypage/billing`の「ビットコインで支払う」ボタンは一時的にグレーアウトしている**(`components/billing/BillingPage.tsx`)。バックエンド(`POST /api/billing/btc/charge`・Webhook)自体は実装済みで、審査完了後にボタンの`disabled`を外すだけで有効化できる。
 
-- `POST /api/billing/btc/charge`はリクエストボディの`plan`(`"standard"`または`"premium"`)に応じた金額(`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`/`_PREMIUM`)でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする。どのプラン向けの支払いかは`btc_payments.plan`列に記録しておき、Webhook確定時に読み戻して`accounts.plan`へ反映する(OpenNodeのWebhook本文にはプラン種別の情報が含まれないため)。
+- `POST /api/billing/btc/charge`はリクエストボディの`plan`に応じた金額(`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`/`_PREMIUM`)でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする(受理するのは`PURCHASABLE_PLANS`のプランのみ。現状`premium`。`standard`は400)。どのプラン向けの支払いかは`btc_payments.plan`列に記録しておき、Webhook確定時に読み戻して`accounts.plan`へ反映する(OpenNodeのWebhook本文にはプラン種別の情報が含まれないため)。
 - OpenNodeのWebhook(`POST /api/billing/btc/webhook`)は`application/x-www-form-urlencoded`で届く(JSONではない)。署名検証は別のWebhookシークレットではなく、**charge作成に使ったAPIキー自体をHMAC鍵として使う**(`hashed_order = HMAC-SHA256(apiKey, chargeId)`、[`lib/opennode.ts`](../lib/opennode.ts))。
 - 支払いが確定(`status = "paid"`)すると、`extendPaidPeriod()`(`lib/plan.ts`)で有効期限を延長する。**既に有効期限が未来にある場合はそこに積み増し**、失効済み(または初回)なら「今から」を起点にする。
 - `btc_payments`テーブルの`status`列を`pending → paid`に更新する際に`WHERE status = 'pending'`を条件にすることで、OpenNodeからのWebhook再送による有効期限の二重加算を防いでいる。

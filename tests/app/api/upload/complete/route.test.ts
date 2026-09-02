@@ -156,15 +156,76 @@ describe("POST /api/upload/complete", () => {
   });
 
   it("returns 404 for an unknown uploadSessionId", async () => {
-    const response = await postComplete({ uploadSessionId: "no-such-session" });
+    const response = await postComplete({
+      uploadSessionId: "no-such-session",
+      uploadToken: "any-token",
+    });
 
     expect(response.status).toBe(404);
   });
 
-  it("returns 400 when there are zero uploaded parts", async () => {
+  it("returns 400 when uploadToken is missing", async () => {
     const { uploadSessionId } = await startUpload();
 
     const response = await postComplete({ uploadSessionId });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 403 when uploadToken does not match the share", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload();
+    const key = await generateKey();
+    const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
+
+    const response = await postComplete({
+      uploadSessionId,
+      uploadToken: "wrong-token",
+    });
+
+    expect(response.status).toBe(403);
+
+    // 認可に失敗した場合はセッション・パートを消してはいけない。
+    const upload = await env.DB.prepare(`SELECT id FROM uploads WHERE id = ?`)
+      .bind(uploadSessionId)
+      .first();
+    expect(upload).toBeTruthy();
+  });
+
+  it("returns 410 when the share has expired before completion", async () => {
+    const { uploadSessionId, shareId, uploadToken } = await startUpload();
+    const key = await generateKey();
+    const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
+
+    await env.DB.prepare(`UPDATE shares SET expires_at = ? WHERE id = ?`)
+      .bind(new Date(Date.now() - 1000).toISOString(), shareId)
+      .run();
+
+    const response = await postComplete({ uploadSessionId, uploadToken });
+
+    expect(response.status).toBe(410);
+  });
+
+  it("returns 403 when the share has been suspended before completion", async () => {
+    const { uploadSessionId, shareId, uploadToken } = await startUpload();
+    const key = await generateKey();
+    const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
+
+    await env.DB.prepare(`UPDATE shares SET suspended_at = ? WHERE id = ?`)
+      .bind(new Date().toISOString(), shareId)
+      .run();
+
+    const response = await postComplete({ uploadSessionId, uploadToken });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("returns 400 when there are zero uploaded parts", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload();
+
+    const response = await postComplete({ uploadSessionId, uploadToken });
 
     expect(response.status).toBe(400);
 
@@ -188,7 +249,7 @@ describe("POST /api/upload/complete", () => {
     const packed = await encryptAsSingleFile(content, key);
     await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
-    const response = await postComplete({ uploadSessionId });
+    const response = await postComplete({ uploadSessionId, uploadToken });
 
     expect(response.status).toBe(200);
     const body = await readJson<{ success: boolean; fileId: string }>(
@@ -236,7 +297,7 @@ describe("POST /api/upload/complete", () => {
     const packed = await encryptAsSingleFile(new Uint8Array([42]), key);
     await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
 
-    const response = await postComplete({ uploadSessionId });
+    const response = await postComplete({ uploadSessionId, uploadToken });
     expect(response.status).toBe(200);
     const body = await readJson<{ fileId: string }>(response);
 
@@ -272,7 +333,7 @@ describe("POST /api/upload/complete", () => {
     await uploadPart(uploadSessionId, uploadToken, 2, partB);
     await uploadPart(uploadSessionId, uploadToken, 1, partA);
 
-    const response = await postComplete({ uploadSessionId });
+    const response = await postComplete({ uploadSessionId, uploadToken });
     expect(response.status).toBe(200);
     const body = await readJson<{ fileId: string }>(response);
 
@@ -362,7 +423,7 @@ describe("POST /api/upload/complete", () => {
     expect(bySize[1]).toBe(UPLOAD_PART_SIZE);
     expect(bySize[2]).toBeLessThan(UPLOAD_PART_SIZE);
 
-    const response = await postComplete({ uploadSessionId });
+    const response = await postComplete({ uploadSessionId, uploadToken });
     expect(response.status).toBe(200);
     const completeBody = await readJson<{ success: boolean; fileId: string }>(
       response

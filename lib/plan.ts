@@ -51,6 +51,23 @@ export const PLAN_MONTHLY_PRICE_JPY: Record<Exclude<Plan, "free">, number> = {
   premium: 450,
 };
 
+// 現在購入できる有料プラン。購入UI(components/billing/BillingPage.tsx)と
+// 決済API(app/api/billing/stripe/subscription・app/api/billing/btc/charge)が
+// 共有する単一の情報源。Standardは提供準備中(Issue #5)のため含めない。
+// スキーマ・APIルート・環境変数(STRIPE_PRICE_ID_STANDARD 等)はStandardも
+// 扱える状態のまま残してあるので、提供開始時はこの配列へ "standard" を戻すだけで
+// 購入UI・Stripe/Bitcoinの両決済APIに反映される。
+export const PURCHASABLE_PLANS = ["premium"] as const satisfies readonly Exclude<
+  Plan,
+  "free"
+>[];
+
+export type PurchasablePlan = (typeof PURCHASABLE_PLANS)[number];
+
+export function isPurchasablePlan(value: string): value is PurchasablePlan {
+  return (PURCHASABLE_PLANS as readonly string[]).includes(value);
+}
+
 // プランの階層順序。Bitcoin決済のWebhook確定処理で、既にアクティブな上位
 // プラン(例: premium)を、より安価なプラン(例: standard)の支払いで
 // 誤って格下げしないための比較に使う。

@@ -21,6 +21,7 @@
 - 新規共有作成時(`shareId`未指定時)は、アップローダーの実効プラン(未ログインは常にfree)がfreeの場合のみ `turnstileToken` によるTurnstile検証が必須。Standard/Premiumはログイン済みアカウントであることが分かっているため検証をスキップする(`isTurnstileRequiredForPlan()`、[`lib/plan.ts`](../lib/plan.ts))。既存共有への相乗り(`shareId`指定時)は `uploadToken` の一致で認可し、プランに関わらずTurnstile再検証は行わない。
 - リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
   - `wrappedKey`/`keySalt` は新規共有かつパスワード保護を設定した場合のみ。
+  - `encryptedFileName`・`wrappedKey`・`keySalt` は、クライアントが送る base64url(パディングなし)を前提に、ヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する(不正な文字・長さは400)。`encrypted_file_name` は `GET /api/file/[fileId]` の `Content-Disposition` ヘッダに載るため、制御文字・改行・`"` の混入を入口で防ぎ、さらに `GET /api/file/[fileId]` 側でもヘッダ生成直前に安全な文字集合へ丸める(`safeAttachmentFilename`。検証前に保存された古い行・破損データ対策)。
 - レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt }`
 - ファイルサイズ上限・選べる`retention`はアップローダーの実効プランによって異なる(free: 5GB・`once`/`1d`/`3d`/`7d`、standard: 20GB・上記+`15d`、premium: 50GB・上記+`30d`)。詳細は[`accounts.md`](./accounts.md#プランの差libplants)の表を参照。超過・許可外の場合はそれぞれ400/403。
 
@@ -38,7 +39,9 @@
 
 全パート送信後にマルチパートアップロードを完了し、`files` テーブルへレコードを作成する。
 
-- リクエスト: `{ uploadSessionId }`
+- リクエスト: `{ uploadSessionId, uploadToken }`
+- `start`(相乗り時)・`chunk` と同じく、`uploadSessionId` から辿った共有の `upload_token` と `uploadToken` の一致(定数時間比較)で認可する。不一致は403。
+- さらに、`start` より後に共有が期限切れ/一時停止された場合は完了させない(`checkShareAccessible()`。期限切れ410、一時停止403)。
 - レスポンス: `{ success: true, fileId }`
 - 完了後、対応する `uploads`/`upload_parts` の行は削除される。
 
@@ -67,7 +70,7 @@
   - 通信断などで中断された場合: 加算しておいた `download_count` を1つ戻し、再取得できるようにする(削除は完走時のみ)。
   - R2 からオブジェクトを取得できなかった場合(`get` が `null` を返す/一時障害で reject する)も、加算を戻してから 404(reject 時は 500)を返す。R2 側の一時的な不整合で取得し直せる。
 - レスポンスの `Content-Type` は常に `application/octet-stream` 固定(`X-Content-Type-Options: nosniff` と合わせて sniffing を防ぐ)。
-- レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。
+- レスポンスヘッダーに `Content-Disposition: attachment; filename="<暗号化済みファイル名>"` を付与(実際のファイル名表示はクライアント側で復号後に行う)。ヘッダ生成直前に `safeAttachmentFilename` で安全な文字集合へ丸める(制御文字・改行・`"` の混入対策。GitHub issue #75)。
 
 ## 通報
 
@@ -135,6 +138,7 @@
 ログイン必須。指定プランのStripe Subscriptionを`payment_behavior: "default_incomplete"`で作成し、支払い確定用の値を`clientSecret`として返す(値はInvoiceの`latest_invoice.confirmation_secret.client_secret`から取得したもの)。クライアントはこの`clientSecret`でStripe Elements(Payment Element)をマウントし、自サイト内のフォームで決済を確定する(ホスト型Checkoutへのリダイレクトはしない)。
 
 - リクエスト: `{ plan: "standard"|"premium" }`
+  - 型としては両方受けるが、実際に決済へ進めるのは購入導線に出しているプランのみ(`PURCHASABLE_PLANS`、[`lib/plan.ts`](../lib/plan.ts))。現状は `premium` のみで、`standard`(提供準備中。Issue #5)は購入UIを迂回して直接叩いても400で拒否する。`btc/charge` も同じ判定。
 - レスポンス: `{ success: true, clientSecret }`
 
 ### `POST /api/billing/stripe/webhook`
@@ -162,7 +166,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 ログイン必須。OpenNodeでBitcoin決済のchargeを作成する(「期間チャージ」方式、自動更新なし)。
 
-- リクエスト: `{ plan: "standard"|"premium" }`
+- リクエスト: `{ plan: "standard"|"premium" }`(`subscription` と同じく、実際に受理するのは `PURCHASABLE_PLANS` のプランのみ。現状 `premium`。`standard` は400)
 - レスポンス: `{ success: true, hostedCheckoutUrl }`
 
 ### `POST /api/billing/btc/webhook`
@@ -210,7 +214,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `POST /api/admin/shares/[shareId]/suspend` / `POST /api/admin/shares/[shareId]/unsuspend`
 
-共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗り、`POST /api/upload/start`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。
+共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗りの `POST /api/upload/start`、および停止前に開始済みセッションの `POST /api/upload/complete`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。
 
 ### `GET /api/admin/accounts/[accountId]`
 

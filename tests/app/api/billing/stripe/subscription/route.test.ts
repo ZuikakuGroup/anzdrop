@@ -79,7 +79,7 @@ function subscriptionWithClientSecret(
 
 async function postSubscription(
   cookie?: string,
-  body: unknown = { plan: "standard" }
+  body: unknown = { plan: "premium" }
 ) {
   const { POST } = await import(
     "@/app/api/billing/stripe/subscription/route"
@@ -136,7 +136,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_new", "seti_new_secret")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockCustomersCreate).toHaveBeenCalledWith();
@@ -160,7 +160,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_xyz", "seti_xyz_secret")
     );
 
-    await postSubscription(cookie, { plan: "standard" });
+    await postSubscription(cookie, { plan: "premium" });
 
     expect(mockCustomersCreate).not.toHaveBeenCalled();
     expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
@@ -168,32 +168,19 @@ describe("POST /api/billing/stripe/subscription", () => {
     );
   });
 
-  it("creates the subscription for the standard plan's price with card-only, default-incomplete settings", async () => {
+  it("rejects the not-yet-available standard plan (bypassing the purchase UI) with 400", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
     });
     const cookie = await sessionCookieHeader(env, accountId);
-    mockSubscriptionsCreate.mockResolvedValue(
-      subscriptionWithClientSecret("sub_standard", "seti_standard_secret")
-    );
 
-    await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "standard" });
 
-    expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customer: "cus_existing",
-        items: [{ price: env.STRIPE_PRICE_ID_STANDARD }],
-        payment_behavior: "default_incomplete",
-        payment_settings: expect.objectContaining({
-          payment_method_types: ["card"],
-        }),
-        expand: ["latest_invoice.confirmation_secret"],
-        metadata: { accountId, plan: "standard" },
-      })
-    );
+    expect(response.status).toBe(400);
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
   });
 
-  it("creates the subscription for the premium plan's price", async () => {
+  it("creates the subscription for the premium plan's price with card-only, default-incomplete settings", async () => {
     const { accountId } = await insertTestAccount(env, {
       stripeCustomerId: "cus_existing",
     });
@@ -206,7 +193,13 @@ describe("POST /api/billing/stripe/subscription", () => {
 
     expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        customer: "cus_existing",
         items: [{ price: env.STRIPE_PRICE_ID_PREMIUM }],
+        payment_behavior: "default_incomplete",
+        payment_settings: expect.objectContaining({
+          payment_method_types: ["card"],
+        }),
+        expand: ["latest_invoice.confirmation_secret"],
         metadata: { accountId, plan: "premium" },
       })
     );
@@ -221,7 +214,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_no_secret", null)
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
     const body = await readJson<{ success: boolean }>(response);
@@ -240,7 +233,7 @@ describe("POST /api/billing/stripe/subscription", () => {
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(409);
     expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
@@ -260,7 +253,7 @@ describe("POST /api/billing/stripe/subscription", () => {
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({ status: "trialing" });
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(409);
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
@@ -274,7 +267,7 @@ describe("POST /api/billing/stripe/subscription", () => {
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue({ status: "past_due" });
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(409);
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
@@ -293,7 +286,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_after_unpaid", "seti_after_unpaid")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCancel).toHaveBeenCalledWith("sub_unpaid");
@@ -314,7 +307,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_retry_new", "seti_retry_secret")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCancel).toHaveBeenCalledWith("sub_abandoned");
@@ -341,7 +334,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_retry_new_2", "seti_retry_secret_2")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
@@ -363,7 +356,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       Object.assign(new Error("rate limited"), { statusCode: 429 })
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
@@ -394,7 +387,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_after_race", "seti_after_race")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
@@ -415,7 +408,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       Object.assign(new Error("service unavailable"), { statusCode: 503 })
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
@@ -439,7 +432,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_fresh", "seti_fresh_secret")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsCreate).toHaveBeenCalled();
@@ -458,7 +451,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       Object.assign(new Error("rate limited"), { statusCode: 429 })
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
     expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
@@ -470,7 +463,7 @@ describe("POST /api/billing/stripe/subscription", () => {
     mockCustomersCreate.mockResolvedValue({ id: "cus_orphan_guard" });
     mockSubscriptionsCreate.mockRejectedValue(new Error("stripe down"));
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
 
@@ -487,7 +480,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       new Error("stripe unreachable: secret internal detail")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(500);
     const body = await readJson<{ success: boolean; error: string }>(
@@ -507,7 +500,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_first", "seti_first_secret")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
@@ -525,7 +518,7 @@ describe("POST /api/billing/stripe/subscription", () => {
       subscriptionWithClientSecret("sub_after_canceled", "seti_after_canceled")
     );
 
-    const response = await postSubscription(cookie, { plan: "standard" });
+    const response = await postSubscription(cookie, { plan: "premium" });
 
     expect(response.status).toBe(200);
     // canceled は incomplete/unpaid と違い、明示的なキャンセルは不要。

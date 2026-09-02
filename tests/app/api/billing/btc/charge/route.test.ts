@@ -134,20 +134,38 @@ describe("POST /api/billing/btc/charge", () => {
     });
   });
 
-  it("records the requested plan (standard) on the btc_payments row", async () => {
+  it("records the requested plan (premium) on the btc_payments row", async () => {
     const { accountId } = await insertTestAccount(env);
     const cookie = await sessionCookieHeader(env, accountId);
 
-    stubOpenNodeSuccess("charge-std", "https://checkout.opennode.com/charge-std");
+    stubOpenNodeSuccess("charge-prm", "https://checkout.opennode.com/charge-prm");
 
-    await postCharge(cookie, { plan: "standard" });
+    await postCharge(cookie, { plan: "premium" });
 
     const payment = await env.DB.prepare(
       `SELECT plan FROM btc_payments WHERE opennode_charge_id = ?`
     )
-      .bind("charge-std")
+      .bind("charge-prm")
       .first<{ plan: string }>();
-    expect(payment?.plan).toBe("standard");
+    expect(payment?.plan).toBe("premium");
+  });
+
+  it("rejects the not-yet-available standard plan (bypassing the purchase UI) with 400", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await postCharge(cookie, { plan: "standard" });
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const { results } = await env.DB.prepare(
+      `SELECT id FROM btc_payments`
+    ).all();
+    expect(results).toHaveLength(0);
   });
 
   it("sends the plan-specific USD amount and a callback url derived from the request origin", async () => {
@@ -164,14 +182,14 @@ describe("POST /api/billing/btc/charge", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await postCharge(cookie, { plan: "standard" });
+    await postCharge(cookie, { plan: "premium" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.opennode.com/v1/charges",
       expect.objectContaining({ method: "POST" })
     );
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(requestBody.amount).toBe(env.OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD);
+    expect(requestBody.amount).toBe(env.OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM);
     expect(requestBody.callback_url).toBe(
       "http://localhost/api/billing/btc/webhook"
     );

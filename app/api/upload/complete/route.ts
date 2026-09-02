@@ -4,6 +4,8 @@ import { getAccountPlanInfo, getMaxFileSizeBytes } from "@/lib/plan";
 import { getPlaintextSizeFromCiphertextSize } from "@/lib/crypto";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
+import { checkShareAccessible } from "@/lib/share-auth";
+import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import {
   UploadCompleteRequestSchema,
   type UploadCompleteResponse,
@@ -16,6 +18,9 @@ type UploadRecord = {
   upload_id: string;
   encrypted_file_name: string;
   max_downloads: number | null;
+  share_upload_token: string | null;
+  share_expires_at: string;
+  share_suspended_at: string | null;
 };
 
 type UploadPartRecord = {
@@ -34,18 +39,23 @@ export const POST = withApiHandler(
       return parsed.response;
     }
 
-    const { uploadSessionId } = parsed.data;
+    const { uploadSessionId, uploadToken } = parsed.data;
 
     const upload = await env.DB.prepare(`
       SELECT
-        id,
-        share_id,
-        storage_key,
-        upload_id,
-        encrypted_file_name,
-        max_downloads
+        uploads.id AS id,
+        uploads.share_id AS share_id,
+        uploads.storage_key AS storage_key,
+        uploads.upload_id AS upload_id,
+        uploads.encrypted_file_name AS encrypted_file_name,
+        uploads.max_downloads AS max_downloads,
+        shares.upload_token AS share_upload_token,
+        shares.expires_at AS share_expires_at,
+        shares.suspended_at AS share_suspended_at
       FROM uploads
-      WHERE id = ?
+      JOIN shares ON shares.id = uploads.share_id
+      WHERE uploads.id = ?
+      LIMIT 1
     `)
       .bind(uploadSessionId)
       .first<UploadRecord>();
@@ -57,6 +67,42 @@ export const POST = withApiHandler(
           error: "アップロードセッションが見つかりません",
         },
         { status: 404 }
+      );
+    }
+
+    // shareId は URL に露出する公開識別子のため、完了処理の認可も start(相乗り
+    // 時)・chunk と同じく uploadToken の一致(定数時間比較)で行う。
+    const tokenMatches =
+      !!upload.share_upload_token &&
+      timingSafeEqual(
+        new TextEncoder().encode(upload.share_upload_token),
+        new TextEncoder().encode(uploadToken)
+      );
+
+    if (!tokenMatches) {
+      return Response.json(
+        {
+          success: false,
+          error: "アップロードトークンが正しくありません",
+        },
+        { status: 403 }
+      );
+    }
+
+    // 期限切れ・管理者による停止済みの共有へは、start より後に停止された
+    // セッションであってもファイルを追加させない(download 系と同じ判定)。
+    // ここで拒否した場合、R2 の未完了マルチパートと uploads/upload_parts 行は
+    // 「パート 0 件」等の他の失敗経路と同じくその場では消さず、cleanupStaleUploads
+    // (24 時間)と期限切れ共有 cleanup に後始末を委ねる。
+    const access = checkShareAccessible({
+      expiresAt: upload.share_expires_at,
+      suspendedAt: upload.share_suspended_at,
+    });
+
+    if (!access.ok) {
+      return Response.json(
+        { success: false, error: access.error },
+        { status: access.status }
       );
     }
 

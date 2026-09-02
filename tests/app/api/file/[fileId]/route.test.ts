@@ -269,7 +269,7 @@ describe("GET /api/file/[fileId]", () => {
     const content = new TextEncoder().encode("hello anzdrop");
     const { id: fileId, storageKey } = await insertFile({
       shareId,
-      encryptedFileName: "my file.enc",
+      encryptedFileName: "aGVsbG8-d29ybGQ_.enc",
       size: content.byteLength,
     });
     await env.FILES_BUCKET.put(storageKey, content);
@@ -278,7 +278,7 @@ describe("GET /api/file/[fileId]", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Disposition")).toBe(
-      `attachment; filename="my file.enc"`
+      `attachment; filename="aGVsbG8-d29ybGQ_.enc"`
     );
     // Content-Length は本体のバイト長と一致し、クライアント側の途中切断検知に使える。
     expect(response.headers.get("Content-Length")).toBe(
@@ -286,6 +286,49 @@ describe("GET /api/file/[fileId]", () => {
     );
     const body = new Uint8Array(await response.arrayBuffer());
     expect(body).toEqual(content);
+  });
+
+  it("sanitizes an unexpected encrypted_file_name so the response still builds", async () => {
+    // encrypted_file_name は本来 base64url だが、スキーマ検証追加前の行や
+    // 破損データに制御文字・改行・" が混ざっても、Content-Disposition ヘッダの
+    // 構築が失敗して 500(= 恒久的にダウンロード不能)にならないことを確認する。
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("hello anzdrop");
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      encryptedFileName: 'evil"\r\nX-Injected: 1\n name',
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="evilX-Injected1name"`
+    );
+    expect(response.headers.has("X-Injected")).toBe(false);
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(content);
+  });
+
+  it("limits a sanitized encrypted_file_name to 4096 characters", async () => {
+    const shareId = await insertShare();
+    const content = new TextEncoder().encode("hello anzdrop");
+    const safeName = "a".repeat(4096);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      encryptedFileName: `${safeName}\r\ntruncated`,
+      size: content.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, content);
+
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      `attachment; filename="${safeName}"`
+    );
   });
 
   it("allows exactly max_downloads fully-received downloads, then deletes the file on the final one and rejects further attempts", async () => {
