@@ -18,6 +18,7 @@ import {
   type TestEnv,
 } from "@/test/env";
 import { SESSION_COOKIE_NAME } from "@/lib/account/session";
+import { verifyPassword } from "@/lib/account/password";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -26,7 +27,25 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
+// verifyPassword は既定では本物の実装をそのまま呼ぶ。並行リクエストの
+// レースを決定的に再現したいテストだけ、この関数の内部でリクエストの
+// 足並みを揃える(下記「concurrent failed attempts...」テストを参照)。
+vi.mock("@/lib/account/password", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/account/password")>();
+
+  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+});
+
+let realVerifyPassword: typeof verifyPassword;
+
 beforeAll(async () => {
+  realVerifyPassword = (
+    await vi.importActual<typeof import("@/lib/account/password")>(
+      "@/lib/account/password"
+    )
+  ).verifyPassword;
+
   const handle = await createTestEnv();
   env = handle.env;
   dispose = handle.dispose;
@@ -287,23 +306,103 @@ describe("POST /api/account/login", () => {
     stubTurnstileSuccess();
     const { accountId } = await insertTestAccount(env, {
       password: "correct-password",
-      // 閾値ちょうど手前。2本同時に来ると両方 isLocked=false を見て閾値を超える。
+      // 閾値ちょうど手前。2本同時に来ると両方 isLocked=false のスナップショットを
+      // 見たうえで、片方が施錠したあともう片方が locked_until を上書きしようとする。
       failedLoginAttempts: 4,
     });
 
-    await Promise.all([
-      postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
-      postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
-    ]);
+    // レースを決定的に再現する。試行枠の予約(reserveLoginAttempt)で
+    // 6 を得たリクエストは verifyPassword に到達せず先に施錠する。
+    // 5 を得たリクエストは verifyPassword まで進むので、そこで足を止め、
+    // もう片方の施錠が DB に着地したことを確認してから解放する。これにより
+    // 「後発リクエストが施錠済みの locked_until を上書きしようとする」
+    // 経路を必ず通す。
+    let releaseVerify!: () => void;
+    const verifyGate = new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+    });
+    let verifyReached!: () => void;
+    const verifyReachedPromise = new Promise<void>((resolve) => {
+      verifyReached = resolve;
+    });
 
-    const first = await getFailedLoginState(accountId);
-    expect(first.locked_until).not.toBeNull();
+    const verifySpy = vi.mocked(verifyPassword);
+    verifySpy.mockImplementation(async (password, stored) => {
+      verifyReached();
+      await verifyGate;
 
-    // さらにもう1本の誤った試行(ロック中)。lockAccount の WHERE ガードにより
-    // locked_until は書き換わらない。
+      return realVerifyPassword(password, stored);
+    });
+
+    try {
+      const pending = Promise.all([
+        postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+        postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+      ]);
+
+      // 閾値ちょうどのリクエストが verifyPassword で停止している。
+      await verifyReachedPromise;
+
+      // 閾値超えのリクエストは verifyPassword を経由せず施錠する。
+      // その施錠が DB に反映されるまで待つ。
+      await vi.waitFor(async () => {
+        expect(
+          (await getFailedLoginState(accountId)).locked_until
+        ).not.toBeNull();
+      });
+      const lockedAfterFirst = (await getFailedLoginState(accountId))
+        .locked_until;
+
+      // ここで解放すると、停止していたリクエストが認証失敗後に lockAccount を
+      // 呼ぶ。DB 上はすでにロック中なので WHERE ガードで 0 行更新になる。
+      releaseVerify();
+      await pending;
+
+      const final = await getFailedLoginState(accountId);
+      expect(final.locked_until).toBe(lockedAfterFirst);
+      expect(final.failed_login_attempts).toBe(0);
+    } finally {
+      verifySpy.mockImplementation(realVerifyPassword);
+    }
+
+    // ロック中のさらなる誤試行でも locked_until は書き換わらない
+    // (WHERE ガードの直接確認)。
+    const before = await getFailedLoginState(accountId);
     await postLogin({ accountId, password: "wrong", turnstileToken: "tok" });
-    const second = await getFailedLoginState(accountId);
-    expect(second.locked_until).toBe(first.locked_until);
+    const after = await getFailedLoginState(accountId);
+    expect(after.locked_until).toBe(before.locked_until);
+  });
+
+  it("while locked, the correct password succeeds at the verify budget boundary but not past it", async () => {
+    stubTurnstileSuccess();
+    const lockedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+    // LOCKOUT_VERIFY_BUDGET = LOGIN_LOCKOUT_THRESHOLD(5) * 4 = 20。
+    // reserveLoginAttempt は照合前に +1 するので、開始値 19 → 予約後 20 で
+    // ちょうど予算内、開始値 20 → 予約後 21 で予算超過になる。
+    const atBoundary = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil,
+      failedLoginAttempts: 19,
+    });
+    const boundaryResponse = await postLogin({
+      accountId: atBoundary.accountId,
+      password: atBoundary.password,
+      turnstileToken: "tok",
+    });
+    expect(boundaryResponse.status).toBe(200);
+
+    const pastBudget = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil,
+      failedLoginAttempts: 20,
+    });
+    const pastResponse = await postLogin({
+      accountId: pastBudget.accountId,
+      password: pastBudget.password,
+      turnstileToken: "tok",
+    });
+    expect(pastResponse.status).toBe(403);
   });
 
   it("while locked, once too many attempts are made, even the correct password is rejected (bounded brute-force)", async () => {
