@@ -16,7 +16,6 @@ import PasswordInput from "@/components/brand/PasswordInput";
 import {
   FileGoneError,
   FriendlyError,
-  FILE_GONE_ERROR,
   toFriendlyMessage,
 } from "@/lib/download/errors";
 import {
@@ -26,8 +25,8 @@ import {
   type DecryptedFile,
   type RawFile,
 } from "@/lib/download/decrypt";
-import { withDuplicateSuffix, zipFiles } from "@/lib/download/zipDownload";
-import { saveDecryptedFile, triggerBlobDownload } from "@/lib/download/saveFile";
+import { saveDecryptedFile } from "@/lib/download/saveFile";
+import { downloadAllFiles } from "@/lib/download/downloadAll";
 
 type DownloadPageProps = {
   shareId: string;
@@ -304,40 +303,11 @@ export default function DownloadPage({
     setIsDownloadingAll(true);
     setError("");
 
+    const removeFile = (fileId: string) =>
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+
     try {
-      const usedNames = new Map<string, number>();
-      const zipInput: Record<string, Uint8Array> = {};
-      const goneIds: string[] = [];
-
-      for (const file of files) {
-        setDownloadingId(file.id);
-
-        try {
-          const bytes = await fetchAndDecrypt(file, key);
-          const count = usedNames.get(file.name) ?? 0;
-          usedNames.set(file.name, count + 1);
-
-          zipInput[withDuplicateSuffix(file.name, count)] = bytes;
-        } catch (err) {
-          if (!(err instanceof FileGoneError)) {
-            throw err;
-          }
-
-          goneIds.push(file.id);
-        }
-      }
-
-      if (goneIds.length > 0) {
-        setFiles((prev) => prev.filter((f) => !goneIds.includes(f.id)));
-      }
-
-      if (Object.keys(zipInput).length === 0) {
-        throw new FriendlyError(FILE_GONE_ERROR);
-      }
-
-      const zipped = await zipFiles(zipInput);
-
-      triggerBlobDownload([zipped], "anzdrop.zip");
+      await downloadAllFiles(files, key, { onFileGone: removeFile });
     } catch (err) {
       setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
     } finally {
