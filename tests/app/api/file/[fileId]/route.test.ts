@@ -362,6 +362,23 @@ describe("GET /api/file/[fileId]", () => {
     expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
   });
 
+  it("R2 オブジェクトが取得できず 404 のとき、回数を数えるファイルは加算を戻す", async () => {
+    const shareId = await insertShare();
+    const { id: fileId } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      // R2 に put しない → FILES_BUCKET.get が null を返す。
+    });
+
+    const response = await getFile(fileId);
+    expect(response.status).toBe(404);
+
+    await flushWaitUntil();
+
+    // 加算は戻っており、再取得できる状態(まだ 404 だが download_count は 0)。
+    expect(await downloadCountOf(fileId)).toBe(0);
+  });
+
   it("全バイト届いた直後に接続が切れた場合は、pipeTo が reject でも完走扱いで削除する", async () => {
     const shareId = await insertShare();
     const fullContent = new Uint8Array(128).fill(9);

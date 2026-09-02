@@ -138,9 +138,18 @@ export const GET = withApiHandler(
       );
     }
 
+    const isCountedDownload = downloadCount.max_downloads !== null;
+
     const object = await env.FILES_BUCKET.get(file.storage_key);
 
     if (!object) {
+      // 回数は既に原子的に加算済み。R2 側の一時的な不整合で本文を返せなかった
+      // だけかもしれないので、回数を数えるファイルは加算を戻して再取得できる
+      // ようにする(GitHub issue #62)。
+      if (isCountedDownload) {
+        ctx.waitUntil(restoreDownloadCount(env, fileId));
+      }
+
       return Response.json(
         {
           success: false,
@@ -161,8 +170,6 @@ export const GET = withApiHandler(
       "Content-Disposition": `attachment; filename="${file.encrypted_file_name}"`,
       "Cache-Control": "no-store",
     };
-
-    const isCountedDownload = downloadCount.max_downloads !== null;
 
     // 回数上限のないファイルは、R2のボディをそのまま素通しする。
     if (!isCountedDownload) {
