@@ -22,6 +22,18 @@ type Share = {
   suspended_at: string | null;
 };
 
+// encrypted_file_name は本来 lib/crypto/base64.ts の base64url(A-Za-z0-9_-)だが、
+// AAD 保護導入前の古い行や、スキーマ検証を追加する前に作られた行に想定外の文字が
+// 混ざっていても、Content-Disposition ヘッダに制御文字・改行・" が入って
+// レスポンス構築が失敗(= そのファイルが恒久的にダウンロード不能)しないよう、
+// ヘッダに載せる直前に安全な文字集合へ丸める。値自体は復号前の不透明な文字列で、
+// クライアントは保存時に復号済みの本名で付け直すため、表示名としての意味は無い。
+function safeAttachmentFilename(encryptedFileName: string): string {
+  const cleaned = encryptedFileName.replace(/[^A-Za-z0-9_.-]/g, "");
+
+  return cleaned.length > 0 ? cleaned : "download";
+}
+
 async function deleteOneTimeFile(
   env: CloudflareEnv,
   fileId: string,
@@ -152,7 +164,9 @@ export const GET = withApiHandler(
         // そのままバイト長になる。クライアント/ブラウザ側が途中切断を検知でき、
         // ダウンロードの進捗表示にも使える。
         "Content-Length": String(object.size),
-        "Content-Disposition": `attachment; filename="${file.encrypted_file_name}"`,
+        "Content-Disposition": `attachment; filename="${safeAttachmentFilename(
+          file.encrypted_file_name
+        )}"`,
         "Cache-Control": "no-store",
       },
     });

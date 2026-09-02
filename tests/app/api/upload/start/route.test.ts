@@ -101,6 +101,37 @@ describe("POST /api/upload/start", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects an encryptedFileName with characters outside the safe set (would break the Content-Disposition header)", async () => {
+    stubTurnstileSuccess();
+
+    const response = await postStart({
+      encryptedFileName: 'evil"\r\nX-Injected: 1',
+      fileSize: 1024,
+      retention: "7d",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(400);
+
+    const { results: shares } = await env.DB.prepare(
+      `SELECT id FROM shares`
+    ).all();
+    expect(shares).toHaveLength(0);
+  });
+
+  it("rejects an oversized encryptedFileName (D1 storage abuse)", async () => {
+    stubTurnstileSuccess();
+
+    const response = await postStart({
+      encryptedFileName: "a".repeat(4097),
+      fileSize: 1024,
+      retention: "7d",
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   it("returns 400 when retention is missing or invalid", async () => {
     const missing = await postStart({
       encryptedFileName: "file.enc",
