@@ -1,4 +1,6 @@
 import { fetchDecryptedStream, type DecryptedFile } from "./decrypt";
+import { FileGoneError } from "./errors";
+import { withDuplicateSuffix } from "./zipDownload";
 
 // File System Access API の最小型定義。標準libに未収載の環境(Safari/Firefox
 // など)でも型エラーにならないよう、必要なメンバーだけをここで宣言する。
@@ -12,11 +14,22 @@ type MinimalFileSystemFileHandle = {
   createWritable: () => Promise<MinimalWritableFileStream>;
 };
 
+type MinimalDirectoryHandle = {
+  getFileHandle: (
+    name: string,
+    options?: { create?: boolean }
+  ) => Promise<MinimalFileSystemFileHandle>;
+};
+
 type ShowSaveFilePicker = (options?: {
   suggestedName?: string;
 }) => Promise<MinimalFileSystemFileHandle>;
 
-function getShowSaveFilePicker(): ShowSaveFilePicker | null {
+type ShowDirectoryPicker = (options?: {
+  mode?: "read" | "readwrite";
+}) => Promise<MinimalDirectoryHandle>;
+
+export function getShowSaveFilePicker(): ShowSaveFilePicker | null {
   if (typeof window === "undefined") {
     return null;
   }
@@ -26,6 +39,50 @@ function getShowSaveFilePicker(): ShowSaveFilePicker | null {
   ).showSaveFilePicker;
 
   return typeof candidate === "function" ? candidate : null;
+}
+
+export function getShowDirectoryPicker(): ShowDirectoryPicker | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const candidate = (
+    window as unknown as { showDirectoryPicker?: ShowDirectoryPicker }
+  ).showDirectoryPicker;
+
+  return typeof candidate === "function" ? candidate : null;
+}
+
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
+// ReadableStream を WritableFileStream へ逐次コピーする。失敗時は読み取り側を
+// 打ち切り、書き込み側を abort してから元の例外を投げ直す。
+async function pipeStreamToWritable(
+  stream: ReadableStream<Uint8Array>,
+  writable: MinimalWritableFileStream
+): Promise<void> {
+  const reader = stream.getReader();
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      await writable.write(value);
+    }
+
+    await writable.close();
+  } catch (err) {
+    reader.releaseLock();
+    await stream.cancel().catch(() => {});
+    await writable.abort(err).catch(() => {});
+    throw err;
+  }
 }
 
 // Blobを組み立てて <a download> クリックで保存する。ファイル全体をメモリ上の
@@ -96,26 +153,81 @@ async function saveToHandle(
   // ここが失敗した場合、書き込み用ファイルを一切作らずに終わる。
   const stream = await fetchDecryptedStream(file, key);
   const writable = await handle.createWritable();
-  const reader = stream.getReader();
 
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
+  await pipeStreamToWritable(stream, writable);
+}
 
-      if (done) {
-        break;
-      }
+export type DirectorySaveEntry = {
+  name: string;
+  file: DecryptedFile;
+};
 
-      await writable.write(value);
+function filenameFromPath(name: string): string {
+  const filename = name.split(/[\\/]/).filter(Boolean).at(-1);
+
+  return filename && filename !== "." && filename !== ".."
+    ? filename
+    : "download";
+}
+
+function assignDirectoryNames(
+  entries: DirectorySaveEntry[]
+): Array<DirectorySaveEntry & { directoryName: string }> {
+  const usedNames = new Set<string>();
+  const collisionKey = (name: string): string =>
+    name.normalize("NFC").toLowerCase();
+
+  return entries.map((entry) => {
+    const filename = filenameFromPath(entry.name);
+    let directoryName = filename;
+    let duplicateCount = 0;
+
+    while (usedNames.has(collisionKey(directoryName))) {
+      duplicateCount++;
+      directoryName = withDuplicateSuffix(filename, duplicateCount);
     }
 
-    await writable.close();
-  } catch (err) {
-    reader.releaseLock();
-    await stream.cancel().catch(() => {});
-    await writable.abort(err).catch(() => {});
-    throw err;
+    usedNames.add(collisionKey(directoryName));
+    return { ...entry, directoryName };
+  });
+}
+
+// 選ばれたディレクトリへ、複数の復号済みファイルを1つずつストリーミング保存
+// する。ZIP をやめて個別保存へフォールバックする経路(合計/単体が zip64 の
+// 限界を超える場合)で使う。ファイル全体をメモリに載せない。
+// 途中で 404(FileGoneError)になったファイルはスキップし、その ID を返す。
+export async function saveDecryptedFilesToDirectory(
+  dir: MinimalDirectoryHandle,
+  entries: DirectorySaveEntry[],
+  key: CryptoKey
+): Promise<{ goneFileIds: string[]; savedCount: number }> {
+  const goneFileIds: string[] = [];
+  let savedCount = 0;
+  const namedEntries = assignDirectoryNames(entries);
+
+  for (const entry of namedEntries) {
+    let stream: ReadableStream<Uint8Array>;
+
+    try {
+      // 保存先ファイルを作る前にストリームを取得する(404 ならファイルを
+      // 一切作らずにスキップできる)。
+      stream = await fetchDecryptedStream(entry.file, key);
+    } catch (err) {
+      if (err instanceof FileGoneError) {
+        goneFileIds.push(entry.file.id);
+        continue;
+      }
+      throw err;
+    }
+
+    const handle = await dir.getFileHandle(entry.directoryName, { create: true });
+    const writable = await handle.createWritable();
+
+    await pipeStreamToWritable(stream, writable);
+    savedCount++;
   }
+
+  return { goneFileIds, savedCount };
 }
 
 export type SaveResult = {
@@ -146,7 +258,7 @@ export async function saveDecryptedFile(
   try {
     handle = await showSaveFilePicker({ suggestedName: filename });
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
+    if (isAbortError(err)) {
       return { saved: false };
     }
 
