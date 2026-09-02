@@ -58,10 +58,11 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
 - [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。
-- [`lib/download/saveFile.ts`](../lib/download/saveFile.ts): 復号済みファイルの保存(`saveDecryptedFile`)。`showSaveFilePicker`が使える環境(Chromium系)では保存先を選ばせてディスクへ逐次書き込み、ファイル全体をメモリに載せない。それ以外の環境ではBlobフォールバック(`triggerBlobDownload`)。
+- [`lib/download/saveFile.ts`](../lib/download/saveFile.ts): 復号済みファイルの保存(`saveDecryptedFile`)。保存経路は環境に応じて (1) `showSaveFilePicker`(Chromium系)で保存先を選ばせてディスクへ逐次書き込み、(2) Service Worker 経由のストリーミング(Firefox/Safari。`streamDownloadSaver.ts`)、(3) Blob フォールバック(`triggerBlobDownload`。最後の手段)。(1)(2)はファイル全体をメモリに載せない。フォルダへ複数ファイルを一括保存する `saveDecryptedFilesToDirectory` も。
+- [`lib/download/streamDownloadSaver.ts`](../lib/download/streamDownloadSaver.ts): `showSaveFilePicker` が使えないブラウザ向けの Service Worker(`public/download-sw.js`)登録と、復号済みストリームを Service Worker へ転送して `Content-Disposition: attachment` の Response としてダウンロードさせる `saveViaServiceWorker`(GitHub issue #61)。transferable stream 非対応の古いブラウザや Service Worker がまだページを制御していない場合は使わない(Blob フォールバックへ)。
 - [`lib/download/errors.ts`](../lib/download/errors.ts): ユーザーに表示してよい文言だけを持つ`FriendlyError`/`FileGoneError`と、それ以外の例外を汎用メッセージへ丸める`toFriendlyMessage`。
-- [`lib/download/zipDownload.ts`](../lib/download/zipDownload.ts): 一括ダウンロードのZIP生成。`streamFilesAsZip`(fflateの`Zip`をstoreモードで使い、各ファイルの平文ストリームを順にディスクへ流す。1ファイル分もZIP全体もメモリに載せない)と、環境非対応時のフォールバック用の非ストリーミング`zipFiles`。`canStreamFilesAsZip`はfflateがzip64非対応のため、単体/合計が4GiBを超えないかを判定する。重複ファイル名の連番付与も。
-- [`lib/download/downloadAll.ts`](../lib/download/downloadAll.ts): 「全てダウンロード」の経路選択(`downloadAllFiles`)。Chromium系ならストリーミングZIP、4GiB超ならフォルダを選んで1ファイルずつ保存、File System Access API非対応なら合計サイズ上限つきのメモリ内ZIP。
+- [`lib/download/zipDownload.ts`](../lib/download/zipDownload.ts): 一括ダウンロードのZIP生成。`streamFilesAsZip`(fflateの`Zip`をstoreモードで使い、各ファイルの平文ストリームを順にディスクへ流す。1ファイル分もZIP全体もメモリに載せない)と、環境非対応時のフォールバック用の非ストリーミング`zipFiles`。`canStreamFilesAsZip`はfflateがzip64非対応のため、単体/合計とも約4GiB(`0xFFFFFFFF` = 2³²−1 バイト)以内かを判定する。重複ファイル名の連番付与も。
+- [`lib/download/downloadAll.ts`](../lib/download/downloadAll.ts): 「全てダウンロード」の経路選択(`downloadAllFiles`)。`showSaveFilePicker` ありならディスクへストリーミングZIP、`showSaveFilePicker` なし + Service Worker 可なら SW 経由でストリーミングZIP(issue #61)、約4GiB(`0xFFFFFFFF`)を超えて zip64 が必要ならフォルダを選んで1ファイルずつ保存、いずれも不可なら合計サイズ上限(512MiB)つきのメモリ内ZIP。
 - [`lib/admin/reportLabels.ts`](../lib/admin/reportLabels.ts): 通報カテゴリ・権利種別・共有状態・日時の表示用ラベル整形(純粋関数)。
 - [`lib/admin/reportsApi.ts`](../lib/admin/reportsApi.ts): 通報管理画面が呼ぶ`/api/admin/**`へのfetch呼び出し(取得・対応済み化・共有削除・一時停止切替・通報削除)。
 
@@ -83,8 +84,11 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 1. `GET /api/download/[shareId]` で共有の有効期限・ファイル一覧(暗号化済みファイル名・サイズ)・パスワード保護の有無(`wrappedKey`/`keySalt` の有無)を取得。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
-3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文は、`showSaveFilePicker` が使える環境ではユーザーが選んだ保存先へ逐次書き込み、それ以外の環境では Blob に集めてから保存する(`lib/download/saveFile.ts`)。前者ではファイル全体をメモリに保持しないため、大容量ファイルでもメモリ不足になりにくい(非 Chromium 系の大容量単一ファイルは現状 Blob 経由。Service Worker による疑似ストリーミングは issue #61 で対応予定)。
-   - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え、かつ ZIP が zip64 不要な範囲(単体・合計とも 4GiB 未満)なら、選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。4GiB を超える場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。File System Access API 非対応(Firefox/Safari)の場合は合計サイズが上限(1GiB)以内ならメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
+3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文の保存経路(`lib/download/saveFile.ts`):
+   - `showSaveFilePicker` が使える環境(Chromium 系): ユーザーが選んだ保存先へ逐次書き込み。ファイル全体をメモリに載せない。
+   - それ以外で Service Worker が使える環境(Firefox/Safari): 復号済みストリームを Service Worker(`public/download-sw.js`)へ転送し、`Content-Disposition: attachment` の Response としてストリーミングダウンロードさせる(`lib/download/streamDownloadSaver.ts`。GitHub issue #61)。これもファイル全体をメモリに載せない。Service Worker はダウンロードページのマウント時に登録され、初回訪問直後などまだページを制御していない間は次の Blob 経路になる。
+   - どちらも使えない場合: Blob に集めてから保存(最後の手段。大容量ファイルではタブが落ちうる)。
+   - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え ZIP が zip64 不要な範囲(単体・合計とも約 4GiB = `0xFFFFFFFF` バイト以内)なら選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。`showSaveFilePicker` が無く Service Worker が使えるなら SW 経由でストリーミング ZIP をダウンロード(issue #61)。SW への受け渡しは ZIP 生成(= ファイルの fetch)を始める前に行うため、一過性の不通で失敗しても 1回限りファイルの枠を消費しておらず、下のメモリ内 ZIP へ安全にフォールバックできる。zip64 が必要な(約 4GiB を超える)場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。いずれも不可なら合計サイズが上限(512MiB)以内でメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
 4. 保存期間「1回」のファイルは、ダウンロード回数が上限に達した時点で `ctx.waitUntil()` により裏でR2オブジェクトとDBレコードを削除(レスポンスのストリーミングはブロックしない)。
 
 ## 掃除(Cleanup)

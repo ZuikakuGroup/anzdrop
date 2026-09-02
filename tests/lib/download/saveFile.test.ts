@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { saveDecryptedFile } from "@/lib/download/saveFile";
-import { FileGoneError } from "@/lib/download/errors";
+import { FileGoneError, FriendlyError } from "@/lib/download/errors";
 import { generateKey, iterateEncryptedChunks } from "@/lib/crypto";
 import type { DecryptedFile } from "@/lib/download/decrypt";
+import {
+  canSaveViaServiceWorker,
+  saveViaServiceWorker,
+} from "@/lib/download/streamDownloadSaver";
+
+// 既定では Service Worker 経路は使えない扱い(既存の Blob フォールバック
+// テストはこの前提で書かれている)。SW 経路を検証するテストだけ上書きする。
+vi.mock("@/lib/download/streamDownloadSaver", () => ({
+  canSaveViaServiceWorker: vi.fn(async () => false),
+  saveViaServiceWorker: vi.fn(async () => {}),
+}));
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
   const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
@@ -80,6 +91,8 @@ const testFile: DecryptedFile = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.mocked(canSaveViaServiceWorker).mockReset().mockResolvedValue(false);
+  vi.mocked(saveViaServiceWorker).mockReset().mockResolvedValue(undefined);
 });
 
 describe("saveDecryptedFile with showSaveFilePicker", () => {
@@ -218,6 +231,103 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
     expect(result).toEqual({ saved: true });
     expect(anchor.click).toHaveBeenCalledTimes(1);
     expect(concatBytes(blobParts[0])).toEqual(content);
+  });
+});
+
+describe("saveDecryptedFile without showSaveFilePicker (Service Worker 経路)", () => {
+  function stubBlobDownload() {
+    const blobParts: Uint8Array[][] = [];
+    class FakeBlob {
+      constructor(parts: Uint8Array[]) {
+        blobParts.push(parts);
+      }
+    }
+    vi.stubGlobal("Blob", FakeBlob);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:fake-url"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({ href: "", download: "", click: vi.fn() })),
+    });
+    vi.stubGlobal("window", {});
+    return blobParts;
+  }
+
+  it("SW が使えるなら Blob を作らず SW へ復号済みストリームを渡す(1回だけ fetch)", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("stream to service worker");
+    const packed = await packEncrypted(content, key);
+    const fetchMock = stubFetchReturning(packed);
+    const blobParts = stubBlobDownload();
+
+    vi.mocked(canSaveViaServiceWorker).mockResolvedValue(true);
+    let receivedName: string | undefined;
+    vi.mocked(saveViaServiceWorker).mockImplementation(async (_s, name) => {
+      receivedName = name;
+    });
+
+    const result = await saveDecryptedFile(
+      { ...testFile, size: content.byteLength },
+      key,
+      "video.mp4"
+    );
+
+    expect(result).toEqual({ saved: true });
+    expect(saveViaServiceWorker).toHaveBeenCalledTimes(1);
+    expect(receivedName).toBe("video.mp4");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(blobParts).toHaveLength(0);
+  });
+
+  it("SW 経路が失敗した通常ファイルは Blob フォールバックへ落ちる(再 fetch する)", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("falls back to blob");
+    const packed = await packEncrypted(content, key);
+    const fetchMock = stubFetchReturning(packed);
+    const blobParts = stubBlobDownload();
+
+    vi.mocked(canSaveViaServiceWorker).mockResolvedValue(true);
+    vi.mocked(saveViaServiceWorker).mockRejectedValue(
+      new Error("SW wiring failed")
+    );
+
+    const result = await saveDecryptedFile(
+      { ...testFile, isOneTime: false, size: content.byteLength },
+      key,
+      "video.mp4"
+    );
+
+    expect(result).toEqual({ saved: true });
+    // SW で1回、Blob フォールバックでもう1回。
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(blobParts).toHaveLength(1);
+    expect(concatBytes(blobParts[0])).toEqual(content);
+  });
+
+  it("SW 経路が失敗した1回限りファイルは、再 fetch せずエラーを投げる(枠を二重消費しない)", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("one time, do not re-fetch");
+    const packed = await packEncrypted(content, key);
+    const fetchMock = stubFetchReturning(packed);
+    const blobParts = stubBlobDownload();
+
+    vi.mocked(canSaveViaServiceWorker).mockResolvedValue(true);
+    vi.mocked(saveViaServiceWorker).mockRejectedValue(
+      new Error("SW wiring failed")
+    );
+
+    await expect(
+      saveDecryptedFile(
+        { ...testFile, isOneTime: true, size: content.byteLength },
+        key,
+        "secret.bin"
+      )
+    ).rejects.toBeInstanceOf(FriendlyError);
+
+    // fetch は1回だけ。Blob フォールバックは走らない。
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(blobParts).toHaveLength(0);
   });
 });
 

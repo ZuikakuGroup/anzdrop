@@ -1,6 +1,10 @@
 import { fetchDecryptedStream, type DecryptedFile } from "./decrypt";
-import { FileGoneError } from "./errors";
+import { FileGoneError, FriendlyError } from "./errors";
 import { withDuplicateSuffix } from "./zipDownload";
+import {
+  canSaveViaServiceWorker,
+  saveViaServiceWorker,
+} from "./streamDownloadSaver";
 
 // File System Access API の最小型定義。標準libに未収載の環境(Safari/Firefox
 // など)でも型エラーにならないよう、必要なメンバーだけをここで宣言する。
@@ -235,9 +239,14 @@ export type SaveResult = {
   saved: boolean;
 };
 
-// 復号済みファイルを保存する。showSaveFilePicker が使える環境(Chromium系)では
-// 保存先を選ばせてディスクへ逐次書き込み、ファイル全体をメモリに載せない。
-// それ以外の環境では Blob フォールバックで保存する。
+// 復号済みファイルを保存する。保存経路は環境に応じて次の順で選ぶ。
+//
+// 1. showSaveFilePicker(Chromium系): 保存先を選ばせてディスクへ逐次書き込み。
+// 2. Service Worker(Firefox/Safari で対応・制御中): 復号済みストリームを
+//    Service Worker へ渡し、Content-Disposition: attachment の Response として
+//    ブラウザにストリーミングダウンロードさせる(GitHub issue #61)。
+// 3. Blob フォールバック: ファイル全体をメモリに集めてから保存。大容量ファイル
+//    ではタブが落ちうるので最後の手段。
 //
 // showSaveFilePicker はユーザー操作(クリック)直後の transient activation を
 // 要求するため、fetch より先に呼ぶこと。
@@ -248,25 +257,63 @@ export async function saveDecryptedFile(
 ): Promise<SaveResult> {
   const showSaveFilePicker = getShowSaveFilePicker();
 
-  if (!showSaveFilePicker) {
-    await saveViaBlob(file, key, filename);
-    return { saved: true };
-  }
+  if (showSaveFilePicker) {
+    let handle: MinimalFileSystemFileHandle;
 
-  let handle: MinimalFileSystemFileHandle;
+    try {
+      handle = await showSaveFilePicker({ suggestedName: filename });
+    } catch (err) {
+      if (isAbortError(err)) {
+        return { saved: false };
+      }
 
-  try {
-    handle = await showSaveFilePicker({ suggestedName: filename });
-  } catch (err) {
-    if (isAbortError(err)) {
-      return { saved: false };
+      // ピッカーを開けない環境(iframe の権限ポリシー等)。下の経路へ委ねる。
+      return saveWithoutFilePicker(file, key, filename);
     }
 
-    // ピッカーを開けない環境(iframe の権限ポリシー等)。Blob で保存を試みる。
-    await saveViaBlob(file, key, filename);
+    await saveToHandle(handle, file, key);
     return { saved: true };
   }
 
-  await saveToHandle(handle, file, key);
+  return saveWithoutFilePicker(file, key, filename);
+}
+
+async function saveWithoutFilePicker(
+  file: DecryptedFile,
+  key: CryptoKey,
+  filename: string
+): Promise<SaveResult> {
+  // canSaveViaServiceWorker() は Service Worker との往復(ping/pong)まで
+  // 確認してから true を返す。そのため、この後にストリームを開いてから
+  // saveViaServiceWorker が失敗するのは、まれな一過性の失敗に限られる。
+  if (await canSaveViaServiceWorker()) {
+    // fetchDecryptedStream の 404(FileGoneError)は呼び出し側へ伝播させる。
+    const stream = await fetchDecryptedStream(file, key);
+
+    try {
+      await saveViaServiceWorker(stream, filename, file.size);
+      return { saved: true };
+    } catch (err) {
+      // Service Worker への受け渡しに失敗した(URL 未返却・postMessage 失敗
+      // など)。開いたストリームは閉じる(transfer 済みなら no-op)。
+      await stream.cancel().catch(() => {});
+
+      // 1回限りのファイルは、上の fetch で既にダウンロード枠を消費している
+      // (サーバー側では削除が進行中)。Blob フォールバックはもう一度 fetch
+      // するため 404(FileGoneError)になりファイルを失わせる。ここは再取得
+      // せずに中止する。共有ページを開き直せば、まだ間に合えば取得できる。
+      if (file.isOneTime) {
+        throw err instanceof FriendlyError
+          ? err
+          : new FriendlyError(
+              "ダウンロードを開始できませんでした。共有ページを開き直してください。"
+            );
+      }
+
+      // 通常ファイルは Blob 経路で取り直せる(全体を2回転送するが失われない)。
+    }
+  }
+
+  await saveViaBlob(file, key, filename);
   return { saved: true };
 }

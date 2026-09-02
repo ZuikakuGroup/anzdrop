@@ -118,6 +118,8 @@ export async function streamFilesAsZip(
           }
         }
       } finally {
+        // 正常終了(done)以外の経路では、元ストリーム(fetch の body など)の
+        // 受信も打ち切ってから解放する。
         if (!completedNormally) {
           await reader.cancel().catch(() => {});
         }
