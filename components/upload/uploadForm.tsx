@@ -244,7 +244,7 @@ export default function UploadForm() {
       return;
     }
 
-    if (usePassword) {
+    if (!shareIdRef.current && usePassword) {
       if (!password) {
         setError("パスワードを入力してください。");
         return;

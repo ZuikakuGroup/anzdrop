@@ -22,9 +22,11 @@ export type SharePasswordValidationResult =
 export function validateSharePassword(
   password: string
 ): SharePasswordValidationResult {
+  const passwordLength = Array.from(password).length;
+
   if (
-    password.length < MIN_SHARE_PASSWORD_LENGTH ||
-    password.length > MAX_SHARE_PASSWORD_LENGTH
+    passwordLength < MIN_SHARE_PASSWORD_LENGTH ||
+    passwordLength > MAX_SHARE_PASSWORD_LENGTH
   ) {
     return { ok: false, error: SHARE_PASSWORD_LENGTH_ERROR };
   }

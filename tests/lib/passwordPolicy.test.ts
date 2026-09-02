@@ -20,6 +20,13 @@ describe("validateSharePassword", () => {
     });
   });
 
+  it("counts non-BMP characters as single characters", () => {
+    expect(validateSharePassword("𝟙𝟚𝟛𝟜")).toEqual({
+      ok: false,
+      error: SHARE_PASSWORD_LENGTH_ERROR,
+    });
+  });
+
   it("accepts a password exactly at the minimum length", () => {
     expect(
       validateSharePassword("a".repeat(MIN_SHARE_PASSWORD_LENGTH))
