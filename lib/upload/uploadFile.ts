@@ -103,6 +103,7 @@ export async function uploadEncryptedFile(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       uploadSessionId: startResult.uploadSessionId,
+      uploadToken: startResult.uploadToken,
     }),
   });
 

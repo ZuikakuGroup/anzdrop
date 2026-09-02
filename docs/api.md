@@ -39,7 +39,9 @@
 
 全パート送信後にマルチパートアップロードを完了し、`files` テーブルへレコードを作成する。
 
-- リクエスト: `{ uploadSessionId }`
+- リクエスト: `{ uploadSessionId, uploadToken }`
+- `start`(相乗り時)・`chunk` と同じく、`uploadSessionId` から辿った共有の `upload_token` と `uploadToken` の一致(定数時間比較)で認可する。不一致は403。
+- さらに、`start` より後に共有が期限切れ/一時停止された場合は完了させない(`checkShareAccessible()`。期限切れ410、一時停止403)。
 - レスポンス: `{ success: true, fileId }`
 - 完了後、対応する `uploads`/`upload_parts` の行は削除される。
 
@@ -208,7 +210,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `POST /api/admin/shares/[shareId]/suspend` / `POST /api/admin/shares/[shareId]/unsuspend`
 
-共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗り、`POST /api/upload/start`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。
+共有を一時停止/再開する(`shares.suspended_at` の設定/解除)。削除と異なりR2/D1のデータは保持されたままで、一時停止中は当該共有のダウンロード(`GET /api/download/[shareId]`, `GET /api/file/[fileId]`)と追加アップロード(相乗りの `POST /api/upload/start`、および停止前に開始済みセッションの `POST /api/upload/complete`)がすべて403で拒否される。いずれも冪等(既に同じ状態への操作は無害)。
 
 ### `GET /api/admin/accounts/[accountId]`
 
