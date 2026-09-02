@@ -151,8 +151,8 @@ export const GET = withApiHandler(
     }
 
     const headers = {
-      // 利用者アップロードのバイト列なので Content-Type は固定値にする
-      // (X-Content-Type-Options: nosniff と合わせて sniffing を防ぐ)。
+      // 利用者がアップロードしたバイト列をそのまま返すため、Content-Type は
+      // 常に固定値にして Content-Type 推測(sniffing)の余地をなくす。
       "Content-Type": "application/octet-stream",
       // レスポンス本体はR2オブジェクトのバイト列をそのまま流すため、object.sizeが
       // そのままバイト長になる。クライアント/ブラウザ側が途中切断を検知でき、
@@ -173,32 +173,52 @@ export const GET = withApiHandler(
       downloadCount.download_count >= (downloadCount.max_downloads ?? 0);
 
     // 回数を数えるファイル(保存期間「1回」など)は、R2のボディを
-    // TransformStream 経由でクライアントへ流し、その転送が最後まで完了したか
-    // どうかで後処理を分ける(GitHub issue #62)。
+    // TransformStream 経由でクライアントへ流し、クライアントへ実際に届いた
+    // バイト数で後処理を分ける(GitHub issue #62)。
     //
-    // - 完走(readable が最後まで消費された): 最後の1回だったならファイルを削除。
-    // - 中断(通信断・タブクローズなどで readable が cancel された / R2 読み取り
-    //   エラー): このダウンロードは「消費されなかった」とみなし、原子的に
-    //   加算しておいた download_count を戻して再取得できるようにする。
-    const { readable, writable } = new TransformStream();
+    // - 全バイト届いた: 最後の1回だったならファイルを削除。
+    // - 全バイト届く前に中断(通信断・タブクローズで readable が cancel された /
+    //   R2 読み取りエラー): このダウンロードは「消費されなかった」とみなし、
+    //   原子的に加算しておいた download_count を戻して再取得できるようにする。
+    //
+    // pipeTo は「最後のバイト送出直後にクライアントが接続を閉じる」ケースでも
+    // reject しうる(実際には全部届いている)。届いたバイト数を数えておき、
+    // object.size に達していれば reject でも完走扱いにする。
+    let deliveredBytes = 0;
+    const counter = new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        deliveredBytes += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+
+    const onFullyDelivered = async (): Promise<void> => {
+      if (isFinalDownload) {
+        await deleteOneTimeFile(env, fileId, file.storage_key);
+      }
+    };
 
     ctx.waitUntil(
-      object.body.pipeTo(writable).then(
-        async () => {
-          if (isFinalDownload) {
-            await deleteOneTimeFile(env, fileId, file.storage_key);
-          }
-        },
-        async (error: unknown) => {
+      object.body.pipeTo(counter.writable).then(onFullyDelivered, async (error: unknown) => {
+        if (deliveredBytes >= object.size) {
+          await onFullyDelivered();
+          return;
+        }
+        try {
           await restoreDownloadCount(env, fileId);
+        } catch (restoreError) {
           console.error(
-            `GET /api/file/[fileId]: streaming aborted for ${fileId}:`,
-            error
+            `GET /api/file/[fileId]: failed to restore download_count for ${fileId}:`,
+            restoreError
           );
         }
-      )
+        console.error(
+          `GET /api/file/[fileId]: streaming aborted for ${fileId} at ${deliveredBytes}/${object.size} bytes:`,
+          error
+        );
+      })
     );
 
-    return new Response(readable, { headers });
+    return new Response(counter.readable, { headers });
   }
 );

@@ -362,6 +362,40 @@ describe("GET /api/file/[fileId]", () => {
     expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
   });
 
+  it("全バイト届いた直後に接続が切れた場合は、pipeTo が reject でも完走扱いで削除する", async () => {
+    const shareId = await insertShare();
+    const fullContent = new Uint8Array(128).fill(9);
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+      size: fullContent.byteLength,
+    });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([0]));
+
+    // 全バイトを1チャンクで出したあと、close する前に gate で待たせる。
+    const gated = envWithGatedObjectBody(
+      storageKey,
+      fullContent,
+      fullContent.byteLength
+    );
+    routeEnvOverride = gated.env;
+
+    const response = await getFile(fileId);
+    const reader = response.body!.getReader();
+    // 全バイトを受け取る。
+    const received = await reader.read();
+    expect(received.value?.byteLength).toBe(fullContent.byteLength);
+    // まだ close していない状態で接続を切る(pipeTo は reject する)。
+    await reader.cancel();
+
+    await flushWaitUntil();
+    routeEnvOverride = null;
+
+    // 全バイト届いていたので、回数は戻さず削除される。
+    expect(await downloadCountOf(fileId)).toBeNull();
+    expect(await env.FILES_BUCKET.get(storageKey)).toBeNull();
+  });
+
   it("rejects a concurrent second download of a one-time file while the first is still streaming", async () => {
     const shareId = await insertShare();
     const { id: fileId, storageKey } = await insertFile({
