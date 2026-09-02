@@ -61,6 +61,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  // 個別テストで差し替えた実装が後続テストへ漏れないよう、必ず本物へ戻す。
+  vi.mocked(verifyPassword).mockImplementation(realVerifyPassword);
 });
 
 async function postLogin(body: unknown) {
@@ -345,23 +347,33 @@ describe("POST /api/account/login", () => {
 
       // 閾値超えのリクエストは verifyPassword を経由せず施錠する。
       // その施錠が DB に反映されるまで待つ。
-      await vi.waitFor(async () => {
-        expect(
-          (await getFailedLoginState(accountId)).locked_until
-        ).not.toBeNull();
-      });
+      await vi.waitFor(
+        async () => {
+          expect(
+            (await getFailedLoginState(accountId)).locked_until
+          ).not.toBeNull();
+        },
+        { timeout: 5000, interval: 25 }
+      );
       const lockedAfterFirst = (await getFailedLoginState(accountId))
         .locked_until;
 
       // ここで解放すると、停止していたリクエストが認証失敗後に lockAccount を
       // 呼ぶ。DB 上はすでにロック中なので WHERE ガードで 0 行更新になる。
       releaseVerify();
-      await pending;
+      const [firstResponse, secondResponse] = await pending;
+      expect(firstResponse.status).toBe(403);
+      expect(secondResponse.status).toBe(403);
 
       const final = await getFailedLoginState(accountId);
+      // WHERE ガードが効いている証拠。ガードを外すと後発の lockAccount が
+      // 新しい locked_until で上書きしてこのアサーションが落ちる
+      // (failed_login_attempts は lockAccount がガード有無に関わらず 0 に
+      //  するので、判定には使わない)。
       expect(final.locked_until).toBe(lockedAfterFirst);
-      expect(final.failed_login_attempts).toBe(0);
     } finally {
+      // 例外で抜けても停止中の 2 リクエストが永久に待たないよう必ず解放する。
+      releaseVerify();
       verifySpy.mockImplementation(realVerifyPassword);
     }
 
