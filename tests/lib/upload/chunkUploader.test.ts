@@ -48,6 +48,12 @@ async function collect(
   return out;
 }
 
+// リトライのバックオフ待ちを実時間なしで回すためのテスト用オプション。
+const noBackoff = {
+  backoffMs: () => 0,
+  sleep: async () => {},
+};
+
 describe("UPLOAD_PART_SIZE", () => {
   it("meets R2's 5MiB minimum size for non-final multipart parts", () => {
     // repartition は最終パート以外を必ず UPLOAD_PART_SIZE ちょうどにする。
@@ -203,7 +209,7 @@ describe("uploadChunksFromStream", () => {
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
-  it("throws with the path and part number when a part upload fails", async () => {
+  it("throws with the path and part number when a part upload keeps failing", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 500 }))
@@ -216,9 +222,208 @@ describe("uploadChunksFromStream", () => {
         "token-1",
         "broken.bin",
         8,
-        () => {}
+        () => {},
+        noBackoff
       )
     ).rejects.toThrow("broken.bin のパート 1 アップロードに失敗しました");
+  });
+
+  it("retries a part on a transient 503 and succeeds without failing the upload", async () => {
+    let attemptsForPart1 = 0;
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+      const partNumber = Number(
+        (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+      );
+      if (partNumber === 1) {
+        attemptsForPart1++;
+        if (attemptsForPart1 < 3) {
+          return new Response(null, { status: 503 });
+        }
+      }
+      return new Response(null, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const onBytesUploaded = vi.fn();
+
+    await uploadChunksFromStream(
+      fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+      "session-1",
+      "token-1",
+      "flaky.bin",
+      8,
+      onBytesUploaded,
+      noBackoff
+    );
+
+    expect(attemptsForPart1).toBe(3);
+    // 2パート分のバイト数がちょうど1回ずつ数えられている(リトライで
+    // 二重カウントしない)。
+    expect(
+      onBytesUploaded.mock.calls.reduce((sum, call) => sum + call[0], 0)
+    ).toBe(UPLOAD_PART_SIZE + 50);
+  });
+
+  it("does not retry or report a part that was waiting after another part fails", async () => {
+    const attempts = new Map<number, number>();
+    const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
+      const partNumber = Number(
+        (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+      );
+      attempts.set(partNumber, (attempts.get(partNumber) ?? 0) + 1);
+
+      if (partNumber === 1) {
+        return attempts.get(partNumber) === 1
+          ? new Response(null, { status: 503 })
+          : new Response(null, { status: 200 });
+      }
+
+      return new Response(null, { status: 403 });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const onBytesUploaded = vi.fn();
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+        "session-1",
+        "token-1",
+        "part-fails.bin",
+        2,
+        onBytesUploaded,
+        {
+          backoffMs: () => 0,
+          // パート1が待機している間にパート2の403を処理させる。
+          sleep: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        }
+      )
+    ).rejects.toThrow("part-fails.bin のパート 2 アップロードに失敗しました");
+
+    expect(attempts.get(1)).toBe(1);
+    expect(attempts.get(2)).toBe(1);
+    expect(onBytesUploaded).not.toHaveBeenCalled();
+  });
+
+  it("does not report a successful part whose request finishes after another part fails", async () => {
+    let resolvePart1: (response: Response) => void = () => {};
+    const part1Response = new Promise<Response>((resolve) => {
+      resolvePart1 = resolve;
+    });
+    let signalPart2Request: () => void = () => {};
+    const part2Requested = new Promise<void>((resolve) => {
+      signalPart2Request = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        const partNumber = Number(
+          (init.headers as Record<string, string>)["Anzdrop-Part-Number"]
+        );
+        if (partNumber === 1) {
+          return part1Response;
+        }
+
+        signalPart2Request();
+        return Promise.resolve(new Response(null, { status: 403 }));
+      })
+    );
+
+    const onBytesUploaded = vi.fn();
+    const upload = uploadChunksFromStream(
+      fromArray([ramp(UPLOAD_PART_SIZE, 1), ramp(50, 2)]),
+      "session-1",
+      "token-1",
+      "concurrent-failure.bin",
+      2,
+      onBytesUploaded,
+      noBackoff
+    );
+
+    await part2Requested;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolvePart1(new Response(null, { status: 200 }));
+
+    await expect(upload).rejects.toThrow(
+      "concurrent-failure.bin のパート 2 アップロードに失敗しました"
+    );
+    expect(onBytesUploaded).not.toHaveBeenCalled();
+  });
+
+  it("retries a Cloudflare 522 (edge timeout) and recovers", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        return new Response(null, { status: attempts < 2 ? 522 : 200 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "s",
+        "t",
+        "cf.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+  });
+
+  it("retries a part when fetch itself throws (network drop), then recovers", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw new TypeError("Failed to fetch");
+        }
+        return new Response(null, { status: 200 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "session-1",
+        "token-1",
+        "recovers.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+  });
+
+  it("does not retry a non-retryable 4xx (e.g. bad token) and fails fast", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        return new Response(null, { status: 403 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "session-1",
+        "token-1",
+        "forbidden.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).rejects.toThrow("forbidden.bin のパート 1 アップロードに失敗しました");
+    expect(attempts).toBe(1);
   });
 
   it("propagates an error thrown while generating the next chunk", async () => {
