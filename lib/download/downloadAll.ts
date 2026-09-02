@@ -167,11 +167,11 @@ export async function downloadAllFiles(
       // canSaveViaServiceWorker() で SW との往復は確認済みなので、ここで失敗
       // するのはまれな一過性。この時点で zipEntries の一部は既に fetch 済み
       // (1回限りファイルならダウンロード枠を消費済み)。メモリ内 ZIP へ
-      // フォールバックすると再 fetch でそれらを失わせるため、リトライを促す。
+      // フォールバックすると再 fetch でそれらを失わせるため、中止する。
       throw swError instanceof FriendlyError
         ? swError
         : new FriendlyError(
-            "一括ダウンロードを開始できませんでした。もう一度お試しください。"
+            "一括ダウンロードを開始できませんでした。共有ページを開き直してください。"
           );
     }
 

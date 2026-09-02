@@ -340,7 +340,7 @@ describe("downloadAllFiles — 経路の選択", () => {
 
     await expect(
       downloadAllFiles([file("a", "a.txt", 10), file("b", "b.txt", 10)], KEY)
-    ).rejects.toThrow(/もう一度/);
+    ).rejects.toThrow(/開き直/);
 
     // メモリ内 ZIP の Blob フォールバックは走っていない(再 fetch で1回限り
     // ファイルを失わせないため)。

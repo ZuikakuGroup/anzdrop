@@ -170,9 +170,13 @@ describe("download-sw.js", () => {
       );
 
       const response = await sw.fetch(`${ORIGIN}/_anzdrop_download/evil`);
+      // 危険なファイル名でも fetch ハンドラは例外を投げず(Headers 構築が
+      // throw しない)、レスポンスを返し切る。
       expect(response).not.toBeNull();
+      expect(response!.status).toBe(200);
 
       const cd = response!.headers.get("Content-Disposition")!;
+      expect(cd).toBeTypeOf("string");
       // 改行が一切含まれない。
       expect(cd).not.toMatch(/[\r\n]/);
       expect(response!.headers.get("Set-Cookie")).toBeNull();

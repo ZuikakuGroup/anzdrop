@@ -298,14 +298,15 @@ async function saveWithoutFilePicker(
       // など)。開いたストリームは閉じる(transfer 済みなら no-op)。
       await stream.cancel().catch(() => {});
 
-      // 1回限りのファイルは、上の fetch で既にダウンロード枠を消費している。
-      // Blob フォールバックはもう一度 fetch するため 404(FileGoneError)になり
-      // ファイルを永久に失わせる。ここはリトライを促して中止する。
+      // 1回限りのファイルは、上の fetch で既にダウンロード枠を消費している
+      // (サーバー側では削除が進行中)。Blob フォールバックはもう一度 fetch
+      // するため 404(FileGoneError)になりファイルを失わせる。ここは再取得
+      // せずに中止する。共有ページを開き直せば、まだ間に合えば取得できる。
       if (file.isOneTime) {
         throw err instanceof FriendlyError
           ? err
           : new FriendlyError(
-              "ダウンロードを開始できませんでした。もう一度お試しください。"
+              "ダウンロードを開始できませんでした。共有ページを開き直してください。"
             );
       }
 
