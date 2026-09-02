@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
-import { deleteShare, cleanupExpiredShares, cleanupStaleUploads } from "@/lib/cleanup";
+import {
+  deleteShare,
+  cleanupExpiredShares,
+  cleanupStaleUploads,
+  runScheduledCleanup,
+} from "@/lib/cleanup";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -18,6 +23,53 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
 });
+
+// Miniflare の D1/R2 バインディングはマジックプロキシで、プロパティ代入で
+// メソッドを差し替えられない。テスト用に一部メソッドだけ挙動を変えたいときは、
+// 実バインディングを Proxy でくるみ、その他のメソッドはそのまま委譲する
+// 「壊れた env」を1回だけ作って渡す(共有 env は一切変更しない)。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Miniflare バインディングの型に合わせるため
+function wrapBinding<T extends object>(target: T, overrides: Record<string, any>): T {
+  return new Proxy(target, {
+    get(obj, prop, receiver) {
+      if (typeof prop === "string" && prop in overrides) {
+        return overrides[prop];
+      }
+      const value = Reflect.get(obj, prop, receiver);
+      return typeof value === "function" ? value.bind(obj) : value;
+    },
+  });
+}
+
+// 特定の storage_key に対してだけ R2 削除を失敗させる env。
+function envWithFailingBucketDeleteFor(targetKey: string): TestEnv {
+  const bucket = wrapBinding(env.FILES_BUCKET, {
+    delete: async (keys: string | string[]) => {
+      if (keys === targetKey) {
+        throw new Error(`simulated R2 delete failure for ${targetKey}`);
+      }
+      return (env.FILES_BUCKET.delete as (k: string | string[]) => Promise<void>)(
+        keys
+      );
+    },
+  });
+
+  return { ...(env as object), FILES_BUCKET: bucket } as TestEnv;
+}
+
+// 期限切れ共有の抽出クエリだけを throw させる env(その他のクエリは通す)。
+function envWithFailingSharesExpiryQuery(): TestEnv {
+  const db = wrapBinding(env.DB, {
+    prepare: (query: string) => {
+      if (query.includes("FROM shares WHERE expires_at")) {
+        throw new Error("simulated D1 failure");
+      }
+      return (env.DB.prepare as (q: string) => unknown)(query);
+    },
+  });
+
+  return { ...(env as object), DB: db } as TestEnv;
+}
 
 async function insertShare(overrides: { id: string; expiresAt?: string }) {
   await env.DB.prepare(
@@ -226,6 +278,136 @@ describe("cleanupExpiredShares", () => {
 
     expect(await shareExists(activeId)).toBe(true);
     expect((await env.FILES_BUCKET.get(activeKey)) !== null).toBe(true);
+  });
+});
+
+describe("cleanupExpiredShares — 耐障害性とバッチ処理", () => {
+  it("1件の削除失敗があっても、残りの期限切れ共有は削除され失敗件数が報告される", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+
+    const failingId = "share-fails";
+    const failingKey = `files/${failingId}/file`;
+    await insertShare({ id: failingId, expiresAt: past });
+    await insertFile(failingId, failingKey);
+    await env.FILES_BUCKET.put(failingKey, new Uint8Array([1]));
+
+    const okId = "share-ok";
+    const okKey = `files/${okId}/file`;
+    await insertShare({ id: okId, expiresAt: past });
+    await insertFile(okId, okKey);
+    await env.FILES_BUCKET.put(okKey, new Uint8Array([2]));
+
+    const result = await cleanupExpiredShares(
+      envWithFailingBucketDeleteFor(failingKey)
+    );
+
+    expect(result.processed).toBe(1);
+    expect(result.failed).toBe(1);
+
+    // 失敗した共有は残り、健全な共有は消えている。
+    expect(await shareExists(failingId)).toBe(true);
+    expect(await shareExists(okId)).toBe(false);
+    expect(await env.FILES_BUCKET.get(okKey)).toBeNull();
+  });
+
+  it("全件が失敗しても無限ループにならず、その回の実行は終了する", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const id = "share-always-fails";
+    const key = `files/${id}/file`;
+    await insertShare({ id, expiresAt: past });
+    await insertFile(id, key);
+    await env.FILES_BUCKET.put(key, new Uint8Array([1]));
+
+    const result = await cleanupExpiredShares(
+      envWithFailingBucketDeleteFor(key),
+      { queryLimit: 1, maxBatches: 5 }
+    );
+
+    expect(result.processed).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(await shareExists(id)).toBe(true);
+  });
+
+  it("1バッチのLIMITを超える期限切れ共有を、複数バッチに分けて全件処理する", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+
+    for (let i = 0; i < 5; i++) {
+      await insertShare({ id: `bulk-${i}`, expiresAt: past });
+    }
+
+    const result = await cleanupExpiredShares(env, {
+      queryLimit: 2,
+      maxBatches: 10,
+    });
+
+    expect(result.processed).toBe(5);
+    expect(result.failed).toBe(0);
+    expect(result.reachedBatchLimit).toBe(false);
+
+    for (let i = 0; i < 5; i++) {
+      expect(await shareExists(`bulk-${i}`)).toBe(false);
+    }
+  });
+
+  it("バッチ数の上限に達すると未処理を残し reachedBatchLimit を立てる", async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+
+    for (let i = 0; i < 5; i++) {
+      await insertShare({ id: `capped-${i}`, expiresAt: past });
+    }
+
+    const result = await cleanupExpiredShares(env, {
+      queryLimit: 2,
+      maxBatches: 2,
+    });
+
+    expect(result.processed).toBe(4);
+    expect(result.reachedBatchLimit).toBe(true);
+
+    const remaining = await env.DB.prepare(
+      `SELECT COUNT(*) AS count FROM shares`
+    ).first<{ count: number }>();
+    expect(remaining?.count).toBe(1);
+  });
+});
+
+describe("runScheduledCleanup", () => {
+  it("期限切れ共有の掃除が想定外に throw しても、放置アップロードの掃除は実行される", async () => {
+    // このシェア自体は有効期限内。stale upload の掃除対象だけを用意する。
+    await insertShare({
+      id: "share-scheduled",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const staleId = "upload-scheduled-stale";
+    await insertUpload({
+      id: staleId,
+      shareId: "share-scheduled",
+      storageKey: "files/share-scheduled/stale",
+      uploadId: "r2-upload-scheduled-stale",
+      createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    });
+
+    // shares の期限切れ抽出クエリだけを throw させ、オーケストレータの
+    // try/catch が働くことを確認する。
+    const summary = await runScheduledCleanup(envWithFailingSharesExpiryQuery());
+
+    expect(summary.expiredShares).toBeNull();
+    expect(summary.staleUploads).not.toBeNull();
+    expect(summary.staleUploads?.processed).toBe(1);
+    expect(await uploadExists(staleId)).toBe(false);
+  });
+
+  it("正常時は両方の掃除結果を返す", async () => {
+    await insertShare({
+      id: "expired-scheduled",
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+
+    const summary = await runScheduledCleanup(env);
+
+    expect(summary.expiredShares?.processed).toBe(1);
+    expect(summary.staleUploads?.processed).toBe(0);
+    expect(await shareExists("expired-scheduled")).toBe(false);
   });
 });
 

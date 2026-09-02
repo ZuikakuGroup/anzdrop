@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   description: "プライベートなファイル共有サービス",
 };
 
+// nonce ベースの CSP(proxy.ts)は、SSR 時にリクエストヘッダの nonce を参照して
+// スクリプトタグへ付与する。静的生成されたページにはリクエストが無く nonce を
+// 注入できないため、全ページを動的レンダリングにする(GitHub issue #64)。
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({
   children,
 }: Readonly<{

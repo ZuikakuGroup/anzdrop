@@ -11,7 +11,7 @@ Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.
 Cloudflare Workers (Next.js / @opennextjs/cloudflare)
    ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報のメタデータ
    ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
-   └─ Cron Trigger (毎日0時) … 期限切れ共有・放置されたアップロードセッションの掃除
+   └─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
 ```
 
 エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))を呼び出しています。
@@ -82,7 +82,20 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## 掃除(Cleanup)
 
-[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`custom-worker.ts` の `scheduled` ハンドラ(毎日0時、`wrangler.jsonc` の `triggers.crons`)から呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
+[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`custom-worker.ts` の `scheduled` ハンドラ(6時間ごと、`wrangler.jsonc` の `triggers.crons`)から `runScheduledCleanup()` 経由で呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
 
 - **期限切れ共有の削除**(`cleanupExpiredShares`): `shares.expires_at` を過ぎた共有をR2オブジェクト・D1レコードごと削除。
 - **放置されたアップロードセッションの削除**(`cleanupStaleUploads`): 通信断やタブを閉じるなどで `/api/upload/complete` まで到達しなかったセッションを、共有の有効期限とは無関係に、セッション自体の古さ(24時間)で判定して削除。R2の未完了マルチパートアップロードはabortしないと課金対象のストレージとして残り続けるため、DBレコードの削除前に必ずabortする。
+
+どちらの掃除も、1件の削除失敗(R2/D1の一時エラーなど)でその回の実行全体が止まらないよう、対象を `LIMIT` 付きで少しずつ取得し、1件ずつ `try/catch` して失敗はログに残して次へ進みます(失敗した件数は結果に含めて次回以降の実行に委ねる)。1回の実行あたりのバッチ数にも上限があり、バックログが大きくても Workers のサブリクエスト予算内で確実に一部を消化します。`runScheduledCleanup()` は2種類の掃除を個別の `try/catch` で囲むため、片方が想定外に失敗しても、もう片方は必ず実行されます。
+
+## セキュリティレスポンスヘッダ
+
+[`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。旧 `middleware.ts`)が、静的アセットを除く全レスポンスに以下を付与します。
+
+- **Content-Security-Policy**: nonce ベースの厳格な CSP。`script-src` は `'self' 'nonce-<リクエストごと>' 'strict-dynamic'` を基本とし、`'unsafe-inline'` を許可しません。ダウンロード画面が URL フラグメントの E2E 復号鍵をメモリに保持するため、この origin 上の XSS を多層防御で抑えることが目的です(`'strict-dynamic'` により、nonce 付きスクリプトが読み込む Turnstile / Stripe.js の子スクリプトは追加のホスト許可なしで動きます)。
+- **frame-ancestors 'none' / X-Frame-Options: DENY**: クリックジャッキング対策。
+- **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
+- **Referrer-Policy: no-referrer** / **Strict-Transport-Security** / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
+
+nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません)。
