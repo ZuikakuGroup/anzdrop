@@ -10,6 +10,70 @@ async function loadModule() {
   return import("@/lib/download/streamDownloadSaver");
 }
 
+// MessageChannel のフェイク。port1.onmessage をテストから叩ける。
+function fakeMessageChannel() {
+  const port1: {
+    onmessage: ((event: MessageEvent) => void) | null;
+    postMessage: (data: unknown) => void;
+    close: () => void;
+  } = {
+    onmessage: null,
+    postMessage: () => {},
+    close: vi.fn(),
+  };
+  const port2 = { __isPort2: true };
+  return { port1, port2 };
+}
+
+function stubMessageChannel(channel: ReturnType<typeof fakeMessageChannel>) {
+  vi.stubGlobal(
+    "MessageChannel",
+    class {
+      port1 = channel.port1;
+      port2 = channel.port2;
+    }
+  );
+}
+
+// ping には即 pong を返し、それ以外は無視する controller。
+function pongingController(): {
+  postMessage: (message: unknown, transfer?: unknown[]) => void;
+  posted: { message: unknown; transfer: unknown[] }[];
+} {
+  const posted: { message: unknown; transfer: unknown[] }[] = [];
+  let pingChannel: ReturnType<typeof fakeMessageChannel> | null = null;
+  return {
+    posted,
+    postMessage(message: unknown, transfer: unknown[] = []) {
+      posted.push({ message, transfer });
+      if ((message as { type?: string })?.type === "ANZDROP_PING") {
+        // ping の port は transfer[0]。テストのフェイクでは port2 マーカー。
+        // 実際の応答は port1.onmessage に届くので、直近に stub した channel を使う。
+        pingChannel = lastStubbedChannel;
+        queueMicrotask(() =>
+          pingChannel?.port1.onmessage?.({
+            data: { pong: true },
+          } as MessageEvent)
+        );
+      }
+    },
+  };
+}
+
+let lastStubbedChannel: ReturnType<typeof fakeMessageChannel> | null = null;
+function stubChannel() {
+  const channel = fakeMessageChannel();
+  lastStubbedChannel = channel;
+  stubMessageChannel(channel);
+  return channel;
+}
+
+// transferable stream 対応チェック(new ReadableStream() を postMessage で
+// transfer する)を通すための最小スタブ。
+function stubTransferableStreamSupport() {
+  vi.stubGlobal("ReadableStream", class {});
+}
+
 describe("registerDownloadServiceWorker", () => {
   it("navigator.serviceWorker が無ければ何もしない", async () => {
     vi.stubGlobal("navigator", {});
@@ -38,26 +102,16 @@ describe("canSaveViaServiceWorker", () => {
     expect(await canSaveViaServiceWorker()).toBe(false);
   });
 
-  // transferable stream 対応チェックを通す最小限のスタブ。
-  function stubTransferableStreamSupport() {
-    vi.stubGlobal(
-      "MessageChannel",
-      class {
-        port1 = { postMessage() {} };
-        port2 = {};
-      }
-    );
-  }
-
   it("Service Worker の登録が成立しなければ(register が失敗)false", async () => {
     stubTransferableStreamSupport();
+    stubChannel();
     vi.stubGlobal("navigator", {
       serviceWorker: {
         register: vi.fn(async () => {
           throw new Error("registration failed");
         }),
-        ready: new Promise(() => {}), // 永久 pending
-        controller: null,
+        ready: new Promise(() => {}),
+        controller: pongingController(),
       },
     });
 
@@ -67,6 +121,7 @@ describe("canSaveViaServiceWorker", () => {
 
   it("Service Worker がページを制御していなければ false", async () => {
     stubTransferableStreamSupport();
+    stubChannel();
     vi.stubGlobal("navigator", {
       serviceWorker: {
         register: vi.fn(async () => ({})),
@@ -82,11 +137,12 @@ describe("canSaveViaServiceWorker", () => {
   it("ready が返ってこなくても(登録は成立)タイムアウトして false", async () => {
     vi.useFakeTimers();
     stubTransferableStreamSupport();
+    stubChannel();
     vi.stubGlobal("navigator", {
       serviceWorker: {
         register: vi.fn(async () => ({})),
-        ready: new Promise(() => {}), // 永久 pending
-        controller: { postMessage() {} },
+        ready: new Promise(() => {}),
+        controller: pongingController(),
       },
     });
 
@@ -97,13 +153,34 @@ describe("canSaveViaServiceWorker", () => {
     vi.useRealTimers();
   });
 
-  it("すべて揃っていれば true", async () => {
+  it("SW との ping が返らなければ(制御はしているが message ハンドラ不通)false", async () => {
+    vi.useFakeTimers();
     stubTransferableStreamSupport();
+    stubChannel();
     vi.stubGlobal("navigator", {
       serviceWorker: {
         register: vi.fn(async () => ({})),
         ready: Promise.resolve({}),
-        controller: { postMessage() {} },
+        // ping に応答しない controller。
+        controller: { postMessage: vi.fn() },
+      },
+    });
+
+    const { canSaveViaServiceWorker } = await loadModule();
+    const promise = canSaveViaServiceWorker();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(await promise).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("登録済み・制御中・ping が返れば true", async () => {
+    stubTransferableStreamSupport();
+    stubChannel();
+    vi.stubGlobal("navigator", {
+      serviceWorker: {
+        register: vi.fn(async () => ({})),
+        ready: Promise.resolve({}),
+        controller: pongingController(),
       },
     });
 
@@ -113,14 +190,6 @@ describe("canSaveViaServiceWorker", () => {
 });
 
 describe("saveViaServiceWorker", () => {
-  function fakeMessageChannel() {
-    const port1: {
-      onmessage: ((event: MessageEvent) => void) | null;
-    } = { onmessage: null };
-    const port2 = { __isPort2: true };
-    return { port1, port2 };
-  }
-
   it("ストリームとポートを SW コントローラへ post し、返ってきた URL へ隠し iframe を遷移させる", async () => {
     const posted: { message: unknown; transfer: unknown[] }[] = [];
     const controller = {
@@ -130,24 +199,14 @@ describe("saveViaServiceWorker", () => {
     };
     vi.stubGlobal("navigator", { serviceWorker: { controller } });
 
-    const channel = fakeMessageChannel();
-    vi.stubGlobal(
-      "MessageChannel",
-      class {
-        port1 = channel.port1;
-        port2 = channel.port2;
-      }
-    );
+    const channel = stubChannel();
     vi.stubGlobal("crypto", {
       randomUUID: () => "11111111-1111-1111-1111-111111111111",
     });
 
     const appended: { src: string; hidden: boolean }[] = [];
     vi.stubGlobal("document", {
-      createElement: () => {
-        const el = { src: "", hidden: false, remove: vi.fn() };
-        return el;
-      },
+      createElement: () => ({ src: "", hidden: false, remove: vi.fn() }),
       body: {
         appendChild: (el: { src: string; hidden: boolean }) => {
           appended.push(el);
@@ -156,11 +215,12 @@ describe("saveViaServiceWorker", () => {
     });
 
     const { saveViaServiceWorker } = await loadModule();
-    const readable = { __fakeStream: true } as unknown as ReadableStream<Uint8Array>;
+    const readable = {
+      __fakeStream: true,
+    } as unknown as ReadableStream<Uint8Array>;
 
     const savePromise = saveViaServiceWorker(readable, "レポート.bin", 4096);
 
-    // SW から返信が来るのを模す。
     expect(channel.port1.onmessage).toBeTypeOf("function");
     channel.port1.onmessage!({
       data: { url: "/_anzdrop_download/abc" },
@@ -174,7 +234,6 @@ describe("saveViaServiceWorker", () => {
     expect((message as { filename: string }).filename).toBe("レポート.bin");
     expect((message as { size: number }).size).toBe(4096);
     expect((message as { readable: unknown }).readable).toBe(readable);
-    // ポートとストリームが transfer リストに含まれる。
     expect(transfer).toContain(readable);
     expect(transfer).toContain(channel.port2);
 
@@ -183,18 +242,11 @@ describe("saveViaServiceWorker", () => {
     expect(appended[0].hidden).toBe(true);
   });
 
-  it("SW が URL を返さなければ reject する", async () => {
+  it("SW が URL を返さなければ reject し、ポートを閉じる", async () => {
     vi.stubGlobal("navigator", {
       serviceWorker: { controller: { postMessage: vi.fn() } },
     });
-    const channel = fakeMessageChannel();
-    vi.stubGlobal(
-      "MessageChannel",
-      class {
-        port1 = channel.port1;
-        port2 = channel.port2;
-      }
-    );
+    const channel = stubChannel();
     vi.stubGlobal("crypto", { randomUUID: () => "x" });
     vi.stubGlobal("document", {
       createElement: () => ({ src: "", hidden: false }),
@@ -210,6 +262,7 @@ describe("saveViaServiceWorker", () => {
     channel.port1.onmessage!({ data: {} } as MessageEvent);
 
     await expect(p).rejects.toThrow(/ダウンロードURL/);
+    expect(channel.port1.close).toHaveBeenCalled();
   });
 
   it("SW がページを制御していなければ即座に throw する", async () => {
@@ -226,14 +279,7 @@ describe("saveViaServiceWorker", () => {
     vi.stubGlobal("navigator", {
       serviceWorker: { controller: { postMessage: vi.fn() } },
     });
-    const channel = fakeMessageChannel();
-    vi.stubGlobal(
-      "MessageChannel",
-      class {
-        port1 = channel.port1;
-        port2 = channel.port2;
-      }
-    );
+    stubChannel();
     vi.stubGlobal("crypto", { randomUUID: () => "x" });
     vi.stubGlobal("document", {
       createElement: () => ({ src: "", hidden: false }),
@@ -256,14 +302,7 @@ describe("saveViaServiceWorker", () => {
     vi.stubGlobal("navigator", {
       serviceWorker: { controller: { postMessage: vi.fn() } },
     });
-    const channel = fakeMessageChannel();
-    vi.stubGlobal(
-      "MessageChannel",
-      class {
-        port1 = channel.port1;
-        port2 = channel.port2;
-      }
-    );
+    const channel = stubChannel();
     vi.stubGlobal("crypto", { randomUUID: () => "x" });
 
     const removed = vi.fn();
@@ -286,5 +325,6 @@ describe("saveViaServiceWorker", () => {
     expect(removed).not.toHaveBeenCalled();
     channel.port1.onmessage!({ data: { done: true } } as MessageEvent);
     expect(removed).toHaveBeenCalled();
+    expect(channel.port1.close).toHaveBeenCalled();
   });
 });

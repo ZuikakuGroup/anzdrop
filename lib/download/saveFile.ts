@@ -1,5 +1,5 @@
 import { fetchDecryptedStream, type DecryptedFile } from "./decrypt";
-import { FileGoneError } from "./errors";
+import { FileGoneError, FriendlyError } from "./errors";
 import { withDuplicateSuffix } from "./zipDownload";
 import {
   canSaveViaServiceWorker,
@@ -283,6 +283,9 @@ async function saveWithoutFilePicker(
   key: CryptoKey,
   filename: string
 ): Promise<SaveResult> {
+  // canSaveViaServiceWorker() は Service Worker との往復(ping/pong)まで
+  // 確認してから true を返す。そのため、この後にストリームを開いてから
+  // saveViaServiceWorker が失敗するのは、まれな一過性の失敗に限られる。
   if (await canSaveViaServiceWorker()) {
     // fetchDecryptedStream の 404(FileGoneError)は呼び出し側へ伝播させる。
     const stream = await fetchDecryptedStream(file, key);
@@ -290,10 +293,23 @@ async function saveWithoutFilePicker(
     try {
       await saveViaServiceWorker(stream, filename, file.size);
       return { saved: true };
-    } catch {
-      // Service Worker 経路の配線に失敗した(URL 未返却・postMessage 失敗など)。
-      // 開いたストリームを閉じて Blob フォールバックへ(別 fetch でやり直す)。
+    } catch (err) {
+      // Service Worker への受け渡しに失敗した(URL 未返却・postMessage 失敗
+      // など)。開いたストリームは閉じる(transfer 済みなら no-op)。
       await stream.cancel().catch(() => {});
+
+      // 1回限りのファイルは、上の fetch で既にダウンロード枠を消費している。
+      // Blob フォールバックはもう一度 fetch するため 404(FileGoneError)になり
+      // ファイルを永久に失わせる。ここはリトライを促して中止する。
+      if (file.isOneTime) {
+        throw err instanceof FriendlyError
+          ? err
+          : new FriendlyError(
+              "ダウンロードを開始できませんでした。もう一度お試しください。"
+            );
+      }
+
+      // 通常ファイルは Blob 経路で取り直せる(全体を2回転送するが失われない)。
     }
   }
 

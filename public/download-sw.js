@@ -30,13 +30,24 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   const data = event.data;
+  const replyPort = event.ports && event.ports[0];
+
+  // ページ側がストリームを開く(= 1回限りファイルのダウンロード枠を消費する)
+  // 前に、Service Worker が実際に message を処理できる状態かを往復で確認する
+  // ための ping。
+  if (data && data.type === "ANZDROP_PING") {
+    if (replyPort) {
+      replyPort.postMessage({ pong: true });
+    }
+    return;
+  }
 
   if (!data || data.type !== "ANZDROP_STREAM_DOWNLOAD") {
     return;
   }
 
   const { id, readable, filename, size } = data;
-  const port = event.ports && event.ports[0];
+  const port = replyPort;
 
   pendingDownloads.set(id, { readable, filename, size, port });
 
@@ -96,6 +107,7 @@ self.addEventListener("fetch", (event) => {
 
   const headers = new Headers({
     "Content-Type": "application/octet-stream",
+    "X-Content-Type-Options": "nosniff",
     "Content-Disposition":
       'attachment; filename="' +
       asciiFallbackName(entry.filename) +

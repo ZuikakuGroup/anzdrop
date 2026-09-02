@@ -191,6 +191,7 @@ describe("downloadAllFiles — 経路の選択", () => {
     class FakePort {
       onmessage: ((e: MessageEvent) => void) | null = null;
       postMessage() {}
+      close() {}
     }
     class FakeMessageChannel {
       port1 = new FakePort();
@@ -203,6 +204,14 @@ describe("downloadAllFiles — 経路の選択", () => {
     const receivedZip: Uint8Array[] = [];
     const controller = {
       postMessage: (message: Record<string, unknown>) => {
+        if (message.type === "ANZDROP_PING") {
+          queueMicrotask(() =>
+            latestPort1?.onmessage?.({
+              data: { pong: true },
+            } as MessageEvent)
+          );
+          return;
+        }
         posted.push({ message });
         // SW / ブラウザが転送された readable を消費するのを模す。
         void (message.readable as ReadableStream<Uint8Array>)
@@ -276,6 +285,66 @@ describe("downloadAllFiles — 経路の選択", () => {
     const unzipped = unzipSync(zipBytes);
     expect(new TextDecoder().decode(unzipped["a.txt"])).toBe("sw-a");
     expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("sw-b");
+  });
+
+  it("SW 経由の受け渡しに失敗したら、メモリ内 ZIP へ落とさずリトライを促すエラーを投げる", async () => {
+    // ping には応答するが、STREAM_DOWNLOAD には URL を返さない controller。
+    class FakePort {
+      onmessage: ((e: MessageEvent) => void) | null = null;
+      postMessage() {}
+      close() {}
+    }
+    let latestPort1: FakePort | null = null;
+    vi.stubGlobal(
+      "MessageChannel",
+      class {
+        port1 = new FakePort();
+        port2 = new FakePort();
+        constructor() {
+          latestPort1 = this.port1;
+        }
+      }
+    );
+    vi.stubGlobal("crypto", { randomUUID: () => "abcd-abcd" });
+
+    const controller = {
+      postMessage: (message: Record<string, unknown>) => {
+        if (message.type === "ANZDROP_PING") {
+          queueMicrotask(() =>
+            latestPort1?.onmessage?.({ data: { pong: true } } as MessageEvent)
+          );
+          return;
+        }
+        // URL を返さない → saveViaServiceWorker が reject する。
+        (message.readable as ReadableStream<Uint8Array>).cancel().catch(() => {});
+        queueMicrotask(() =>
+          latestPort1?.onmessage?.({ data: {} } as MessageEvent)
+        );
+      },
+    };
+
+    vi.stubGlobal("window", {});
+    const blob = stubBlobDownload();
+    vi.stubGlobal("navigator", {
+      serviceWorker: {
+        register: vi.fn(async () => ({})),
+        ready: Promise.resolve({}),
+        controller,
+      },
+    });
+    // showSaveFilePicker / showDirectoryPicker は無い。
+
+    fetchDecryptedStream.mockImplementation(async (f: DecryptedFile) =>
+      streamOf(`x-${f.id}`)
+    );
+
+    await expect(
+      downloadAllFiles([file("a", "a.txt", 10), file("b", "b.txt", 10)], KEY)
+    ).rejects.toThrow(/もう一度/);
+
+    // メモリ内 ZIP の Blob フォールバックは走っていない(再 fetch で1回限り
+    // ファイルを失わせないため)。
+    expect(blob.blobParts()).toHaveLength(0);
   });
 
   it("File System Access API 非対応 かつ 合計が上限内なら、メモリ内 ZIP を Blob で落とす", async () => {

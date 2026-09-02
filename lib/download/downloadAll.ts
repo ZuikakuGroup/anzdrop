@@ -163,7 +163,16 @@ export async function downloadAllFiles(
       // SW への受け渡しに失敗。ZIP 生成側を止めてから後始末する。
       await sink.abort(swError).catch(() => {});
       await zipPromise;
-      throw swError;
+
+      // canSaveViaServiceWorker() で SW との往復は確認済みなので、ここで失敗
+      // するのはまれな一過性。この時点で zipEntries の一部は既に fetch 済み
+      // (1回限りファイルならダウンロード枠を消費済み)。メモリ内 ZIP へ
+      // フォールバックすると再 fetch でそれらを失わせるため、リトライを促す。
+      throw swError instanceof FriendlyError
+        ? swError
+        : new FriendlyError(
+            "一括ダウンロードを開始できませんでした。もう一度お試しください。"
+          );
     }
 
     await zipPromise;

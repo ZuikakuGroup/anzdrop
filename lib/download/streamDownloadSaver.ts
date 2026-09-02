@@ -7,6 +7,9 @@
 
 const SERVICE_WORKER_URL = "/download-sw.js";
 const STREAM_DOWNLOAD_MESSAGE = "ANZDROP_STREAM_DOWNLOAD";
+const PING_MESSAGE = "ANZDROP_PING";
+// ping の応答待ち上限。ローカルの Service Worker との往復なので短くてよい。
+const PING_TIMEOUT_MS = 2_000;
 
 // Service Worker がページを制御し始めるのを待つ上限。これを過ぎたら諦めて
 // Blob フォールバックへ回す(登録が何らかの理由で成立しないと `ready` は
@@ -103,7 +106,40 @@ export async function canSaveViaServiceWorker(): Promise<boolean> {
     return false;
   }
 
-  return navigator.serviceWorker.controller !== null;
+  const controller = navigator.serviceWorker.controller;
+  if (!controller) {
+    return false;
+  }
+
+  // ここまでの判定を通っても、実際に message ハンドラまで届くとは限らない
+  // (制御 SW が終了寸前・別バージョンへの切り替え中など)。復号済みストリーム
+  // を開く前に往復で疎通を確かめておき、開いた後に失敗して 1回限りファイルの
+  // ダウンロード枠だけ消費される事故を防ぐ。
+  return pingServiceWorker(controller);
+}
+
+// Service Worker の message ハンドラへ ping を送り、pong が返るか確かめる。
+async function pingServiceWorker(controller: ServiceWorker): Promise<boolean> {
+  const channel = new MessageChannel();
+
+  try {
+    const pong = new Promise<boolean>((resolve) => {
+      channel.port1.onmessage = (event: MessageEvent) => {
+        resolve((event.data as { pong?: boolean } | null)?.pong === true);
+      };
+    });
+
+    controller.postMessage({ type: PING_MESSAGE }, [channel.port2]);
+
+    return await Promise.race([
+      pong,
+      timeout(PING_TIMEOUT_MS).catch(() => false),
+    ]);
+  } catch {
+    return false;
+  } finally {
+    channel.port1.close();
+  }
 }
 
 function appendHiddenDownloadFrame(url: string): { done: () => void } {
@@ -154,38 +190,47 @@ export async function saveViaServiceWorker(
 
   let frame: { done: () => void } | null = null;
 
-  const downloadUrl = await Promise.race([
-    new Promise<string>((resolve, reject) => {
-      channel.port1.onmessage = (event: MessageEvent) => {
-        const data = event.data as
-          | { url?: string; done?: boolean }
-          | null;
+  try {
+    const downloadUrl = await Promise.race([
+      new Promise<string>((resolve, reject) => {
+        channel.port1.onmessage = (event: MessageEvent) => {
+          const data = event.data as
+            | { url?: string; done?: boolean }
+            | null;
 
-        if (typeof data?.url === "string") {
-          resolve(data.url);
-        } else if (data?.done) {
-          // ダウンロードの読み出しが完了した(または中断された)。iframe を撤去。
-          frame?.done();
-        } else {
-          reject(
-            new Error("Service Worker からダウンロードURLが返りませんでした")
-          );
-        }
-      };
+          if (typeof data?.url === "string") {
+            resolve(data.url);
+          } else if (data?.done) {
+            // ダウンロードの読み出しが完了した(または中断された)。iframe を
+            // 撤去し、これ以上通知は来ないのでポートも閉じる。
+            frame?.done();
+            channel.port1.close();
+          } else {
+            reject(
+              new Error("Service Worker からダウンロードURLが返りませんでした")
+            );
+          }
+        };
 
-      controller.postMessage(
-        {
-          type: STREAM_DOWNLOAD_MESSAGE,
-          id,
-          readable,
-          filename,
-          size: size ?? undefined,
-        },
-        [channel.port2, readable as unknown as Transferable]
-      );
-    }),
-    timeout(DOWNLOAD_URL_TIMEOUT_MS),
-  ]);
+        controller.postMessage(
+          {
+            type: STREAM_DOWNLOAD_MESSAGE,
+            id,
+            readable,
+            filename,
+            size: size ?? undefined,
+          },
+          [channel.port2, readable as unknown as Transferable]
+        );
+      }),
+      timeout(DOWNLOAD_URL_TIMEOUT_MS),
+    ]);
 
-  frame = appendHiddenDownloadFrame(downloadUrl);
+    frame = appendHiddenDownloadFrame(downloadUrl);
+  } catch (err) {
+    // URL が返らなかった/タイムアウトした。完了通知を待つ相手もいないので
+    // ポートを閉じてからエラーを伝播する。
+    channel.port1.close();
+    throw err;
+  }
 }
