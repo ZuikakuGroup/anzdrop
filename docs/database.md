@@ -110,7 +110,7 @@
 | `created_at` | TEXT | 作成日時 |
 | `session_version` | INTEGER NOT NULL DEFAULT 0 | セッションCookie(JWT)に埋め込まれる世代番号。パスワード再設定([`recover`](../app/api/account/recover/route.ts))のたびにインクリメントされ、それより前に発行済みのセッションを全て失効させる(migration 0010) |
 | `failed_login_attempts` | INTEGER NOT NULL DEFAULT 0 | ログイン連続失敗回数。アカウントIDが本人設定になり予測不可能性に頼れなくなったための総当たり対策(migration 0012)。成功時・パスワード再設定時に0へリセットされる |
-| `locked_until` | TEXT (nullable) | この時刻まではログインを拒否する(`failed_login_attempts`が5に達すると5分後の時刻をセット、同時に0へリセット。migration 0012) |
+| `locked_until` | TEXT (nullable) | この時刻まではログインを一時制限する(`failed_login_attempts`が5に達すると5分後の時刻をセット、同時に0へリセット。migration 0012)。制限中でも正しいパスワードなら本人は通す(標的型ロックアウト嫌がらせ対策。詳細は[`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)) |
 
 migration 0009(`session_version`は0010、`failed_login_attempts`/`locked_until`は0012)。
 

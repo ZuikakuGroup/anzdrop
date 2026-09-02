@@ -249,11 +249,12 @@ describe("POST /api/account/login", () => {
     );
   });
 
-  it("while locked, still rejects a wrong password without a distinguishable response (no user enumeration)", async () => {
+  it("while locked, rejects a wrong password without a distinguishable response, and never extends the lock", async () => {
     stubTurnstileSuccess();
+    const lockedUntil = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       password: "correct-password",
-      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      lockedUntil,
       failedLoginAttempts: 0,
     });
 
@@ -274,10 +275,44 @@ describe("POST /api/account/login", () => {
       (await readJson<{ error: string }>(unknownAccount)).error
     );
 
-    // ロックはそのまま残る(嫌がらせで延びることも、誤った入力で解除される
-    // こともない)。
+    // ロック期限は1バイトも変わらない(嫌がらせでロックが延び続けない)。
     const state = await getFailedLoginState(accountId);
-    expect(state.locked_until).not.toBeNull();
+    expect(state.locked_until).toBe(lockedUntil);
+    // ロック期間内の試行としてカウントはされる(タイミングを通常の失敗と
+    // 揃えるための DB write が走っている証跡)。
+    expect(state.failed_login_attempts).toBe(1);
+  });
+
+  it("while locked, once too many attempts are made, even the correct password is rejected (bounded brute-force)", async () => {
+    stubTurnstileSuccess();
+    const { accountId, password } = await insertTestAccount(env, {
+      password: "correct-password",
+      lockedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      // ロック期間内の試行枠(LOGIN_LOCKOUT_THRESHOLD * 4 = 20)を使い切った状態。
+      failedLoginAttempts: 25,
+    });
+
+    const response = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+
+    expect(response.status).toBe(403);
+
+    // ロック期限が過ぎれば、正しいパスワードは(カウンタが大きくても)通る。
+    await env.DB.prepare(
+      `UPDATE accounts SET locked_until = ? WHERE id = ?`
+    )
+      .bind(new Date(Date.now() - 1000).toISOString(), accountId)
+      .run();
+
+    const afterExpiry = await postLogin({
+      accountId,
+      password,
+      turnstileToken: "tok",
+    });
+    expect(afterExpiry.status).toBe(200);
   });
 
   it("while locked, lets the real owner in with the correct password and clears the lock (#66 targeted-lockout mitigation)", async () => {
