@@ -305,6 +305,30 @@ describe("uploadChunksFromStream", () => {
     expect(onBytesUploaded).not.toHaveBeenCalled();
   });
 
+  it("retries a Cloudflare 522 (edge timeout) and recovers", async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        attempts++;
+        return new Response(null, { status: attempts < 2 ? 522 : 200 });
+      })
+    );
+
+    await expect(
+      uploadChunksFromStream(
+        fromArray([ramp(100)]),
+        "s",
+        "t",
+        "cf.bin",
+        8,
+        () => {},
+        noBackoff
+      )
+    ).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+  });
+
   it("retries a part when fetch itself throws (network drop), then recovers", async () => {
     let attempts = 0;
     vi.stubGlobal(

@@ -59,12 +59,20 @@ export async function* repartition(
 // 一時エラー(5xx / 429)で大容量アップロードが丸ごとやり直しにならないよう、
 // パート単位で指数バックオフ付きリトライする(GitHub issue #65)。
 // /api/upload/chunk は同じパート番号の再送に対して冪等(INSERT OR REPLACE)。
-const PART_UPLOAD_MAX_ATTEMPTS = 4;
+//
+// 6 回・バックオフ合計 ~15.5s(0.5 + 1 + 2 + 4 + 8)まで粘る。これを超える
+// 通信断(長いスリープ復帰など)は、ユーザーが「アップロードする」を押し直す
+// ことで /api/upload/start から新しいセッションでやり直す(未送信パートだけを
+// 送り直す本格的な再開は、暗号化フォーマットの再設計が必要なため別 issue)。
+const PART_UPLOAD_MAX_ATTEMPTS = 6;
 
 // リトライして意味がある(サーバー側/経路の一時的な問題)HTTPステータス。
+// 520-524 は Cloudflare がオリジン/エッジの一時障害・タイムアウト時に返す。
 // それ以外の4xx(トークン不一致・パート番号超過など)は再送しても直らないため
 // 即座に失敗させる。
-const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS = new Set([
+  408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524,
+]);
 
 type RetryOptions = {
   // 1パートあたりの最大試行回数(初回含む)。
@@ -176,7 +184,9 @@ export async function uploadChunksFromStream(
         // 複数ワーカーが同時にnext()を呼んでもパート番号とバイト列は1対1で対応する。
         next = await parts.next();
       } catch (unknownErr) {
-        firstError =
+        // 最初に起きたエラーを保持する。別ワーカーが根本原因を設定済みなら
+        // 上書きしない(後続の派生的なエラーで原因を隠さない)。
+        firstError ??=
           unknownErr instanceof Error
             ? unknownErr
             : new Error("不明なエラー");
@@ -192,7 +202,7 @@ export async function uploadChunksFromStream(
       try {
         await uploadPart(partNumber, body);
       } catch (unknownErr) {
-        firstError =
+        firstError ??=
           unknownErr instanceof Error
             ? unknownErr
             : new Error("不明なエラー");
