@@ -33,7 +33,7 @@ import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import QrCodeModal from "@/components/brand/QrCodeModal";
 import type { MeResponse } from "@/app/api/account/me/schema";
-import { uploadChunksFromStream } from "@/lib/upload/chunkUploader";
+import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
 import {
   type PendingFile,
   collectDataTransferFiles,
@@ -53,38 +53,19 @@ const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "30d", label: "30日" },
 ];
 
-type UploadStartResponse = {
-  success: boolean;
-  shareId?: string;
-  uploadToken?: string;
-  uploadSessionId?: string;
-  expiresAt?: string;
-  error?: string;
-};
-
-type UploadCompleteResponse = {
-  success: boolean;
-  fileId?: string;
-  error?: string;
-};
-
-// 暗号化1チャンクあたり最大この件数まで、アップロード側の消費を待たずに先読みしておく
-// (8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロードを始めるのではなく、
-// 暗号化とアップロードを重ねて進めるためのバッファ上限で、メモリ使用量をここで頭打ちにする。
+// アップロード中、暗号化1チャンクあたり最大この件数まで、送信側の消費を待たずに
+// 先読みしておく(8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロード
+// を始めるのではなく、暗号化とアップロードを重ねて進めるためのバッファ上限。
+// この先読みは「アップロードする」を押したあと、実際に処理中のファイル1つ分に
+// ついてのみ走る(GitHub issue #60)。
 const ENCRYPT_PREFETCH_CHUNKS = 8;
-
-// ファイル追加と同時にバックグラウンドで暗号化を始めるストリーム。
-// chunksは先読みバッファ付きの非同期ジェネレータで、ファイル全体を暗号化し終える
-// 前から(バッファが埋まった分だけ)アップロード側が消費を始められる。
-type EncryptedFileStream = {
-  encryptedFileName: Promise<string>;
-  chunks: AsyncGenerator<Uint8Array>;
-};
 
 type QueuedFile = {
   pendingFile: PendingFile;
-  encrypted: EncryptedFileStream;
-  uploaded: boolean;
+  // ファイル名の暗号化は小さく即座に終わるので、ファイル追加時点で開始しておく。
+  encryptedFileName: Promise<string>;
+  // /api/upload/complete まで到達したか。失敗後のリトライで再処理しないための印。
+  completed: boolean;
 };
 
 export default function UploadForm() {
@@ -100,6 +81,7 @@ export default function UploadForm() {
   );
   const [retention, setRetention] = useState<Retention>("7d");
   const [usePassword, setUsePassword] = useState(false);
+  const [hasCreatedShare, setHasCreatedShare] = useState(false);
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [plan, setPlan] = useState<Plan>("free");
@@ -130,6 +112,10 @@ export default function UploadForm() {
   // クリック(実アップロード)をまたいで同じ共有に相乗りできるよう保持する
   const shareIdRef = useRef<string | undefined>(undefined);
   const uploadTokenRef = useRef<string | undefined>(undefined);
+  // この共有がパスワード保護付きで作成されたか。作成後に詳細設定を変えて
+  // リトライしても、鍵の受け渡し方法(URLフラグメント or パスワード)が
+  // 共有の実態とズレないよう、作成時点の事実として1度だけ記録する。
+  const passwordProtectedRef = useRef(false);
 
   const getKey = (): Promise<CryptoKey> => {
     if (!keyPromiseRef.current) {
@@ -138,25 +124,25 @@ export default function UploadForm() {
     return keyPromiseRef.current;
   };
 
-  // ファイルが追加された瞬間に暗号化だけを始める(ネットワーク送信はまだしない)。
-  // 保存期間・パスワードの入力を待つ間の待ち時間を暗号化で埋めるのが狙い。
-  // chunksはENCRYPT_PREFETCH_CHUNKS件を上限に先読みするだけで、ファイル全体を
-  // メモリに保持しない(「アップロードする」を押した時点でアップロード側が
-  // 消費を始めれば、そこから先は暗号化とアップロードが並行して進む)。
-  const startEncrypting = (pendingFile: PendingFile): EncryptedFileStream => {
-    const encryptedFileName = getKey().then((key) =>
-      encryptFileName(pendingFile.path, key)
-    );
-
+  // ファイル本体を暗号化しながら先読みバッファ付きで流すストリームを作る。
+  // ファイル追加時ではなく、upload() が実際にそのファイルを処理する直前に
+  // 呼ぶ。こうすることで、同時に選択したファイル数によらず、先読みバッファ
+  // (ENCRYPT_PREFETCH_CHUNKS = 64MiB)が走るのは常に1ファイル分だけになる
+  // (数十〜数百ファイルのフォルダを追加してもメモリが 64MiB×N にならない。
+  // GitHub issue #60)。
+  //
+  // 失敗後のリトライでは毎回この関数で作り直す。途中まで消費したストリームを
+  // 再利用すると、2回目のマルチパートセッションへファイルの途中からのバイト
+  // だけが送られ、サイズ検証を通り抜けてサイレントに破損する(GitHub issue #58)。
+  const createEncryptedChunkStream = (
+    pendingFile: PendingFile
+  ): AsyncGenerator<Uint8Array> => {
     async function* encryptedChunks(): AsyncGenerator<Uint8Array> {
       const key = await getKey();
       yield* iterateEncryptedChunks(pendingFile.file, key);
     }
 
-    return {
-      encryptedFileName,
-      chunks: bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS),
-    };
+    return bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS);
   };
 
   const addFiles = (newFiles: PendingFile[]) => {
@@ -180,11 +166,19 @@ export default function UploadForm() {
     setFiles((prev) => [...prev, ...newFiles]);
 
     for (const pendingFile of newFiles) {
-      const encrypted = startEncrypting(pendingFile);
+      // ファイル名の暗号化(単一チャンク・数十バイト)だけは先に始めておく。
+      // ファイル本体の暗号化は upload() が処理する直前まで始めない(issue #60)。
+      const encryptedFileName = getKey().then((key) =>
+        encryptFileName(pendingFile.path, key)
+      );
       // ここでの例外は実際のアップロード時(upload内でのawait)に処理するので、
       // unhandled rejectionの警告だけを避ける。
-      encrypted.encryptedFileName.catch(() => {});
-      queueRef.current.push({ pendingFile, encrypted, uploaded: false });
+      encryptedFileName.catch(() => {});
+      queueRef.current.push({
+        pendingFile,
+        encryptedFileName,
+        completed: false,
+      });
     }
   };
 
@@ -239,7 +233,7 @@ export default function UploadForm() {
       return;
     }
 
-    const pending = queueRef.current.filter((item) => !item.uploaded);
+    const pending = queueRef.current.filter((item) => !item.completed);
 
     if (pending.length === 0) {
       setError("ファイルを選択してください。");
@@ -283,50 +277,21 @@ export default function UploadForm() {
 
       for (const item of pending) {
         const { path } = item.pendingFile;
-        // ファイル名の暗号化はすぐ終わるので待つが、本体チャンクの暗号化は
-        // 待たない(アップロード中も並行して進み続ける)。
-        const encryptedFileName = await item.encrypted.encryptedFileName;
+        // ファイル名の暗号化はすぐ終わるので待つ。
+        const encryptedFileName = await item.encryptedFileName;
 
-        const startResponse = await fetch("/api/upload/start", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            encryptedFileName,
-            fileSize: item.pendingFile.file.size,
-            shareId: shareIdRef.current,
-            uploadToken: uploadTokenRef.current,
-            retention,
-            wrappedKey: passwordWrap?.wrappedKey,
-            keySalt: passwordWrap?.keySalt,
-            turnstileToken,
-          }),
-        });
-
-        const startResult =
-          (await startResponse.json()) as UploadStartResponse;
-
-        if (
-          !startResponse.ok ||
-          !startResult.uploadSessionId ||
-          !startResult.uploadToken
-        ) {
-          throw new Error(
-            startResult.error ?? `${path} の開始に失敗しました`
-          );
-        }
-
-        shareIdRef.current = startResult.shareId;
-        uploadTokenRef.current = startResult.uploadToken;
-
-        await uploadChunksFromStream(
-          item.encrypted.chunks,
-          startResult.uploadSessionId,
-          startResult.uploadToken,
+        const result = await uploadEncryptedFile({
           path,
-          getUploadConcurrencyForPlan(plan),
-          (bytes) => {
+          encryptedFileName,
+          fileSize: item.pendingFile.file.size,
+          retention,
+          shareId: shareIdRef.current,
+          uploadToken: uploadTokenRef.current,
+          wrappedKey: passwordWrap?.wrappedKey,
+          keySalt: passwordWrap?.keySalt,
+          turnstileToken,
+          concurrency: getUploadConcurrencyForPlan(plan),
+          onBytesUploaded: (bytes) => {
             uploadedBytes += bytes;
             setProgress(
               totalBytes > 0
@@ -336,32 +301,25 @@ export default function UploadForm() {
                   )
                 : 100
             );
-          }
-        );
-
-        const completeResponse = await fetch("/api/upload/complete", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            uploadSessionId: startResult.uploadSessionId,
-          }),
+          // ファイル本体の暗号化ストリームは、このファイルを処理する直前に
+          // 作る。失敗後のリトライでこのループに再入した場合も毎回作り直す
+          // (途中まで消費したストリームを再利用しない。issue #58 / #60)。
+          createChunkStream: () =>
+            createEncryptedChunkStream(item.pendingFile),
         });
 
-        const completeResult =
-          (await completeResponse.json()) as UploadCompleteResponse;
-
-        if (!completeResponse.ok || !completeResult.success) {
-          throw new Error(
-            completeResult.error ?? `${path} の完了処理に失敗しました`
-          );
+        shareIdRef.current = result.shareId;
+        uploadTokenRef.current = result.uploadToken;
+        setHasCreatedShare(true);
+        if (isNewShare && passwordWrap) {
+          passwordProtectedRef.current = true;
         }
 
-        item.uploaded = true;
+        item.completed = true;
       }
 
-      if (passwordWrap) {
+      if (passwordProtectedRef.current) {
         // パスワード保護時は生の鍵をURLに含めない(パスワードなしでは復号不可能にするため)。
         setShareUrl(`${window.location.origin}/d/${shareIdRef.current}`);
       } else {
@@ -401,6 +359,7 @@ export default function UploadForm() {
     setProgress(0);
     setCopyState("idle");
     setUsePassword(false);
+    setHasCreatedShare(false);
     setPassword("");
     setRetention("7d");
     setShowAdvanced(false);
@@ -409,6 +368,7 @@ export default function UploadForm() {
     queueRef.current = [];
     shareIdRef.current = undefined;
     uploadTokenRef.current = undefined;
+    passwordProtectedRef.current = false;
   };
 
   const shareToLine = () => {
@@ -628,6 +588,7 @@ export default function UploadForm() {
                         <input
                           type="checkbox"
                           checked={usePassword}
+                          disabled={hasCreatedShare}
                           onChange={(event) =>
                             setUsePassword(event.target.checked)
                           }
@@ -635,6 +596,11 @@ export default function UploadForm() {
                         />
                         パスワードを設定する
                       </label>
+                      {hasCreatedShare && (
+                        <p className="mt-1.5 text-xs text-ink/50">
+                          共有作成後はパスワード設定を変更できません。
+                        </p>
+                      )}
                       <div
                         className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
                           usePassword ? "grid-rows-[1fr]" : "grid-rows-[0fr]"

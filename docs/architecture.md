@@ -11,7 +11,7 @@ Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.
 Cloudflare Workers (Next.js / @opennextjs/cloudflare)
    ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報のメタデータ
    ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
-   └─ Cron Trigger (毎日0時) … 期限切れ共有・放置されたアップロードセッションの掃除
+   └─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
 ```
 
 エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))を呼び出しています。
@@ -53,23 +53,29 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 `components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。
 
-- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。
+- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+- [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。失敗時は呼び出し側がそのまま再試行でき、再試行のたびに必ずファイル先頭からの新しいストリームで送り直す(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
 - [`lib/download/decrypt.ts`](../lib/download/decrypt.ts): ファイル名・ファイル一覧の復号、パスワードによる鍵のアンラップ、ファイル本体の取得+復号。復号済み平文を流す`ReadableStream`を返す`fetchDecryptedStream`と、それを丸ごとメモリに集める`fetchAndDecrypt`(プレビュー・ZIP一括ダウンロード用)。
 - [`lib/download/saveFile.ts`](../lib/download/saveFile.ts): 復号済みファイルの保存(`saveDecryptedFile`)。`showSaveFilePicker`が使える環境(Chromium系)では保存先を選ばせてディスクへ逐次書き込み、ファイル全体をメモリに載せない。それ以外の環境ではBlobフォールバック(`triggerBlobDownload`)。
 - [`lib/download/errors.ts`](../lib/download/errors.ts): ユーザーに表示してよい文言だけを持つ`FriendlyError`/`FileGoneError`と、それ以外の例外を汎用メッセージへ丸める`toFriendlyMessage`。
-- [`lib/download/zipDownload.ts`](../lib/download/zipDownload.ts): 複数ファイル一括ダウンロード時のZIP圧縮(fflateのラップ)と重複ファイル名の連番付与。
+- [`lib/download/zipDownload.ts`](../lib/download/zipDownload.ts): 一括ダウンロードのZIP生成。`streamFilesAsZip`(fflateの`Zip`をstoreモードで使い、各ファイルの平文ストリームを順にディスクへ流す。1ファイル分もZIP全体もメモリに載せない)と、環境非対応時のフォールバック用の非ストリーミング`zipFiles`。`canStreamFilesAsZip`はfflateがzip64非対応のため、単体/合計が4GiBを超えないかを判定する。重複ファイル名の連番付与も。
+- [`lib/download/downloadAll.ts`](../lib/download/downloadAll.ts): 「全てダウンロード」の経路選択(`downloadAllFiles`)。Chromium系ならストリーミングZIP、4GiB超ならフォルダを選んで1ファイルずつ保存、File System Access API非対応なら合計サイズ上限つきのメモリ内ZIP。
 - [`lib/admin/reportLabels.ts`](../lib/admin/reportLabels.ts): 通報カテゴリ・権利種別・共有状態・日時の表示用ラベル整形(純粋関数)。
 - [`lib/admin/reportsApi.ts`](../lib/admin/reportsApi.ts): 通報管理画面が呼ぶ`/api/admin/**`へのfetch呼び出し(取得・対応済み化・共有削除・一時停止切替・通報削除)。
 
 ## アップロードの流れ
 
-1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。
+1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大64MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `64MiB × ファイル数` にならない(GitHub issue #60)。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。新規共有作成時のみTurnstile検証が必須。
 3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
+
+各パートの送信は一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで最大 6 回・合計 ~15.5 秒までリトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+
+これを超える通信断でアップロードが失敗しても、「アップロードする」を押し直すだけで再試行できる。まだ `complete` まで到達していないファイルだけを対象に、暗号化パイプラインを作り直して `start` からやり直す(部分的に消費されたストリームを持ち越さないため、リトライでファイルがサイレント破損することはない。GitHub issue #58)。既に完了したファイルや、作成済み共有のパスワード保護の有無は再試行をまたいで保持される。1 回目で失敗した `start` 済みのセッションは掃除(Cleanup)で回収される。なお押し直しでの再試行は毎回ファイルの先頭から送り直す(送信済みパートだけをスキップする本格的な「再開」は、パケットの IV がパートごとに乱数で、パケット境界とパート境界が一致しないため暗号化フォーマットの再設計が必要。別 issue)。
 
 複数ファイルを1つの共有にまとめる場合、2回目以降のファイルは同じ `shareId` へ「相乗り」します。`shareId`自体はURLに露出する公開識別子のため所有権の証明には使えず、代わりにサーバー生成の `uploadToken`(クライアントのメモリ上にのみ存在)の一致で認可します([`lib/share-auth.ts`](../lib/share-auth.ts))。
 
@@ -77,7 +83,8 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 1. `GET /api/download/[shareId]` で共有の有効期限・ファイル一覧(暗号化済みファイル名・サイズ)・パスワード保護の有無(`wrappedKey`/`keySalt` の有無)を取得。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
-3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文は、`showSaveFilePicker` が使える環境ではユーザーが選んだ保存先へ逐次書き込み、それ以外の環境では Blob に集めてから保存する(`lib/download/saveFile.ts`)。前者ではファイル全体をメモリに保持しないため、大容量ファイルでもメモリ不足になりにくい。
+3. ファイル本体は `GET /api/file/[fileId]` からストリーミングダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。復号済み平文は、`showSaveFilePicker` が使える環境ではユーザーが選んだ保存先へ逐次書き込み、それ以外の環境では Blob に集めてから保存する(`lib/download/saveFile.ts`)。前者ではファイル全体をメモリに保持しないため、大容量ファイルでもメモリ不足になりにくい(非 Chromium 系の大容量単一ファイルは現状 Blob 経由。Service Worker による疑似ストリーミングは issue #61 で対応予定)。
+   - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境に応じて経路を選ぶ。`showSaveFilePicker` が使え、かつ ZIP が zip64 不要な範囲(単体・合計とも 4GiB 未満)なら、選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。4GiB を超える場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。File System Access API 非対応(Firefox/Safari)の場合は合計サイズが上限(1GiB)以内ならメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
 4. ダウンロード回数の上限チェックと加算は1つの原子的な `UPDATE` で行う(同時アクセスでも上限を超えない)。回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、**実際にクライアントへ届いたバイト数**で後処理を分ける(GitHub issue #62)。
    - 全バイト届いた場合: それが最後の1回だったならR2オブジェクトとDBレコードを削除(`ctx.waitUntil()` で、レスポンスのストリーミングはブロックしない)。「最後のバイト送出直後にクライアントが接続を閉じる」ケースは `pipeTo` が reject するが、届いたバイト数が `object.size` に達していれば完走扱いにする。
    - 全バイト届く前に中断(通信断・タブクローズなど)された場合: このダウンロードは「消費されなかった」とみなし、加算しておいた `download_count` を戻す。これにより「1回」ファイルでも、途中で切れたらもう一度取得し直せる(削除は完走時のみ)。
@@ -85,7 +92,24 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## 掃除(Cleanup)
 
-[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`custom-worker.ts` の `scheduled` ハンドラ(毎日0時、`wrangler.jsonc` の `triggers.crons`)から呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
+[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`custom-worker.ts` の `scheduled` ハンドラ(6時間ごと、`wrangler.jsonc` の `triggers.crons`)から `runScheduledCleanup()` 経由で呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
 
 - **期限切れ共有の削除**(`cleanupExpiredShares`): `shares.expires_at` を過ぎた共有をR2オブジェクト・D1レコードごと削除。
 - **放置されたアップロードセッションの削除**(`cleanupStaleUploads`): 通信断やタブを閉じるなどで `/api/upload/complete` まで到達しなかったセッションを、共有の有効期限とは無関係に、セッション自体の古さ(24時間)で判定して削除。R2の未完了マルチパートアップロードはabortしないと課金対象のストレージとして残り続けるため、DBレコードの削除前に必ずabortする。
+
+どちらの掃除も、1件の削除失敗(R2/D1の一時エラーなど)でその回の実行全体が止まらないよう、対象を `LIMIT` 付きで少しずつ取得し、1件ずつ `try/catch` して失敗はログに残して次へ進みます(失敗した件数は結果に含めて次回以降の実行に委ねる)。恒久的に失敗する行が1バッチ分たまっても後続の正常な行が掃除されるよう、取得件数は「基準件数 + これまでの失敗数」に広げます。1回の実行あたりのバッチ数にも上限があり、バックログが大きくても Workers のサブリクエスト上限(1呼び出し1000)内で確実に一部を消化します。`runScheduledCleanup()` は2種類の掃除を個別の `try/catch` で囲むため、片方が想定外に失敗しても、もう片方は必ず実行されます。
+
+掃除結果(処理件数・失敗件数・バッチ上限到達)は毎回ログに出し、失敗の持ち越しやバッチ上限到達があった実行は `console.warn` で目立たせます。「期限切れファイルが自動的に消える」というプライバシー上の約束が守られていることを確認できるよう、本番では Cloudflare の Workers Logs / Logpush / Tail Consumer のいずれかで scheduled ハンドラのログを拾える状態にしておくこと。
+
+## セキュリティレスポンスヘッダ
+
+[`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。旧 `middleware.ts`)が、静的アセットを除く全レスポンスに以下を付与します。
+
+- **Content-Security-Policy**: nonce ベースの厳格な CSP。`script-src` は `'self' 'nonce-<リクエストごと>' 'strict-dynamic'` を基本とし、`'unsafe-inline'` を許可しません。ダウンロード画面が URL フラグメントの E2E 復号鍵をメモリに保持するため、この origin 上の XSS を多層防御で抑えることが目的です(`'strict-dynamic'` により、nonce 付きスクリプトが読み込む Turnstile / Stripe.js の子スクリプトは追加のホスト許可なしで動きます)。
+- **frame-ancestors 'none' / X-Frame-Options: DENY**: クリックジャッキング対策。
+- **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
+- **Referrer-Policy: no-referrer** / **Strict-Transport-Security** (`DEPLOYMENT_ENV=production` のみ) / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
+
+nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません。Workers 上の低トラフィックな用途なので影響は小さいと判断)。
+
+CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` に切り替わり、違反をブロックせず観測だけできます(新しい外部フローを入れた直後のロールアウトや、OpenNext / Next 更新時の確認用の安全弁)。`proxy.ts` は OpenNext 上では「Node.js middleware」として動き OpenNext 側のサポートは実験的なため、更新時のリグレッション確認が必要です([`deployment.md`](./deployment.md#セキュリティレスポンスヘッダproxyts))。

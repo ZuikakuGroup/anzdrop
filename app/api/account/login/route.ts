@@ -16,6 +16,12 @@ const INVALID_CREDENTIALS_ERROR = "アカウントIDまたはパスワードが�
 const LOGIN_LOCKOUT_THRESHOLD = 5;
 const LOGIN_LOCKOUT_DURATION_MS = 5 * 60 * 1000;
 
+// ロック中でも本人(正しいパスワード)は通す(標的型ロックアウト嫌がらせの
+// 緩和。GitHub issue #66)が、ロック期間内の試行がこの回数を超えたら
+// パスワード照合はダミーだけにして 403 にする。人間が数回リトライするぶんには
+// 通し、自動化された総当たりはロック期間内で頭打ちにするためのしきい値。
+const LOCKOUT_VERIFY_BUDGET = LOGIN_LOCKOUT_THRESHOLD * 4;
+
 // 失敗回数をアトミックに1つ増やし、その結果(このリクエスト時点での通算値)を返す。
 // パスワード照合(Argon2id、数十ms)より前にこれを行うことで、並行してリクエストが
 // 飛んできた場合でも「閾値を超えた分は照合すら行わせない」形で保証を成立させる
@@ -39,19 +45,49 @@ async function reserveLoginAttempt(
   return updated?.failed_login_attempts ?? 0;
 }
 
+// 施錠する。既にロック中(かつ期限が未来)のアカウントには何もしない
+// (WHERE 句で DB 上の現在状態を確認する)。認証開始時に読んだ isLocked の
+// スナップショットだけで判断すると、同時リクエストが両方 isLocked=false を見て
+// 片方が施錠したあと、もう片方が locked_until を新しい時刻へ更新でき、誤った
+// パスワードでロック期間が延長されてしまう。
 async function lockAccount(env: CloudflareEnv, accountId: string): Promise<void> {
+  const now = new Date().toISOString();
+
   await env.DB.prepare(
     `
     UPDATE accounts
     SET failed_login_attempts = 0, locked_until = ?
     WHERE id = ?
+      AND (locked_until IS NULL OR locked_until <= ?)
   `
   )
     .bind(
       new Date(Date.now() + LOGIN_LOCKOUT_DURATION_MS).toISOString(),
-      accountId
+      accountId,
+      now
     )
     .run();
+}
+
+// ログイン成功時の共通処理。失敗カウンタ・ロックをリセットし、セッション
+// Cookie を発行する。
+async function grantSession(
+  env: CloudflareEnv,
+  accountId: string,
+  sessionVersion: number
+): Promise<Response> {
+  await env.DB.prepare(
+    `UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`
+  )
+    .bind(accountId)
+    .run();
+
+  const setCookie = await createSessionCookie(accountId, sessionVersion, env);
+  const responseBody: LoginResponse = { success: true };
+
+  return Response.json(responseBody, {
+    headers: { "Set-Cookie": setCookie },
+  });
 }
 
 export const POST = withApiHandler(
@@ -86,71 +122,76 @@ export const POST = withApiHandler(
         locked_until: string | null;
       }>();
 
-    // ロック中かどうかをそのままメッセージに出すと、失敗回数によるロックは
-    // 実在するアカウントにしか発生しないため、応答メッセージの違いだけで
-    // アカウントIDの実在を判別できてしまう(user enumeration)。そのため
-    // ロック中も通常の認証失敗と同じメッセージ・ステータスで応答する。
-    // メッセージだけでなく、ここで即座に返すと通常の認証失敗(Argon2id照合を
-    // 伴う数十ms)より高速に応答してしまい、応答時間の差から同じことが
-    // 推測できてしまう。そのため、ここでも(結果を使わない)ダミーの照合を
-    // 行って応答時間を揃える。
-    if (account?.locked_until && new Date(account.locked_until) > new Date()) {
-      await verifyPassword(password, DUMMY_PASSWORD_HASH);
-
-      return Response.json(
+    const invalidCredentials = (): Response =>
+      Response.json(
         { success: false, error: INVALID_CREDENTIALS_ERROR },
         { status: 403 }
       );
+
+    const isLocked =
+      !!account?.locked_until && new Date(account.locked_until) > new Date();
+
+    // ロック期限が過ぎていたら、ロック期間内に積み上がった失敗カウンタごと
+    // クリアしてから通常のフローに入る(そうしないと、ロック明け1発目の
+    // 正しいパスワードが「閾値超過」で弾かれてしまう)。
+    if (account && account.locked_until && !isLocked) {
+      await env.DB.prepare(
+        `UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`
+      )
+        .bind(accountId)
+        .run();
     }
 
-    // 実際にパスワードを照合する前に試行枠を予約する。これにより、並行して
-    // 飛んできた複数のリクエストがそれぞれ古い(ロック前の)状態を見て素通り
-    // することがあっても、実際にパスワード照合まで進めるリクエスト数自体を
-    // 閾値以下に抑えられる。
-    const reservedAttempt = account
-      ? await reserveLoginAttempt(env, accountId)
-      : 0;
+    // 実際にパスワードを照合する前に試行枠を予約する(照合前に増分)。
+    // 並行して飛んできた複数のリクエストがそれぞれ古い状態を見て素通りしても、
+    // 実際に照合まで進むリクエスト数自体を閾値以下に抑えられる。lockAccount は
+    // 施錠時に failed_login_attempts を 0 にするので、ロック中はこの値が
+    // 「ロック期間内での試行回数」になる。
+    //
+    // 存在しないアカウントIDでも同じ UPDATE を発行する(0 行更新で戻り値は 0)。
+    // 実在アカウントだけ DB write が走ると、応答時間の差でアカウントIDの実在を
+    // 判別できてしまうため(user enumeration)。
+    const reservedAttempt = await reserveLoginAttempt(env, accountId);
 
-    if (account && reservedAttempt > LOGIN_LOCKOUT_THRESHOLD) {
+    // ロックしていない状態で閾値を超えた並行リクエストは、照合前に弾いて施錠する。
+    if (account && !isLocked && reservedAttempt > LOGIN_LOCKOUT_THRESHOLD) {
       await lockAccount(env, accountId);
-
-      return Response.json(
-        { success: false, error: INVALID_CREDENTIALS_ERROR },
-        { status: 403 }
-      );
+      return invalidCredentials();
     }
+
+    // ロック中でも、正しいパスワードを提示できる本人はログインを通す
+    // (標的型ロックアウト嫌がらせの緩和。GitHub issue #66)。ただしロック期間内の
+    // 試行が LOCKOUT_VERIFY_BUDGET を超えたら(自動化された総当たり)、以降は
+    // 本物のハッシュに対する照合をやめて 403 にする。応答時間を通常の失敗と
+    // 揃えるため、ここでもダミーの照合は行う。ロック期間自体は延長しない
+    // (延長すると嫌がらせでロックが伸び続けてしまう)。
+    const lockoutBudgetExhausted =
+      isLocked && reservedAttempt > LOCKOUT_VERIFY_BUDGET;
+
+    const canCheckRealPassword = !!account && !lockoutBudgetExhausted;
 
     const passwordMatches = await verifyPassword(
       password,
-      account?.password_hash ?? DUMMY_PASSWORD_HASH
+      canCheckRealPassword
+        ? (account as { password_hash: string }).password_hash
+        : DUMMY_PASSWORD_HASH
     );
 
-    if (!account || !passwordMatches) {
-      if (account && reservedAttempt >= LOGIN_LOCKOUT_THRESHOLD) {
-        await lockAccount(env, accountId);
-      }
-
-      return Response.json(
-        { success: false, error: INVALID_CREDENTIALS_ERROR },
-        { status: 403 }
-      );
+    if (account && canCheckRealPassword && passwordMatches) {
+      return grantSession(env, accountId, account.session_version);
     }
 
-    await env.DB.prepare(
-      `UPDATE accounts SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?`
-    )
-      .bind(accountId)
-      .run();
+    // 認証失敗。ロックしていない状態で閾値に達したら新規に施錠する
+    // (ロック中は施錠し直さない — failed_login_attempts が 0 に戻り
+    //  ロック期間内の試行枠がリセットされてしまうため)。
+    if (
+      account &&
+      !isLocked &&
+      reservedAttempt >= LOGIN_LOCKOUT_THRESHOLD
+    ) {
+      await lockAccount(env, accountId);
+    }
 
-    const setCookie = await createSessionCookie(
-      accountId,
-      account.session_version,
-      env
-    );
-    const responseBody: LoginResponse = { success: true };
-
-    return Response.json(responseBody, {
-      headers: { "Set-Cookie": setCookie },
-    });
+    return invalidCredentials();
   }
 );
