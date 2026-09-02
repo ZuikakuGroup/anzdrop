@@ -38,8 +38,11 @@ describe("PasswordInput", () => {
     expect(inputTag(render({ disabled: true }))).toContain("disabled");
   });
 
-  it("入力不可でも表示/非表示の切り替えボタンは押せる", () => {
-    // 設定済みのパスワードを確認する導線は残す。
+  it("disabled を入力欄だけに適用し、表示切替ボタンへは波及させない", () => {
+    // 入力欄が編集不可でも、設定済みのパスワードを目視確認する導線は残したい。
+    // クリックで type が実際に切り替わるところまでは、このリポジトリの
+    // テスト環境が node(DOM なし)なので検証できない。ここで固定するのは
+    // 「disabled を足したときにボタンまで無効化しない」という配線のみ。
     const markup = render({ disabled: true });
     const button = markup.match(/<button\b[^>]*>/);
 
