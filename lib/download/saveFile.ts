@@ -1,5 +1,6 @@
 import { fetchDecryptedStream, type DecryptedFile } from "./decrypt";
 import { FileGoneError } from "./errors";
+import { withDuplicateSuffix } from "./zipDownload";
 
 // File System Access API の最小型定義。標準libに未収載の環境(Safari/Firefox
 // など)でも型エラーにならないよう、必要なメンバーだけをここで宣言する。
@@ -161,6 +162,36 @@ export type DirectorySaveEntry = {
   file: DecryptedFile;
 };
 
+function filenameFromPath(name: string): string {
+  const filename = name.split(/[\\/]/).filter(Boolean).at(-1);
+
+  return filename && filename !== "." && filename !== ".."
+    ? filename
+    : "download";
+}
+
+function assignDirectoryNames(
+  entries: DirectorySaveEntry[]
+): Array<DirectorySaveEntry & { directoryName: string }> {
+  const usedNames = new Set<string>();
+  const collisionKey = (name: string): string =>
+    name.normalize("NFC").toLowerCase();
+
+  return entries.map((entry) => {
+    const filename = filenameFromPath(entry.name);
+    let directoryName = filename;
+    let duplicateCount = 0;
+
+    while (usedNames.has(collisionKey(directoryName))) {
+      duplicateCount++;
+      directoryName = withDuplicateSuffix(filename, duplicateCount);
+    }
+
+    usedNames.add(collisionKey(directoryName));
+    return { ...entry, directoryName };
+  });
+}
+
 // 選ばれたディレクトリへ、複数の復号済みファイルを1つずつストリーミング保存
 // する。ZIP をやめて個別保存へフォールバックする経路(合計/単体が zip64 の
 // 限界を超える場合)で使う。ファイル全体をメモリに載せない。
@@ -172,8 +203,9 @@ export async function saveDecryptedFilesToDirectory(
 ): Promise<{ goneFileIds: string[]; savedCount: number }> {
   const goneFileIds: string[] = [];
   let savedCount = 0;
+  const namedEntries = assignDirectoryNames(entries);
 
-  for (const entry of entries) {
+  for (const entry of namedEntries) {
     let stream: ReadableStream<Uint8Array>;
 
     try {
@@ -188,7 +220,7 @@ export async function saveDecryptedFilesToDirectory(
       throw err;
     }
 
-    const handle = await dir.getFileHandle(entry.name, { create: true });
+    const handle = await dir.getFileHandle(entry.directoryName, { create: true });
     const writable = await handle.createWritable();
 
     await pipeStreamToWritable(stream, writable);

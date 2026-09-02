@@ -146,6 +146,46 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(result.started).toBe(true);
   });
 
+  it("フォルダ保存では相対パスを除き、変換後の重複名にも連番を付ける", async () => {
+    const savedNames = new Set<string>();
+    const getFileHandle = vi.fn(async (name: string) => {
+      if (savedNames.has(name)) {
+        throw new Error(`duplicate filename: ${name}`);
+      }
+      savedNames.add(name);
+      return {
+        createWritable: async () => ({
+          write: vi.fn(async () => {}),
+          close: vi.fn(async () => {}),
+          abort: vi.fn(async () => {}),
+        }),
+      };
+    });
+    vi.stubGlobal("window", {
+      showSaveFilePicker: vi.fn(),
+      showDirectoryPicker: vi.fn(async () => ({ getFileHandle })),
+    });
+    fetchDecryptedStream.mockImplementation(async () => streamOf("x"));
+
+    const result = await downloadAllFiles(
+      [
+        file("a", "folder/report.txt", 2_000_000_000),
+        file("b", "other\\report.txt", 2_000_000_000),
+        file("c", "report (1).txt", 2_000_000_000),
+        file("d", "third/REPORT.txt", 2_000_000_000),
+      ],
+      KEY
+    );
+
+    expect([...savedNames]).toEqual([
+      "report.txt",
+      "report (1).txt",
+      "report (1) (1).txt",
+      "REPORT (2).txt",
+    ]);
+    expect(result.started).toBe(true);
+  });
+
   it("File System Access API 非対応 かつ 合計が上限内なら、メモリ内 ZIP を Blob で落とす", async () => {
     vi.stubGlobal("window", {});
     const blob = stubBlobDownload();
@@ -166,6 +206,17 @@ describe("downloadAllFiles — 経路の選択", () => {
     const unzipped = unzipSync(blob.blobParts()[0] as Uint8Array);
     expect(new TextDecoder().decode(unzipped["a.txt"])).toBe("mem-a");
     expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("mem-b");
+  });
+
+  it("ZIP 保存では相対パスを維持する", async () => {
+    vi.stubGlobal("window", {});
+    const blob = stubBlobDownload();
+    fetchAndDecrypt.mockResolvedValue(new TextEncoder().encode("nested"));
+
+    await downloadAllFiles([file("a", "folder/a.txt", 6)], KEY);
+
+    const unzipped = unzipSync(blob.blobParts()[0] as Uint8Array);
+    expect(new TextDecoder().decode(unzipped["folder/a.txt"])).toBe("nested");
   });
 
   it("File System Access API 非対応 かつ 合計が上限超なら、案内メッセージで中断", async () => {

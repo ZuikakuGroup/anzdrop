@@ -99,12 +99,14 @@ export async function streamFilesAsZip(
       archive.add(file);
 
       const reader = (await entry.open()).getReader();
+      let completedNormally = false;
 
       try {
         for (;;) {
           const { value, done } = await reader.read();
 
           if (done) {
+            completedNormally = true;
             break;
           }
 
@@ -116,6 +118,9 @@ export async function streamFilesAsZip(
           }
         }
       } finally {
+        if (!completedNormally) {
+          await reader.cancel().catch(() => {});
+        }
         reader.releaseLock();
       }
 

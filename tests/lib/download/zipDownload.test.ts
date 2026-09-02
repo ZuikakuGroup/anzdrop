@@ -205,4 +205,33 @@ describe("streamFilesAsZip", () => {
 
     expect(sink.closed).toBe(false);
   });
+
+  it("読み取りが正常完了する前に失敗したら reader を cancel してから解放する", async () => {
+    const sink = collectingSink();
+    const boom = new Error("disk full");
+    sink.write.mockRejectedValueOnce(boom);
+
+    const cancel = vi.fn(async () => {});
+    const releaseLock = vi.fn();
+    const read = vi.fn(async () => ({
+      value: new TextEncoder().encode("chunk"),
+      done: false as const,
+    }));
+    const stream = {
+      getReader: () => ({ read, cancel, releaseLock }),
+    } as unknown as ReadableStream<Uint8Array>;
+
+    await expect(
+      streamFilesAsZip(
+        [{ name: "a.txt", open: async () => stream }],
+        sink
+      )
+    ).rejects.toBe(boom);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(cancel.mock.invocationCallOrder[0]).toBeLessThan(
+      releaseLock.mock.invocationCallOrder[0]
+    );
+  });
 });
