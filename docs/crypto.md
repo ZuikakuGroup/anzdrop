@@ -61,6 +61,8 @@ https://<host>/d/{shareId}#{復号鍵(base64url)}
 
 この方式のポイントは、サーバーが侵害されて `wrappedKey`/`keySalt`/暗号化済みファイルすべてが流出したとしても、パスワードを知らない攻撃者は総当たり以外にファイルを復号する手段がないこと。パスワード未設定時は `wrappedKey`/`keySalt` ともに `NULL` で、代わりにURLフラグメントの鍵がそのまま使われる(上記「鍵の受け渡し」参照)。
 
+`GET /api/download/[shareId]` は `shareId` さえ分かれば誰でも `wrappedKey`/`keySalt` を取得できる(パスワード入力画面を出すために必要)。そのため総当たり耐性はパスワードの強度そのものに依存する。弱いパスワード(短い数字列など)だと PBKDF2 のオフライン総当たりが現実的になり「パスワード保護したから公開の場にURLを貼っても安全」という前提が崩れるため、アップローダー側で最小 8 文字を要求する(`lib/passwordPolicy.ts` の `validateSharePassword`。アカウントのパスワードと同じ下限。GitHub issue #80)。パスワードはサーバーへ送られないため、この検証はクライアント(`components/upload/uploadForm.tsx`)側でのみ行える。
+
 ## 保存期間「1回」との関係
 
 保存期間で「1回」を選んだ場合、暗号化・鍵管理自体には影響しない。ダウンロード回数の制御は完全にサーバー側(D1のカウンタ)で行われ、詳細は [`architecture.md`](./architecture.md) の「ダウンロードの流れ」および [`database.md`](./database.md) を参照。

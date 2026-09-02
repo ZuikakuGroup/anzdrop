@@ -39,6 +39,10 @@ import {
   collectDataTransferFiles,
 } from "@/lib/upload/dragDropFiles";
 import { encryptFileName, wrapKeyWithPassword } from "@/lib/upload/encrypt";
+import {
+  MIN_SHARE_PASSWORD_LENGTH,
+  validateSharePassword,
+} from "@/lib/passwordPolicy";
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
@@ -240,9 +244,18 @@ export default function UploadForm() {
       return;
     }
 
-    if (usePassword && !password.trim()) {
-      setError("パスワードを入力してください。");
-      return;
+    if (usePassword) {
+      if (!password) {
+        setError("パスワードを入力してください。");
+        return;
+      }
+
+      const passwordCheck = validateSharePassword(password);
+
+      if (!passwordCheck.ok) {
+        setError(passwordCheck.error);
+        return;
+      }
     }
 
     setError("");
@@ -617,6 +630,9 @@ export default function UploadForm() {
                             autoComplete="new-password"
                             className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
                           />
+                          <p className="mt-1 text-xs text-ink/40">
+                            {`${MIN_SHARE_PASSWORD_LENGTH}文字以上。推測されにくいパスワードにしてください。`}
+                          </p>
                         </div>
                       </div>
                     </div>
