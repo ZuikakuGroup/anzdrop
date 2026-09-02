@@ -283,6 +283,29 @@ describe("POST /api/account/login", () => {
     expect(state.failed_login_attempts).toBe(1);
   });
 
+  it("concurrent failed attempts that both cross the threshold do not extend the lock past the first", async () => {
+    stubTurnstileSuccess();
+    const { accountId } = await insertTestAccount(env, {
+      password: "correct-password",
+      // 閾値ちょうど手前。2本同時に来ると両方 isLocked=false を見て閾値を超える。
+      failedLoginAttempts: 4,
+    });
+
+    await Promise.all([
+      postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+      postLogin({ accountId, password: "wrong", turnstileToken: "tok" }),
+    ]);
+
+    const first = await getFailedLoginState(accountId);
+    expect(first.locked_until).not.toBeNull();
+
+    // さらにもう1本の誤った試行(ロック中)。lockAccount の WHERE ガードにより
+    // locked_until は書き換わらない。
+    await postLogin({ accountId, password: "wrong", turnstileToken: "tok" });
+    const second = await getFailedLoginState(accountId);
+    expect(second.locked_until).toBe(first.locked_until);
+  });
+
   it("while locked, once too many attempts are made, even the correct password is rejected (bounded brute-force)", async () => {
     stubTurnstileSuccess();
     const { accountId, password } = await insertTestAccount(env, {

@@ -45,17 +45,26 @@ async function reserveLoginAttempt(
   return updated?.failed_login_attempts ?? 0;
 }
 
+// 施錠する。既にロック中(かつ期限が未来)のアカウントには何もしない
+// (WHERE 句で DB 上の現在状態を確認する)。認証開始時に読んだ isLocked の
+// スナップショットだけで判断すると、同時リクエストが両方 isLocked=false を見て
+// 片方が施錠したあと、もう片方が locked_until を新しい時刻へ更新でき、誤った
+// パスワードでロック期間が延長されてしまう。
 async function lockAccount(env: CloudflareEnv, accountId: string): Promise<void> {
+  const now = new Date().toISOString();
+
   await env.DB.prepare(
     `
     UPDATE accounts
     SET failed_login_attempts = 0, locked_until = ?
     WHERE id = ?
+      AND (locked_until IS NULL OR locked_until <= ?)
   `
   )
     .bind(
       new Date(Date.now() + LOGIN_LOCKOUT_DURATION_MS).toISOString(),
-      accountId
+      accountId,
+      now
     )
     .run();
 }
@@ -138,9 +147,11 @@ export const POST = withApiHandler(
     // 実際に照合まで進むリクエスト数自体を閾値以下に抑えられる。lockAccount は
     // 施錠時に failed_login_attempts を 0 にするので、ロック中はこの値が
     // 「ロック期間内での試行回数」になる。
-    const reservedAttempt = account
-      ? await reserveLoginAttempt(env, accountId)
-      : 0;
+    //
+    // 存在しないアカウントIDでも同じ UPDATE を発行する(0 行更新で戻り値は 0)。
+    // 実在アカウントだけ DB write が走ると、応答時間の差でアカウントIDの実在を
+    // 判別できてしまうため(user enumeration)。
+    const reservedAttempt = await reserveLoginAttempt(env, accountId);
 
     // ロックしていない状態で閾値を超えた並行リクエストは、照合前に弾いて施錠する。
     if (account && !isLocked && reservedAttempt > LOGIN_LOCKOUT_THRESHOLD) {
