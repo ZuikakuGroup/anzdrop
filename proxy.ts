@@ -13,20 +13,41 @@ import { NextResponse, type NextRequest } from "next/server";
 // next/script(Turnstile ローダ)へ自動で付与する。nonce を使うにはページが
 // 動的レンダリングされている必要があるため、app/layout.tsx で
 // `export const dynamic = "force-dynamic"` を宣言している。
+//
+// この proxy は @opennextjs/cloudflare 上では「Node.js middleware」として
+// バンドルされる(OpenNext 側では実験的・非公式サポート扱い)。本番相当の
+// プレビューでの nonce 付与のスモーク確認と、OpenNext / Next の更新時の
+// リグレッション確認を運用上のチェックリストに入れておくこと(docs/deployment.md)。
 
-const STATIC_SECURITY_HEADERS: Record<string, string> = {
-  // frame-ancestors 'none' と重複するが、CSP 非対応の古いブラウザ向けに併記する。
-  "X-Frame-Options": "DENY",
-  // 利用者アップロードのバイト列を自 origin から配信する /api/file/[fileId] を
-  // 含め、Content-Type の推測(sniffing)を全ルートで禁止する。
-  "X-Content-Type-Options": "nosniff",
-  // 復号鍵はフラグメントなので Referer には乗らないが、shareId を含むパスの
-  // 流出も避けるため Referer 自体を送らない。
-  "Referrer-Policy": "no-referrer",
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-  "Permissions-Policy":
-    'camera=(), microphone=(), geolocation=(), browsing-topics=(), payment=(self "https://js.stripe.com")',
-};
+// enforce する前に観測だけしたい場合は環境変数 CSP_REPORT_ONLY=1 を設定する。
+// この場合レスポンスは Content-Security-Policy-Report-Only になり、違反は
+// ブラウザの devtools に出るだけでブロックされない(ロールアウト時の安全弁)。
+function isCspReportOnly(): boolean {
+  const value = process.env.CSP_REPORT_ONLY;
+  return value === "1" || value === "true";
+}
+
+function buildStaticSecurityHeaders(isDev: boolean): Record<string, string> {
+  const headers: Record<string, string> = {
+    // frame-ancestors 'none' と重複するが、CSP 非対応の古いブラウザ向けに併記する。
+    "X-Frame-Options": "DENY",
+    // 利用者アップロードのバイト列を自 origin から配信する /api/file/[fileId] を
+    // 含め、Content-Type の推測(sniffing)を全ルートで禁止する。
+    "X-Content-Type-Options": "nosniff",
+    // 復号鍵はフラグメントなので Referer には乗らないが、shareId を含むパスの
+    // 流出も避けるため Referer 自体を送らない。
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy":
+      'camera=(), microphone=(), geolocation=(), browsing-topics=(), payment=(self "https://js.stripe.com")',
+  };
+
+  // HSTS は HTTPS 前提。開発(http://localhost)では意味がなく紛らわしいので付けない。
+  if (!isDev) {
+    headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  }
+
+  return headers;
+}
 
 function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
   // strict-dynamic により、nonce を持つスクリプト(Next のバンドル、next/script
@@ -89,19 +110,28 @@ function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
 
 export function proxy(request: NextRequest): NextResponse {
   const isDev = process.env.NODE_ENV === "development";
-  const nonce = crypto.randomUUID().replace(/-/g, "");
+  // Next.js 公式の nonce レシピと同じ生成方法(base64)。Next の CSP パーサが
+  // 期待する `'nonce-<value>'` 形式に確実に合致させる。
+  const nonce = btoa(crypto.randomUUID());
   const csp = buildContentSecurityPolicy(nonce, isDev);
+  const responseCspHeader = isCspReportOnly()
+    ? "Content-Security-Policy-Report-Only"
+    : "Content-Security-Policy";
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
+  // リクエスト側は常に enforce 名で渡す。Next.js はこのヘッダから nonce を
+  // 取り出してスクリプトへ付与する(report-only 中も nonce は必要)。
   requestHeaders.set("Content-Security-Policy", csp);
 
   const response = NextResponse.next({
     request: { headers: requestHeaders },
   });
 
-  response.headers.set("Content-Security-Policy", csp);
-  for (const [key, value] of Object.entries(STATIC_SECURITY_HEADERS)) {
+  response.headers.set(responseCspHeader, csp);
+  for (const [key, value] of Object.entries(
+    buildStaticSecurityHeaders(isDev)
+  )) {
     response.headers.set(key, value);
   }
 

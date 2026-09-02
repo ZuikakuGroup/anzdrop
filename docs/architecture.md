@@ -87,7 +87,9 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - **期限切れ共有の削除**(`cleanupExpiredShares`): `shares.expires_at` を過ぎた共有をR2オブジェクト・D1レコードごと削除。
 - **放置されたアップロードセッションの削除**(`cleanupStaleUploads`): 通信断やタブを閉じるなどで `/api/upload/complete` まで到達しなかったセッションを、共有の有効期限とは無関係に、セッション自体の古さ(24時間)で判定して削除。R2の未完了マルチパートアップロードはabortしないと課金対象のストレージとして残り続けるため、DBレコードの削除前に必ずabortする。
 
-どちらの掃除も、1件の削除失敗(R2/D1の一時エラーなど)でその回の実行全体が止まらないよう、対象を `LIMIT` 付きで少しずつ取得し、1件ずつ `try/catch` して失敗はログに残して次へ進みます(失敗した件数は結果に含めて次回以降の実行に委ねる)。1回の実行あたりのバッチ数にも上限があり、バックログが大きくても Workers のサブリクエスト予算内で確実に一部を消化します。`runScheduledCleanup()` は2種類の掃除を個別の `try/catch` で囲むため、片方が想定外に失敗しても、もう片方は必ず実行されます。
+どちらの掃除も、1件の削除失敗(R2/D1の一時エラーなど)でその回の実行全体が止まらないよう、対象を `LIMIT` 付きで少しずつ取得し、1件ずつ `try/catch` して失敗はログに残して次へ進みます(失敗した件数は結果に含めて次回以降の実行に委ねる)。恒久的に失敗する行が1バッチ分たまっても後続の正常な行が掃除されるよう、取得件数は「基準件数 + これまでの失敗数」に広げます。1回の実行あたりのバッチ数にも上限があり、バックログが大きくても Workers のサブリクエスト上限(1呼び出し1000)内で確実に一部を消化します。`runScheduledCleanup()` は2種類の掃除を個別の `try/catch` で囲むため、片方が想定外に失敗しても、もう片方は必ず実行されます。
+
+掃除結果(処理件数・失敗件数・バッチ上限到達)は毎回ログに出し、失敗の持ち越しやバッチ上限到達があった実行は `console.warn` で目立たせます。「期限切れファイルが自動的に消える」というプライバシー上の約束が守られていることを確認できるよう、本番では Cloudflare の Workers Logs / Logpush / Tail Consumer のいずれかで scheduled ハンドラのログを拾える状態にしておくこと。
 
 ## セキュリティレスポンスヘッダ
 
@@ -98,4 +100,6 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
 - **Referrer-Policy: no-referrer** / **Strict-Transport-Security** / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
 
-nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません)。
+nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません。Workers 上の低トラフィックな用途なので影響は小さいと判断)。
+
+CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` に切り替わり、違反をブロックせず観測だけできます(新しい外部フローを入れた直後のロールアウトや、OpenNext / Next 更新時の確認用の安全弁)。`proxy.ts` は OpenNext 上では「Node.js middleware」として動き OpenNext 側のサポートは実験的なため、更新時のリグレッション確認が必要です([`deployment.md`](./deployment.md#セキュリティレスポンスヘッダproxyts))。

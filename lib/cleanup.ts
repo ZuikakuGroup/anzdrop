@@ -45,8 +45,13 @@ export async function deleteShare(
     .bind(shareId)
     .all<FileStorageKey>();
 
-  for (const file of files.results ?? []) {
-    await env.FILES_BUCKET.delete(file.storage_key);
+  const storageKeys = (files.results ?? []).map((file) => file.storage_key);
+
+  if (storageKeys.length > 0) {
+    // R2 の delete はキー配列を1回で受け付ける。共有ごとの R2 サブリクエストを
+    // 1回に抑え、掃除バッチが Workers のサブリクエスト上限に余裕をもって収まる
+    // ようにする。
+    await env.FILES_BUCKET.delete(storageKeys);
   }
 
   // 完了しないまま共有が削除される場合も、R2に未完了マルチパートアップロード
@@ -107,6 +112,9 @@ export type CleanupResult = {
 //   ログに残して次へ進む。
 // - 削除に失敗した行は抽出条件を満たしたまま残るため、同じ実行内で再取得して
 //   無限ループにならないよう、失敗したIDを覚えて以降のバッチから除外する。
+//   さらに、恒久的に失敗する行が queryLimit 件以上あってもその後ろの正常な
+//   行が永久に掃除されないよう、取得件数を「queryLimit + これまでの失敗数」に
+//   広げ、毎バッチ必ず queryLimit 件の新しい候補を見に行く。
 // - バッチ数の上限で1回の実行あたりのサブリクエスト量を抑える。消化しきれ
 //   なかった場合は reachedBatchLimit を立てて次回以降に委ねる。
 async function runCleanupBatches<Row extends { id: string }>(
@@ -123,34 +131,33 @@ async function runCleanupBatches<Row extends { id: string }>(
   let reachedBatchLimit = false;
 
   for (let batch = 0; batch < maxBatches; batch++) {
-    const fetched = await fetchBatch(queryLimit);
+    const limit = queryLimit + failedIds.size;
+    const fetched = await fetchBatch(limit);
     const rows = fetched.filter((row) => !failedIds.has(row.id));
 
+    // 新しく処理できる候補がもう無い。
     if (rows.length === 0) {
       break;
     }
-
-    let progressed = false;
 
     for (const row of rows) {
       try {
         await handle(row);
         processed++;
-        progressed = true;
       } catch (error) {
         failedIds.add(row.id);
         onError(row, error);
       }
     }
 
-    // 残っている対象がすべて失敗続きで前進できないなら打ち切る。
-    if (!progressed) {
+    // 取得件数が上限未満 = 対象を全部取り切った。次のバッチで新しく処理
+    // できるものはもう無い。
+    if (fetched.length < limit) {
       break;
     }
 
-    // 最後のバッチまで使い切り、かつそのバッチが満杯だった場合は、まだ
-    // 未処理が残っている可能性が高い。
-    if (batch === maxBatches - 1 && fetched.length >= queryLimit) {
+    // 最後のバッチを満杯で使い切った = まだ未処理が残っている可能性が高い。
+    if (batch === maxBatches - 1) {
       reachedBatchLimit = true;
     }
   }
@@ -264,10 +271,20 @@ export async function runScheduledCleanup(
     console.error("runScheduledCleanup: cleanupStaleUploads threw:", error);
   }
 
-  console.log(
-    "runScheduledCleanup: done",
-    JSON.stringify(summary)
-  );
+  // 削除失敗の持ち越しやバッチ上限による未処理は、放置すると期限切れ
+  // ファイルが残り続けること(issue #63)に直結するため warning で目立たせる
+  // (Cloudflare 側で Workers Logs / Logpush / Tail Consumer を設定していれば
+  // ここで気づける)。
+  const hasBacklog =
+    summary.expiredShares === null ||
+    summary.staleUploads === null ||
+    summary.expiredShares.failed > 0 ||
+    summary.expiredShares.reachedBatchLimit ||
+    summary.staleUploads.failed > 0 ||
+    summary.staleUploads.reachedBatchLimit;
+
+  const log = hasBacklog ? console.warn : console.log;
+  log("runScheduledCleanup: done", JSON.stringify(summary));
 
   return summary;
 }

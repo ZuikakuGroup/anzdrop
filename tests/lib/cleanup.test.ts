@@ -41,12 +41,20 @@ function wrapBinding<T extends object>(target: T, overrides: Record<string, any>
   });
 }
 
-// 特定の storage_key に対してだけ R2 削除を失敗させる env。
-function envWithFailingBucketDeleteFor(targetKey: string): TestEnv {
+// 指定した storage_key を(単体・配列いずれの delete 呼び出しでも)含む場合に
+// R2 削除を失敗させる env。deleteShare はファイルの storage_key 配列を1回の
+// delete([...]) で消すため、配列にターゲットが混ざっていたら失敗させる。
+function envWithFailingBucketDeleteFor(
+  ...targetKeys: string[]
+): TestEnv {
+  const targets = new Set(targetKeys);
   const bucket = wrapBinding(env.FILES_BUCKET, {
     delete: async (keys: string | string[]) => {
-      if (keys === targetKey) {
-        throw new Error(`simulated R2 delete failure for ${targetKey}`);
+      const asArray = Array.isArray(keys) ? keys : [keys];
+      if (asArray.some((key) => targets.has(key))) {
+        throw new Error(
+          `simulated R2 delete failure for ${asArray.join(",")}`
+        );
       }
       return (env.FILES_BUCKET.delete as (k: string | string[]) => Promise<void>)(
         keys
@@ -55,6 +63,18 @@ function envWithFailingBucketDeleteFor(targetKey: string): TestEnv {
   });
 
   return { ...(env as object), FILES_BUCKET: bucket } as TestEnv;
+}
+
+// env.DB.batch を必ず失敗させる env(SELECT などの prepare/all は通す)。
+// 放置アップロード削除(deleteStaleUpload)の失敗経路の検証に使う。
+function envWithFailingDbBatch(): TestEnv {
+  const db = wrapBinding(env.DB, {
+    batch: async () => {
+      throw new Error("simulated D1 batch failure");
+    },
+  });
+
+  return { ...(env as object), DB: db } as TestEnv;
 }
 
 // 期限切れ共有の抽出クエリだけを throw させる env(その他のクエリは通す)。
@@ -369,6 +389,44 @@ describe("cleanupExpiredShares — 耐障害性とバッチ処理", () => {
     ).first<{ count: number }>();
     expect(remaining?.count).toBe(1);
   });
+
+  it("恒久的に失敗する共有が1バッチ分たまっていても、その後ろの正常な共有は掃除される", async () => {
+    // 古い順に「必ず失敗する共有」を queryLimit 件、続いて正常な共有を数件置く。
+    // 取得件数を queryLimit に固定していると、毎バッチ先頭の失敗共有ばかり
+    // 取ってしまい正常な共有が永久に残る(issue #63 の再発)。
+    const failingKeys: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const id = `poison-${i}`;
+      const key = `files/${id}/file`;
+      failingKeys.push(key);
+      await insertShare({
+        id,
+        expiresAt: new Date(Date.now() - 120_000 + i).toISOString(),
+      });
+      await insertFile(id, key);
+      await env.FILES_BUCKET.put(key, new Uint8Array([1]));
+    }
+
+    for (let i = 0; i < 3; i++) {
+      await insertShare({
+        id: `healthy-${i}`,
+        expiresAt: new Date(Date.now() - 60_000 + i).toISOString(),
+      });
+    }
+
+    const result = await cleanupExpiredShares(
+      envWithFailingBucketDeleteFor(...failingKeys),
+      { queryLimit: 3, maxBatches: 5 }
+    );
+
+    expect(result.failed).toBe(3);
+    expect(result.processed).toBe(3);
+
+    for (let i = 0; i < 3; i++) {
+      expect(await shareExists(`poison-${i}`)).toBe(true);
+      expect(await shareExists(`healthy-${i}`)).toBe(false);
+    }
+  });
 });
 
 describe("runScheduledCleanup", () => {
@@ -453,5 +511,37 @@ describe("cleanupStaleUploads", () => {
 
     // shares/filesテーブルには触れないことの確認。
     expect(await shareExists(shareId)).toBe(true);
+  });
+
+  it("1件の削除失敗でその回の実行が止まらず、失敗件数が報告される", async () => {
+    const shareId = "share-stale-fail";
+    await insertShare({
+      id: shareId,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    for (let i = 0; i < 2; i++) {
+      const id = `stale-fail-${i}`;
+      await insertUpload({
+        id,
+        shareId,
+        storageKey: `files/${shareId}/${id}`,
+        uploadId: `r2-${id}`,
+        createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      });
+      await insertUploadPart(id);
+    }
+
+    const result = await cleanupStaleUploads(envWithFailingDbBatch(), {
+      queryLimit: 1,
+      maxBatches: 3,
+    });
+
+    expect(result.processed).toBe(0);
+    expect(result.failed).toBe(2);
+
+    // どちらのセッションもまだ残っている(次回実行で再試行される)。
+    expect(await uploadExists("stale-fail-0")).toBe(true);
+    expect(await uploadExists("stale-fail-1")).toBe(true);
   });
 });

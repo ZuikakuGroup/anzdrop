@@ -51,6 +51,14 @@
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
 
+## セキュリティレスポンスヘッダ(`proxy.ts`)
+
+全レスポンスに CSP などのセキュリティヘッダを付与する [`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。詳細は [`architecture.md`](./architecture.md#セキュリティレスポンスヘッダ))について、デプロイ運用上の注意:
+
+- **OpenNext 上では「Node.js middleware」として扱われ、OpenNext 側のサポートは実験的・非公式**(`opennextjs-cloudflare build` 時に `Node.js middleware support is experimental` の警告が出る)。本番相当のプレビュー(`npm run preview`)で「レスポンスの CSP 内の nonce と HTML 内の全 `<script nonce>` が一致し、リクエストごとに変わる」ことをスモーク確認し、**OpenNext / Next を更新したときは同じ確認を行う**こと。
+- CSP は既定で enforce(ブロックする)。新しい外部フローを入れた直後など、まず観測だけしたい場合は Worker の環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` になり、違反はブラウザ devtools に出るだけでブロックされない。問題ないことを確認したらこの変数を外す。
+- enforce 切り替え・大きめの変更の前に実ブラウザで最低限確認する導線: Turnstile のインタラクティブチャレンジ表示、Stripe Payment Element(3D セキュア含む)、複数ファイルの一括 ZIP ダウンロード、画像/動画/音声プレビュー、BTC hosted checkout への遷移。
+
 ## Cloudflare Access(管理画面の保護)
 
 `/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`の`verifyAccessJwt()`)でもJWT検証による多層防御を行っている。`/api/admin/**`(JSON API)は未検証時に`403`を返すが、`/admin`ページ自体(`app/admin/page.tsx`)は管理画面の存在を明かさないよう`404`(`notFound()`)を返す。
