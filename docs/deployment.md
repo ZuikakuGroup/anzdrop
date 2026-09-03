@@ -62,6 +62,19 @@
 - CSP は既定で enforce(ブロックする)。新しい外部フローを入れた直後など、まず観測だけしたい場合は Worker の環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` になり、違反はブラウザ devtools に出るだけでブロックされない。問題ないことを確認したらこの変数を外す。
 - enforce 切り替え・大きめの変更の前に実ブラウザで最低限確認する導線: Turnstile のインタラクティブチャレンジ表示、Stripe Payment Element(3D セキュア含む)、複数ファイルの一括 ZIP ダウンロード、画像/動画/音声プレビュー、BTC hosted checkout への遷移。
 
+## Workerのスクリプトサイズ上限
+
+Cloudflare Workersにはスクリプトサイズの上限があり、**無料プランでは gzip 後 3 MiB**(有料プランは 10 MiB)。超えるとデプロイが `code: 10027` で失敗する。Next.jsアプリ全体が1つのWorkerに入るため、この上限には現実的に近づきうる。
+
+現在のサイズは `npx opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && npx wrangler deploy --dry-run` の出力(`Total Upload: ... / gzip: ...`)で確認できる。
+
+このリポジトリでは、使っていない `@vercel/og`(OG画像の動的生成ライブラリ。`resvg.wasm` だけで gzip 約 517 KiB)をバンドルから外すことでサイズを抑えている。混入経路が2つあるため、対策も2つある。
+
+- **サーバー関数側**: Next.jsのファイルトレース(`.next/server/**/*.nft.json`)に `@vercel/og` 一式が入ってしまう(観測時点では `.wasm` を静的importしているルート、すなわち `lib/account/wasm-argon2` 経由の `/api/account/{login,signup,recover}` のトレースにのみ現れていた)。[`next.config.ts`](../next.config.ts) の `outputFileTracingExcludes` で、全ルートを対象にトレースから除外する。`@opennextjs/cloudflare` は「トレースに現れなければ未使用」と判断して、throwするシムに差し替えてくれる。
+- **middleware(`proxy.ts`)側**: `@opennextjs/cloudflare` のNode.js middleware用バンドラには上記のシム差し替えが無く、Turbopackランタイムのパッチが常に `@vercel/og` のimportを注入する(このリポジトリが使う1.20.5と、公開されている最新の1.20.6のどちらでも同じ)。設定では回避できないため、ビルド後に [`scripts/strip-vercel-og.mts`](../scripts/strip-vercel-og.mts) が `.open-next/middleware/handler.mjs` から取り除く。`npm run preview` / `npm run deploy` がビルドとデプロイの間で自動実行する。
+
+このスクリプトはバンドルの構造が想定と違えば例外を投げてビルドを失敗させる。`@opennextjs/cloudflare` や Next.js の更新後に失敗した場合は、上流が同等の最適化を入れた(=スクリプトが不要になった)か、出力構造が変わったかのどちらか。前者ならスクリプトと `package.json` からの呼び出しを削除する。**OG画像の動的生成(`ImageResponse` / `next/og` / `opengraph-image`)を導入する場合は、上記2つの対策をどちらも取り除く必要がある。**
+
 ## Cloudflare Access(管理画面の保護)
 
 `/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`の`verifyAccessJwt()`)でもJWT検証による多層防御を行っている。`/api/admin/**`(JSON API)は未検証時に`403`を返すが、`/admin`ページ自体(`app/admin/page.tsx`)は管理画面の存在を明かさないよう`404`(`notFound()`)を返す。
