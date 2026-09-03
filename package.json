@@ -10,8 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production"
+    "preview": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production"
   },
   "dependencies": {
     "@cloudflare/workers-types": "^5.20260827.1",
