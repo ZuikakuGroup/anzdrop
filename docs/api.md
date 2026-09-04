@@ -10,6 +10,7 @@
 - [`lib/api/validate.ts`](../lib/api/validate.ts) の `parseJsonBody()`: [zod](https://zod.dev/) スキーマ(各ルートに置かれた `schema.ts`)によるリクエストボディの検証と400応答の共通化。リクエストボディのレスポンス型・リクエスト型も同じ `schema.ts` からエクスポートし、対応するクライアントコンポーネントと共有する。
 - [`lib/api/adminAuth.ts`](../lib/api/adminAuth.ts) の `requireAdmin()`: 管理画面APIの認可チェック共通化(詳細は「管理画面API」の節を参照)。
 - [`lib/turnstile.ts`](../lib/turnstile.ts) の `requireTurnstile()`: Turnstile検証+403応答の共通化。
+- [`lib/rateLimit.ts`](../lib/rateLimit.ts) の `checkRateLimit()`: Workersのレート制限バインディングの消費+429応答の共通化(GitHub issue #81)。適用先・キー・設計方針は[`architecture.md`](./architecture.md#レート制限)を参照。
 - [`lib/share-auth.ts`](../lib/share-auth.ts) の `checkShareAccessible()`: 共有の有効期限切れ・一時停止判定の共通化(`GET /api/download/[shareId]` と `GET /api/file/[fileId]` で共用)。
 
 ## アップロード
@@ -32,6 +33,7 @@
 - クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
 - ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
 - ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
+- アップロードセッションID単位のレート制限あり。ボディを読み込む前に判定し、超過時は429(`Retry-After: 60`)。
 - レスポンス: `{ success: true, partNumber }`
 - **同じパート番号の再POSTに冪等**(`resumeMultipartUpload().uploadPart()` + `upload_parts` への `INSERT OR REPLACE`)。クライアント([`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts))は通信断、HTTP 408・425・429、または5xxのうち500・502・503・504・520-524の場合に、パート単位で指数バックオフ付きリトライする(GitHub issue #65)。
 
@@ -52,6 +54,7 @@
 共有のメタデータとファイル一覧を返す。
 
 - 共有が存在しない/期限切れ/一時停止中の場合はそれぞれ404/410/403。
+- `shareId` 単位のレート制限あり。超過時は本文を返さず429(`Retry-After: 60`)。存在しない `shareId` でも枠を消費する(共有の有無で応答が変わらないようにするため)。ただしカウンタはキーごとに独立しているので、**`shareId` の総当たり(列挙)対策にはならない**(列挙の抑止は外側のWAFルールの役目)。
 - レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt, previewAllowed }, files: [{ id, name, size, isOneTime }] }`
   - `files` の `name` は暗号化済みファイル名(クライアント側で復号が必要)。
   - `previewAllowed` は共有作成時のアップローダーの実効プランから一度だけ決まる(有料プランのみ`true`)。`true`の場合、対応拡張子(MP4/MP3/JPEG/PNG)のファイルはクライアント側で`/api/file/[fileId]`を使ってブラウザ内プレビューできる([`lib/preview.ts`](../lib/preview.ts))。
@@ -64,6 +67,7 @@
 ファイル本体を暗号化済みバイナリのままストリーミング返却する。
 
 - 共有が期限切れの場合410、一時停止中の場合403。ファイル/共有が存在しない場合404。
+- `fileId` 単位のレート制限あり。D1/R2に触る前に判定し、超過時は429(`Retry-After: 60`)。`Range` リクエストも1本ごとに1回数える。429で弾いた分は `download_count` を加算しない。
 - **`Range` リクエスト(並列ダウンロード)**: 回数を数えないファイル(`max_downloads IS NULL`)への `Range: bytes=...` は、有効期限・一時停止の確認だけを済ませて部分応答(206 + `Content-Range`)を返す。1回の論理的なダウンロードが複数のサブリクエストに分かれるだけなので `download_count` は加算しない。クライアント([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))は暗号文を既定8MiBのウィンドウに分けて複数本並列取得し、順番に連結し直してから復号する(単一コネクションの逐次ダウンロードより実効速度が上がる)。回数を数えるファイルは `Range` を無視して全体を返し、下記の単一GET+原子的加算の経路を通る(クライアントも回数制限ファイルには `Range` を使わない)。回数を数えないファイルの通常(非Range)応答には `Accept-Ranges: bytes` を付ける。
 - ダウンロード回数の上限チェックと加算を1つの `UPDATE ... RETURNING` で原子的に行い、条件を満たさない(既に上限到達)場合は404扱い。
 - 回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、転送が最後まで完了したときだけ後処理を行う(GitHub issue #62)。
@@ -140,6 +144,7 @@
 
 - リクエスト: `{ plan: "standard"|"premium" }`
   - 型としては両方受けるが、実際に決済へ進めるのは購入導線に出しているプランのみ(`PURCHASABLE_PLANS`、[`lib/plan.ts`](../lib/plan.ts))。現状は `premium` のみで、`standard`(提供準備中。Issue #5)は購入UIを迂回して直接叩いても400で拒否する。`btc/charge` も同じ判定。
+- アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe側にCustomerもSubscriptionも作らず429(`Retry-After: 60`)。`stripe/sync` と**同じ `ACCOUNT_RATE_LIMITER` の枠を共有する**ため、閾値を調整するときは両方の呼び出し頻度を合算して考えること。
 - レスポンス: `{ success: true, clientSecret }`
 
 ### `POST /api/billing/stripe/webhook`
@@ -150,6 +155,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名
 
 ログイン必須。`customer.subscription.updated` / `deleted` のWebhookが一時的に届かなかった場合の保険。アカウントに紐づく`stripe_subscription_id`のSubscriptionをStripeから取り直し、`accounts.plan` / `plan_expires_at`をStripe側の実態へ合わせ直す(Webhookと同じ列・同じ判定を使い、新しい情報の保存はしない)。`/mypage`と`/mypage/billing`の初回表示時、およびカード決済確定直後のポーリングでクライアントから呼ばれる(クライアント側の呼び出し・401/500ハンドリングは`lib/account/planStatus.ts`に集約)。Stripeで契約したことが無いアカウントはStripe APIを呼ばず現在値を返す。あわせて画面表示用の現在のサブスクリプション要約も返す。
 
+- アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe APIを呼ばず429(`Retry-After: 60`)。
 - レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling"|"past_due", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)、`"past_due"`は更新の決済に失敗しdunningリトライ中(お支払い方法の更新か自動更新の停止が必要)を表し、このとき`currentPeriodEnd`は常に`null`(Stripeの`current_period_end`が未払いの次期を指しうるため、支払い済みの期限としては使わない)。
   - `null`になるのは、契約が無い / Subscriptionが`active`・`trialing`・`past_due`のいずれでもない(`incomplete`・`canceled`等) / retrieveが失敗し`plan_expires_at`も過去のとき。
   - Stripe取得が**404**(Stripe側にSubscriptionが無い)の場合は、`accounts`を一切書き換えない。404はモード/APIキーの取り違えや破損IDでも起きるうえ、`stripe_subscription_id`まで外すと本物の削除時に後続の`customer.subscription.deleted`が突き合わせ先を失うため。実際のダウングレードは署名検証済みの`deleted`と`effectivePlan()`に委ねる。要約は次項と同じ暫定フォールバック。

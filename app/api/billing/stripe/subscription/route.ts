@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { parseJsonBody } from "@/lib/api/validate";
 import { isDeadSubscriptionStatus } from "@/lib/stripe-subscription";
 import { isPurchasablePlan } from "@/lib/plan";
@@ -37,6 +38,19 @@ export const POST = withApiHandler(
         { success: false, error: "ログインが必要です" },
         { status: 401 }
       );
+    }
+
+    // アカウント単位のレート制限(GitHub issue #81)。sync より重く、Stripe 側に
+    // Customer / Subscription という実オブジェクトを作る経路なので、
+    // 同じ ACCOUNT_RATE_LIMITER の枠を共有して連打を頭打ちにする。
+    const accountLimit = await checkRateLimit(
+      env.ACCOUNT_RATE_LIMITER,
+      session.accountId,
+      "POST /api/billing/stripe/subscription"
+    );
+
+    if (!accountLimit.ok) {
+      return accountLimit.response;
     }
 
     const parsed = await parseJsonBody(request, SubscriptionRequestSchema);

@@ -24,6 +24,7 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 | --- | --- | --- |
 | `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` / `accounts` / `btc_payments` / `stripe_events` テーブル |
 | `FILES_BUCKET` | R2 Bucket | 暗号化済みファイル本体(マルチパートアップロード) |
+| `FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` | Rate Limiting | アプリ層のレート制限(下記「レート制限」参照) |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 環境変数 | 管理画面(`/admin`, `/api/admin/*`)のCloudflare Access JWT検証用 |
 | `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
 | `SESSION_SECRET` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` | シークレット | アカウントセッション・有料プラン決済([`accounts.md`](./accounts.md)参照) |
@@ -105,6 +106,44 @@ API側の詳細は [`api.md`](./api.md) を参照。
 どちらの掃除も、1件の削除失敗(R2/D1の一時エラーなど)でその回の実行全体が止まらないよう、対象を `LIMIT` 付きで少しずつ取得し、1件ずつ `try/catch` して失敗はログに残して次へ進みます(失敗した件数は結果に含めて次回以降の実行に委ねる)。恒久的に失敗する行が1バッチ分たまっても後続の正常な行が掃除されるよう、取得件数は「基準件数 + これまでの失敗数」に広げます。1回の実行あたりのバッチ数にも上限があり、バックログが大きくても Workers のサブリクエスト上限(1呼び出し1000)内で確実に一部を消化します。`runScheduledCleanup()` は2種類の掃除を個別の `try/catch` で囲むため、片方が想定外に失敗しても、もう片方は必ず実行されます。
 
 掃除結果(処理件数・失敗件数・バッチ上限到達)は毎回ログに出し、失敗の持ち越しやバッチ上限到達があった実行は `console.warn` で目立たせます。「期限切れファイルが自動的に消える」というプライバシー上の約束が守られていることを確認できるよう、本番では Cloudflare の Workers Logs / Logpush / Tail Consumer のいずれかで scheduled ハンドラのログを拾える状態にしておくこと。
+
+## レート制限
+
+無認証・無課金で呼べるエンドポイントの連打で、Workers リクエスト・D1 行読み取り・R2 オペレーションといった課金コストが暴走しないようにするための多層防御です(GitHub issue #81)。非営利・コスト回収を前提とした運用のため、「壊さないこと」を最優先に、暴走を頭打ちにすることだけを狙っています。
+
+| 層 | 設定場所 | 数える単位 | 守るもの |
+| --- | --- | --- | --- |
+| 外側 | Cloudflare WAF の Rate Limiting Rules(ゾーン側のダッシュボード設定。[`deployment.md`](./deployment.md#waf-のレート制限ルール)) | 送信元 IP | 単一 IP からの機械的な連打全般 |
+| 内側 | Workers の Rate Limiting バインディング([`lib/rateLimit.ts`](../lib/rateLimit.ts)) | `fileId` / `shareId` / アップロードセッションID / アカウントID | 分散した IP から1つの共有・1つのセッションへ集中する濫用 |
+
+内側の層でキーにするのはアプリ内の識別子だけで、**IP アドレスなどの訪問者情報は一切キーにしません**。Anzdrop 側のコードで訪問者の IP を収集・加工しないという方針([`lib/turnstile.ts`](../lib/turnstile.ts) が siteverify に `remoteip` を送らないのと同じ考え方)を保つためで、IP 単位の判定は Cloudflare 側に任せます。
+
+| バインディング | 適用先 | キー | 閾値の考え方 |
+| --- | --- | --- | --- |
+| `FILE_RATE_LIMITER` | `GET /api/file/[fileId]` | `fileId` | 1回の論理的なダウンロードが8MiBウィンドウ×並列6本の `Range` リクエストへ分かれる([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))。3000/60秒 ≒ 3.2Gbps 相当で、1人の利用者では到達しない |
+| `SHARE_RATE_LIMITER` | `GET /api/download/[shareId]` | `shareId` | 正当な利用ではダウンロードページを開くたびに1回だけ([`components/download/DownloadPage.tsx`](../components/download/DownloadPage.tsx)。ポーリングもリトライもしない)。ただし1つの共有URLを多人数へ配る使い方があるため、人数ぶんの余裕を大きく取る |
+| `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
+| `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
+
+実際の閾値は [`wrangler.jsonc`](../wrangler.jsonc) の `ratelimits` にあります(`period` は 10 か 60 のみ指定可能)。
+
+**閾値を決めるときに外してはいけない前提**:
+
+- **カウンタは Cloudflare のロケーション(データセンター)単位**で、ベストエフォート・結果的整合。グローバルな厳密カウンタではないので、実効的な上限は設定値より緩くなる。
+- **キーごとに独立して数える**。つまり `shareId` / `fileId` を毎回変える相手(列挙)には何の制約にもならない。列挙の抑止は外側の WAF ルールの役目。
+- **同じキーを共有する利用者は合算される**。`fileId` / `shareId` をキーにする以上、同じファイル・同じ共有を同じ地域から同時に使う全員が1つの枠を分け合う。「1人あたりでは到達しない」だけでは不十分で、多人数同時のケースを必ず見積もること。
+- **枠を締めすぎると、それ自体が新しい DoS 手段になる**。共有 URL を知る第三者が低速な連打(WAF の IP ルールが反応しない速度)で枠を使い切り、正当な利用者を締め出せてしまう。`SHARE_RATE_LIMITER` の閾値が「1ページロード1回」から見て過剰に緩いのはこのため。
+
+設計上の要点:
+
+- **フェイルオープン**: バインディングが未設定の環境や Cloudflare 側の一時障害では、制限をかけずに通します。レート制限は認証・認可の関門ではなくコストの保険であり、ここで配信やアップロードが丸ごと止まる方が利用者への影響がはるかに大きいためです。
+- **できるだけ手前で弾く**: `GET /api/file/[fileId]` は D1 / R2 に触る前、`POST /api/upload/chunk` は8MiBのボディを読み込む前にチェックします。超過したリクエスト自体がコストを発生させないようにするためです。
+- **429 で弾いた分は「消費」しない**: 保存期間「1回」のファイルの `download_count` は加算されません。
+- **429 は利用者に「一時的だ」と伝える**: ダウンロード画面は429を専用の文言(`lib/download/errors.ts` の `RATE_LIMITED_MESSAGE`)で表示します。汎用の「URLが正しいかご確認のうえ」に丸めると、待てば直る混雑なのに「リンクが壊れている」と読めてしまうためです。
+- **ログにキーを残さない**: `fileId` / `shareId` は共有URLの一部なので、エラーログにも含めません。
+- **`/api/report`・`/api/contact`・`/api/account/signup` は対象外**: IP を使わずに数える適切な単位が無く(共通キーにすると1人の攻撃者が全員をロックアウトできてしまう)、既に Turnstile で保護されているため、この層では扱わず外側の WAF ルールに任せます。
+
+Turnstile を含む濫用対策全体の位置づけは、アップロードが無認証で公開されている前提([`moderation.md`](./moderation.md))と合わせて読んでください。
 
 ## セキュリティレスポンスヘッダ
 

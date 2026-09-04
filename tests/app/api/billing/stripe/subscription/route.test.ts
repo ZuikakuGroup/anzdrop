@@ -11,6 +11,7 @@ import {
   createTestEnv,
   clearAllTables,
   insertTestAccount,
+  resetRateLimiters,
   sessionCookieHeader,
   readJson,
   type TestEnv,
@@ -57,6 +58,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
   mockCustomersCreate.mockReset();
   mockSubscriptionsCreate.mockReset();
   mockSubscriptionsRetrieve.mockReset();
@@ -572,5 +574,40 @@ describe("POST /api/billing/stripe/subscription", () => {
     expect(mockSubscriptionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({ customer: "cus_consistent" })
     );
+  });
+
+  describe("レート制限(GitHub issue #81)", () => {
+    it("アカウントIDをキーに ACCOUNT_RATE_LIMITER を1リクエストにつき1回だけ消費する", async () => {
+      const { accountId } = await insertTestAccount(env);
+      const cookie = await sessionCookieHeader(env, accountId);
+      mockCustomersCreate.mockResolvedValue({ id: "cus_rl" });
+      mockSubscriptionsCreate.mockResolvedValue(
+        subscriptionWithClientSecret("sub_rl", "pi_secret")
+      );
+
+      await postSubscription(cookie);
+
+      expect(env.ACCOUNT_RATE_LIMITER.keys).toEqual([accountId]);
+    });
+
+    it("未ログインのリクエストは枠を消費しない(401 が先)", async () => {
+      const response = await postSubscription();
+
+      expect(response.status).toBe(401);
+      expect(env.ACCOUNT_RATE_LIMITER.keys).toEqual([]);
+    });
+
+    it("枠を超えたら429を返し、Stripe 側に Customer も Subscription も作らない", async () => {
+      const { accountId } = await insertTestAccount(env);
+      const cookie = await sessionCookieHeader(env, accountId);
+      env.ACCOUNT_RATE_LIMITER.denyKeyFrom(accountId, 1);
+
+      const response = await postSubscription(cookie);
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("60");
+      expect(mockCustomersCreate).not.toHaveBeenCalled();
+      expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+    });
   });
 });

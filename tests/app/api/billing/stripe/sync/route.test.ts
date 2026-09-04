@@ -11,6 +11,7 @@ import {
   createTestEnv,
   clearAllTables,
   insertTestAccount,
+  resetRateLimiters,
   sessionCookieHeader,
   readJson,
   type TestEnv,
@@ -49,6 +50,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
   mockSubscriptionsRetrieve.mockReset();
 });
 
@@ -624,5 +626,52 @@ describe("POST /api/billing/stripe/sync", () => {
     // active/trialing 以外なので、画面表示用の要約は null(契約フロー扱い)。
     const body = await readJson<{ subscription: unknown }>(response);
     expect(body.subscription).toBeNull();
+  });
+
+  describe("レート制限(GitHub issue #81)", () => {
+    it("アカウントIDをキーに ACCOUNT_RATE_LIMITER を1リクエストにつき1回だけ消費する", async () => {
+      const { accountId } = await insertTestAccount(env);
+      const cookie = await sessionCookieHeader(env, accountId);
+
+      await postSync(cookie);
+
+      expect(env.ACCOUNT_RATE_LIMITER.keys).toEqual([accountId]);
+    });
+
+    it("未ログインのリクエストは枠を消費しない(401 が先)", async () => {
+      const response = await postSync();
+
+      expect(response.status).toBe(401);
+      expect(env.ACCOUNT_RATE_LIMITER.keys).toEqual([]);
+    });
+
+    it("枠を超えたら429を返し、Stripe API を呼ばない", async () => {
+      const { accountId } = await insertTestAccount(env, {
+        plan: "standard",
+        stripeSubscriptionId: "sub_ratelimited",
+      });
+      const cookie = await sessionCookieHeader(env, accountId);
+      env.ACCOUNT_RATE_LIMITER.denyKeyFrom(accountId, 1);
+
+      const response = await postSync(cookie);
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("60");
+      expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+    });
+
+    it("バインディングが落ちていても同期は止めない(フェイルオープン)", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const { accountId } = await insertTestAccount(env);
+      const cookie = await sessionCookieHeader(env, accountId);
+      env.ACCOUNT_RATE_LIMITER.failNext();
+
+      const response = await postSync(cookie);
+
+      expect(response.status).toBe(200);
+      consoleError.mockRestore();
+    });
   });
 });

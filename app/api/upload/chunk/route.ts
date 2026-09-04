@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 import { withApiHandler } from "@/lib/api/handler";
+import { checkRateLimit } from "@/lib/rateLimit";
 import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
 
 // R2のマルチパートアップロードは、最終パートを除きパートサイズが最小5MiB
@@ -45,6 +46,25 @@ export const POST = withApiHandler(
         },
         { status: 400 }
       );
+    }
+
+    // アップロードセッション単位のレート制限(GitHub issue #81)。8MiB の
+    // ボディを読み込む前に弾くことで、超過したリクエストの転送コスト自体を
+    // 発生させない。アップロードトークンの検証より前になるが、キーにする
+    // uploadSessionId は本人しか知らない値なので、他人の枠を狙って消費するには
+    // まずセッション ID を知る必要がある(知っていればトークンが要る)。
+    //
+    // クライアントは最大12並列(lib/plan.ts の uploadConcurrency)で 8MiB の
+    // パートを送るため、閾値は正当な高速回線でも届かない水準にしてある
+    // (wrangler.jsonc の UPLOAD_RATE_LIMITER)。
+    const uploadLimit = await checkRateLimit(
+      env.UPLOAD_RATE_LIMITER,
+      uploadSessionId,
+      "POST /api/upload/chunk"
+    );
+
+    if (!uploadLimit.ok) {
+      return uploadLimit.response;
     }
 
     // バイナリ取得

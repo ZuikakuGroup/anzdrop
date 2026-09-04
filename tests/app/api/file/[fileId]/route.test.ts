@@ -8,7 +8,12 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
+import {
+  createTestEnv,
+  clearAllTables,
+  resetRateLimiters,
+  type TestEnv,
+} from "@/test/env";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -45,6 +50,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
   waitUntilPromises = [];
   routeEnvOverride = null;
 });
@@ -785,5 +791,81 @@ describe("GET /api/file/[fileId] (Range / 並列ダウンロード)", () => {
     const response = await getFileWithRange(fileId, "bytes=0-3");
 
     expect(response.status).toBe(410);
+  });
+});
+
+describe("GET /api/file/[fileId] (レート制限 / GitHub issue #81)", () => {
+  it("fileId をキーに FILE_RATE_LIMITER を1リクエストにつき1回だけ消費する", async () => {
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({ shareId });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array(64));
+
+    await getFile(fileId);
+
+    expect(env.FILE_RATE_LIMITER.keys).toEqual([fileId]);
+    // 共有メタデータ用の枠は消費しない(別バインディング)。
+    expect(env.SHARE_RATE_LIMITER.keys).toEqual([]);
+  });
+
+  it("Range リクエスト(並列ダウンロードの1本)もリクエストごとに1回だけ消費する", async () => {
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({ shareId });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array(64));
+
+    await getFileWithRange(fileId, "bytes=0-15");
+    await getFileWithRange(fileId, "bytes=16-31");
+
+    expect(env.FILE_RATE_LIMITER.keys).toEqual([fileId, fileId]);
+  });
+
+  it("枠を超えたら429を返し、ダウンロード回数も加算しない", async () => {
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({
+      shareId,
+      maxDownloads: 1,
+    });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array(64));
+
+    env.FILE_RATE_LIMITER.denyKeyFrom(fileId, 1);
+
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    // 429 で弾いた分は「消費されたダウンロード」にしない。
+    expect(await downloadCountOf(fileId)).toBe(0);
+  });
+
+  it("枠を超えたリクエストは R2 にも D1 にも触らない(コストを発生させない)", async () => {
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({ shareId });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array(64));
+
+    const bucketGet = vi.spyOn(env.FILES_BUCKET, "get");
+    const dbPrepare = vi.spyOn(env.DB, "prepare");
+
+    env.FILE_RATE_LIMITER.denyKeyFrom(fileId, 1);
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(429);
+    expect(bucketGet).not.toHaveBeenCalled();
+    expect(dbPrepare).not.toHaveBeenCalled();
+  });
+
+  it("バインディングが落ちていてもダウンロードは止めない(フェイルオープン)", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const shareId = await insertShare();
+    const { id: fileId, storageKey } = await insertFile({ shareId });
+    await env.FILES_BUCKET.put(storageKey, new Uint8Array([1, 2, 3, 4]));
+
+    env.FILE_RATE_LIMITER.failNext();
+
+    const response = await getFile(fileId);
+
+    expect(response.status).toBe(200);
+    expect(await readBody(response)).toEqual(new Uint8Array([1, 2, 3, 4]));
+    consoleError.mockRestore();
   });
 });

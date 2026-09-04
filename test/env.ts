@@ -39,7 +39,82 @@ function loadMigrationStatements(): string[] {
   return statements;
 }
 
-export type TestEnv = CloudflareEnv;
+// wrangler.jsonc の `ratelimits` で宣言しているレート制限バインディングの名前。
+export const RATE_LIMITER_BINDINGS = [
+  "FILE_RATE_LIMITER",
+  "SHARE_RATE_LIMITER",
+  "UPLOAD_RATE_LIMITER",
+  "ACCOUNT_RATE_LIMITER",
+] as const;
+
+export type RateLimiterBinding = (typeof RATE_LIMITER_BINDINGS)[number];
+
+export type StubRateLimiter = RateLimit & {
+  // limit() に渡されたキーを渡された順に記録する。ルートが「何を単位に」
+  // 数えているか(fileId なのか shareId なのか等)をテストで確かめるため。
+  keys: string[];
+  // そのキーへの limit() が、n 回目以降 超過(success: false)を返すようにする。
+  // 本物のバインディングと同じくキーごとに独立して数えるので、「別のキーは
+  // 巻き込まれない」ことをテストで確かめられる。
+  denyKeyFrom: (key: string, callNumber: number) => void;
+  // 以降の limit() が例外を投げるようにする(Cloudflare 側の一時障害の再現)。
+  failNext: () => void;
+  // 記録と設定を初期状態(全許可)へ戻す。
+  reset: () => void;
+};
+
+// Miniflare は ratelimit バインディングを提供しないうえ、本物のバインディングは
+// 60秒窓・データセンター単位のベストエフォートで、テストから決定的に扱えない。
+// ルート側が「どのキーで・どの順序で数えているか」「超過時に何を返すか」を
+// 検証できれば十分なので、呼び出しを記録できるスタブに差し替える。
+//
+// 本物と同じく「キーごとに独立したカウンタ」として振る舞わせる。全キー合算で
+// 数えるスタブにすると、ルートが誤って固定キーで数えるようになっても
+// テストが通ってしまう。
+export function createStubRateLimiter(): StubRateLimiter {
+  const keys: string[] = [];
+  const counts = new Map<string, number>();
+  const denyFrom = new Map<string, number>();
+  let fail = false;
+
+  return {
+    keys,
+    denyKeyFrom: (key: string, callNumber: number) => {
+      denyFrom.set(key, callNumber);
+    },
+    failNext: () => {
+      fail = true;
+    },
+    reset: () => {
+      keys.length = 0;
+      counts.clear();
+      denyFrom.clear();
+      fail = false;
+    },
+    limit: async ({ key }: RateLimitOptions): Promise<RateLimitOutcome> => {
+      keys.push(key);
+
+      // 例外を投げた呼び出しは keys には残すが counts は進めない(本物の
+      // バインディングでは例外時にカウントされたかどうかを観測できないため、
+      // どちらでもよい。ここでは「消費しなかった」側に倒す)。
+      if (fail) {
+        fail = false;
+        throw new Error("rate limiter unavailable");
+      }
+
+      const count = (counts.get(key) ?? 0) + 1;
+      counts.set(key, count);
+
+      return { success: count < (denyFrom.get(key) ?? Infinity) };
+    },
+  };
+}
+
+// レート制限バインディングだけは、テストから挙動を操作できるスタブ型に
+// 差し替えて公開する(StubRateLimiter は RateLimit を満たすため、
+// ルートへ渡す CloudflareEnv としてはそのまま使える)。
+export type TestEnv = Omit<CloudflareEnv, RateLimiterBinding> &
+  Record<RateLimiterBinding, StubRateLimiter>;
 
 export type TestEnvHandle = {
   env: TestEnv;
@@ -65,6 +140,9 @@ export async function createTestEnv(): Promise<TestEnvHandle> {
   const env = {
     DB,
     FILES_BUCKET,
+    ...Object.fromEntries(
+      RATE_LIMITER_BINDINGS.map((name) => [name, createStubRateLimiter()])
+    ),
     CF_ACCESS_TEAM_DOMAIN: "test.cloudflareaccess.com",
     CF_ACCESS_AUD: "test-aud",
     STRIPE_PRICE_ID_STANDARD: "price_test_standard",
@@ -109,6 +187,14 @@ const ALL_TABLES = [
 // 1回にまとめて実行できるため、同期往復をなくしつつ呼び出しも1回で済む。
 export async function clearAllTables(env: TestEnv): Promise<void> {
   await env.DB.exec(ALL_TABLES.map((table) => `DELETE FROM ${table};`).join("\n"));
+}
+
+// レート制限スタブの記録と設定を初期状態(全許可)へ戻す。env は beforeAll で
+// 1つだけ作ってテスト間で使い回すため、呼び出し記録が持ち越されないようにする。
+export function resetRateLimiters(env: TestEnv): void {
+  for (const name of RATE_LIMITER_BINDINGS) {
+    env[name].reset();
+  }
 }
 
 // テスト用アカウントをDBへ直接作成する(signup APIのTurnstile検証を経由しない)。

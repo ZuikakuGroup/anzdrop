@@ -50,8 +50,27 @@
 - **D1**: `binding: "DB"`, `database_name: "anzdrop-db"`(`database_id` は固定値でリポジトリに含まれる。新しい環境向けに作り直す場合は `wrangler d1 create anzdrop-db` 後にIDを書き換える)。
 - **R2**: `binding: "FILES_BUCKET"`, `bucket_name: "anzdrop"`。
 - **Cron Trigger**: `"0 */6 * * *"`(6時間ごと、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)。
+- **Rate Limiting バインディング**: `ratelimits` に4つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81004`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
+
+## WAF のレート制限ルール
+
+[`architecture.md`](./architecture.md#レート制限) の外側の層。Workers 側のバインディングが「共有・セッション単位」で数えるのに対し、こちらは**送信元 IP 単位**で数える。Anzdrop のコードは IP を一切扱わないため、IP を見た判定はすべてここに寄せている。
+
+Rate Limiting Rules は**ゾーン単位の機能**なので、Worker を `*.workers.dev` だけで公開している状態では設定できない(ダッシュボードに項目自体が出ない)。設定するには先に独自ドメインを Cloudflare ゾーンとして追加し、Worker のカスタムドメインに割り当てておく必要がある。
+
+1. Cloudflare ダッシュボードで対象ドメインをゾーンとして追加し、レジストラ側のネームサーバーを Cloudflare のものへ変更する。
+2. Workers & Pages → `anzdrop` → **Settings** → **Domains & Routes** → **Add** → **Custom domain** で、そのドメイン(およびルート指定したいホスト名)を割り当てる。
+3. そのゾーンの **Security** → **Security rules** → **Create rule** → **Rate limiting rules** で以下のようなルールを作る。
+
+   - 式: `starts_with(http.request.uri.path, "/api/")`
+   - 特性(With the same characteristics): **IP**
+   - 閾値・期間・アクション・継続時間: プランごとに選べる値が違う(**Free プランはルール1本・カウント期間10秒・Block・継続10秒のみ**)。
+
+閾値を決めるときの注意として、**1回のダウンロード/アップロードが多数のリクエストに分かれる**ことを必ず考慮する。ダウンロードは8MiBウィンドウ×並列6本、アップロードは8MiBパート×最大12並列なので、高速回線の正当な利用者でも数秒間に数十リクエストを出す。ここを見誤ると正当な大容量転送を壊すため、ルール投入後は **Security Events** でしばらく実トラフィックを観察し、正当な利用がマッチしていないことを確認してから閾値を締めること。
+
+アクションについては、`fetch`/`XHR` で呼ばれる API に **Managed Challenge を当てても正しく解決できず UX を壊す**ため、Block を選ぶ(Free プランでは Block のみ)。
 
 ## セキュリティレスポンスヘッダ(`proxy.ts`)
 
