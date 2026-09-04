@@ -17,7 +17,7 @@
     "@cloudflare/workers-types": "^5.20260827.1",
     "@opennextjs/cloudflare": "^1.20.4",
     "@stripe/react-stripe-js": "^6.8.2",
-    "@stripe/stripe-js": "^9.14.0",
+    "@stripe/stripe-js": "^9.15.0",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
     "nanoid": "^6.0.1",
