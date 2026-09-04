@@ -11,6 +11,7 @@ import {
 import {
   createTestEnv,
   clearAllTables,
+  resetRateLimiters,
   stubTurnstileSuccess,
   type TestEnv,
 } from "@/test/env";
@@ -35,6 +36,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
 });
 
 afterEach(() => {
@@ -282,5 +284,74 @@ describe("POST /api/upload/chunk", () => {
       .bind(uploadSessionId)
       .first<{ count: number }>();
     expect(countAll?.count).toBe(1);
+  });
+
+  describe("レート制限(GitHub issue #81)", () => {
+    it("uploadSessionId をキーに UPLOAD_RATE_LIMITER を1リクエストにつき1回だけ消費する", async () => {
+      const { uploadSessionId, uploadToken } = await startUpload();
+
+      await postChunk(
+        {
+          "Anzdrop-Upload-Session": uploadSessionId,
+          "Anzdrop-Part-Number": "1",
+          "Anzdrop-Upload-Token": uploadToken,
+        },
+        new Uint8Array([1, 2, 3])
+      );
+
+      expect(env.UPLOAD_RATE_LIMITER.keys).toEqual([uploadSessionId]);
+    });
+
+    it("ヘッダーが足りないリクエストは枠を消費しない(キーが決まらないため)", async () => {
+      const response = await postChunk({}, new Uint8Array([1, 2, 3]));
+
+      expect(response.status).toBe(400);
+      expect(env.UPLOAD_RATE_LIMITER.keys).toEqual([]);
+    });
+
+    it("枠を超えたら429を返し、パートを保存しない", async () => {
+      const { uploadSessionId, uploadToken } = await startUpload();
+      env.UPLOAD_RATE_LIMITER.denyKeyFrom(uploadSessionId, 1);
+
+      const response = await postChunk(
+        {
+          "Anzdrop-Upload-Session": uploadSessionId,
+          "Anzdrop-Part-Number": "1",
+          "Anzdrop-Upload-Token": uploadToken,
+        },
+        new Uint8Array([1, 2, 3])
+      );
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("60");
+
+      const count = await env.DB.prepare(
+        `SELECT COUNT(*) as count FROM upload_parts WHERE upload_session_id = ?`
+      )
+        .bind(uploadSessionId)
+        .first<{ count: number }>();
+
+      expect(count?.count).toBe(0);
+    });
+
+    it("バインディングが落ちていてもアップロードは止めない(フェイルオープン)", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const { uploadSessionId, uploadToken } = await startUpload();
+      env.UPLOAD_RATE_LIMITER.failNext();
+
+      const response = await postChunk(
+        {
+          "Anzdrop-Upload-Session": uploadSessionId,
+          "Anzdrop-Part-Number": "1",
+          "Anzdrop-Upload-Token": uploadToken,
+        },
+        new Uint8Array([1, 2, 3])
+      );
+
+      expect(response.status).toBe(200);
+      consoleError.mockRestore();
+    });
   });
 });

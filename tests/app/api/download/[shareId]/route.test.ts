@@ -7,7 +7,13 @@ import {
   it,
   vi,
 } from "vitest";
-import { createTestEnv, clearAllTables, readJson, type TestEnv } from "@/test/env";
+import {
+  createTestEnv,
+  clearAllTables,
+  readJson,
+  resetRateLimiters,
+  type TestEnv,
+} from "@/test/env";
 
 type DownloadResponseBody = {
   share: { previewAllowed: boolean };
@@ -33,6 +39,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
 });
 
 type ShareOverrides = {
@@ -195,5 +202,64 @@ describe("GET /api/download/[shareId]", () => {
 
     const oneTime = body.files.find((f) => f.id === oneTimeNotYetUsedId);
     expect(oneTime?.isOneTime).toBe(true);
+  });
+
+  describe("レート制限(GitHub issue #81)", () => {
+    it("shareId をキーに SHARE_RATE_LIMITER を1リクエストにつき1回だけ消費する", async () => {
+      const shareId = await insertShare();
+
+      await getDownload(shareId);
+
+      expect(env.SHARE_RATE_LIMITER.keys).toEqual([shareId]);
+      // ダウンロード本体用の枠は消費しない(別バインディング)。
+      expect(env.FILE_RATE_LIMITER.keys).toEqual([]);
+    });
+
+    it("枠を超えたら429を返し、共有の中身は一切返さない", async () => {
+      const shareId = await insertShare({ wrappedKey: "wrapped", keySalt: "salt" });
+      await insertFile(shareId);
+      env.SHARE_RATE_LIMITER.denyKeyFrom(shareId, 1);
+
+      const response = await getDownload(shareId);
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("Retry-After")).toBe("60");
+
+      const body = await readJson<Record<string, unknown>>(response);
+
+      expect(body.success).toBe(false);
+      expect(body.share).toBeUndefined();
+      expect(body.files).toBeUndefined();
+    });
+
+    it("存在しない共有でも枠を消費し、存在の有無で応答が変わらない", async () => {
+      await getDownload("no-such-share");
+
+      expect(env.SHARE_RATE_LIMITER.keys).toEqual(["no-such-share"]);
+    });
+
+    it("超過した共有だけが止まり、別の共有は影響を受けない", async () => {
+      const blockedShareId = await insertShare();
+      const otherShareId = await insertShare();
+
+      // 本物のバインディングと同じく、枠はキーごとに独立している。
+      env.SHARE_RATE_LIMITER.denyKeyFrom(blockedShareId, 1);
+
+      expect((await getDownload(blockedShareId)).status).toBe(429);
+      expect((await getDownload(otherShareId)).status).toBe(200);
+    });
+
+    it("バインディングが落ちていてもダウンロードは止めない(フェイルオープン)", async () => {
+      const consoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const shareId = await insertShare();
+      env.SHARE_RATE_LIMITER.failNext();
+
+      const response = await getDownload(shareId);
+
+      expect(response.status).toBe(200);
+      consoleError.mockRestore();
+    });
   });
 });

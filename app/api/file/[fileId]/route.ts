@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { checkShareAccessible } from "@/lib/share-auth";
 import { withApiHandler } from "@/lib/api/handler";
+import { checkRateLimit } from "@/lib/rateLimit";
 import type { RouteContext } from "@/lib/api/types";
 
 type FileRecord = {
@@ -237,6 +238,23 @@ export const GET = withApiHandler(
     const { env, ctx } = getCloudflareContext();
 
     const { fileId } = await context.params;
+
+    // fileId 単位のレート制限(GitHub issue #81)。D1 / R2 に触る前に弾いて、
+    // 超過したリクエストがコストを発生させないようにする。
+    //
+    // 1回の論理的なダウンロードは lib/download/parallelFetch.ts により
+    // 8MiB ウィンドウ × 並列6本の Range リクエストへ分かれるため、閾値は
+    // 「実在しない速度」まで緩めてある(wrangler.jsonc の FILE_RATE_LIMITER)。
+    // 正当な大容量ダウンロードを壊さないことを優先し、暴走の頭打ちだけを狙う。
+    const fileLimit = await checkRateLimit(
+      env.FILE_RATE_LIMITER,
+      fileId,
+      "GET /api/file/[fileId]"
+    );
+
+    if (!fileLimit.ok) {
+      return fileLimit.response;
+    }
 
     const file = await env.DB.prepare(
       `

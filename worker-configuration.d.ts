@@ -8,6 +8,10 @@ declare namespace Cloudflare {
 	interface Env {
 		FILES_BUCKET: R2Bucket;
 		DB: D1Database;
+		FILE_RATE_LIMITER: RateLimit;
+		SHARE_RATE_LIMITER: RateLimit;
+		UPLOAD_RATE_LIMITER: RateLimit;
+		ACCOUNT_RATE_LIMITER: RateLimit;
 		CF_ACCESS_TEAM_DOMAIN: "dawn-union-04c8.cloudflareaccess.com";
 		CF_ACCESS_AUD: "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88";
 		STRIPE_PRICE_ID_STANDARD: "price_1U912gRoVdcNVq9tWSz1luJb";

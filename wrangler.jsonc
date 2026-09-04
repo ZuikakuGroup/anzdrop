@@ -41,6 +41,43 @@
     }
   ],
 
+  // アプリ層のレート制限(GitHub issue #81)。Cloudflare WAF の Rate Limiting
+  // Rules が「送信元 IP 単位の連打」を止めるのに対し、こちらは分散した IP から
+  // 1つの共有・1つのアップロードセッションへ集中する濫用を止める多層防御の内側。
+  //
+  // キーには fileId / shareId / uploadSessionId / アカウントIDだけを使い、
+  // IP アドレスなどの訪問者情報は一切キーにしない(E2EE・プライバシー方針。
+  // IP 単位の制限は Cloudflare 側の WAF ルールに任せる)。
+  //
+  // period は 10 か 60 のみ指定できる。limit は「正当な利用を絶対に壊さない」
+  // 側へ倒し、暴走を頭打ちにすることだけを狙う(閾値の根拠は docs/architecture.md)。
+  //
+  // namespace_id は Cloudflare アカウント内で一意でなければならない。同じ値を
+  // 使った別の Worker とカウンタを共有してしまい、原因の分からない 429 の元に
+  // なるため、公式ドキュメントのサンプル値(1001 など)は避けている。
+  "ratelimits": [
+    {
+      "name": "FILE_RATE_LIMITER",
+      "namespace_id": "81001",
+      "simple": { "limit": 3000, "period": 60 }
+    },
+    {
+      "name": "SHARE_RATE_LIMITER",
+      "namespace_id": "81002",
+      "simple": { "limit": 1200, "period": 60 }
+    },
+    {
+      "name": "UPLOAD_RATE_LIMITER",
+      "namespace_id": "81003",
+      "simple": { "limit": 3000, "period": 60 }
+    },
+    {
+      "name": "ACCOUNT_RATE_LIMITER",
+      "namespace_id": "81004",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
+
   "r2_buckets": [
     {
       "binding": "FILES_BUCKET",

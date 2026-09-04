@@ -16,6 +16,8 @@ import PasswordInput from "@/components/brand/PasswordInput";
 import {
   FileGoneError,
   FriendlyError,
+  NON_DISMISSIBLE_ERRORS,
+  shareLoadErrorFor,
   toFriendlyMessage,
 } from "@/lib/download/errors";
 import {
@@ -32,16 +34,6 @@ import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSave
 type DownloadPageProps = {
   shareId: string;
 };
-
-const SUSPENDED_SHARE_MESSAGE =
-  "この共有は運営者により一時停止されています。";
-const INVALID_LINK_MESSAGE = "このリンクは無効です。";
-// 復旧の見込みがないエラーは、閉じても空のファイル一覧が表示されるだけで
-// 意味を持たないため、閉じるボタンを表示しない。
-const NON_DISMISSIBLE_ERRORS = new Set([
-  SUSPENDED_SHARE_MESSAGE,
-  INVALID_LINK_MESSAGE,
-]);
 
 type DownloadResponse = {
   success: boolean;
@@ -121,18 +113,12 @@ export default function DownloadPage({
           await response.json();
 
         if (!response.ok) {
-          if (response.status === 404) {
-            throw new FriendlyError(INVALID_LINK_MESSAGE);
-          }
+          // ステータスごとの文言は lib/download/errors.ts に集約している
+          // (UIを描画せずに対応関係をテストできるようにするため)。
+          const friendly = shareLoadErrorFor(response.status);
 
-          if (response.status === 410) {
-            throw new FriendlyError(
-              "このリンクの有効期限が切れています。"
-            );
-          }
-
-          if (response.status === 403) {
-            throw new FriendlyError(SUSPENDED_SHARE_MESSAGE);
+          if (friendly) {
+            throw friendly;
           }
 
           throw new Error(result.error ?? "ダウンロードに失敗しました");

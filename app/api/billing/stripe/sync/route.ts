@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { withApiHandler } from "@/lib/api/handler";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { downgradeExpiredCardPlan, getAccountPlanInfo } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
@@ -40,6 +41,20 @@ export const POST = withApiHandler(
         { success: false, error: "ログインが必要です" },
         { status: 401 }
       );
+    }
+
+    // アカウント単位のレート制限(GitHub issue #81)。ログイン済みではあるが
+    // 回数無制限だと、1アカウントから Stripe API のクォータを消費し続けられる。
+    // 正当な利用では請求ページを開いたときに1回呼ばれるだけなので、
+    // 十分に緩い閾値でも濫用は頭打ちにできる(wrangler.jsonc の ACCOUNT_RATE_LIMITER)。
+    const accountLimit = await checkRateLimit(
+      env.ACCOUNT_RATE_LIMITER,
+      session.accountId,
+      "POST /api/billing/stripe/sync"
+    );
+
+    if (!accountLimit.ok) {
+      return accountLimit.response;
     }
 
     const account = await env.DB.prepare(

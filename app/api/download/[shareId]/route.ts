@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { checkShareAccessible } from "@/lib/share-auth";
 import { withApiHandler } from "@/lib/api/handler";
+import { checkRateLimit } from "@/lib/rateLimit";
 import type { RouteContext } from "@/lib/api/types";
 import type {
   DownloadResponse,
@@ -36,6 +37,28 @@ export const GET = withApiHandler(
     const { env } = getCloudflareContext();
 
     const { shareId } = await context.params;
+
+    // shareId 単位のレート制限(GitHub issue #81)。狙いは「同じ共有への
+    // 繰り返しアクセスで D1 の読み取りコストが暴走しないこと」だけで、
+    // shareId の総当たり(列挙)への対策ではない。カウンタはキーごとに独立して
+    // いるため、毎回違う shareId を試す相手は毎回新しい枠を得る。列挙の抑止は
+    // 外側の WAF ルール(IP 単位)の役目。
+    //
+    // カウンタは Cloudflare のロケーション単位で、同じ共有を同じ地域から同時に
+    // ダウンロードする利用者全員が1つの枠を共有する。1つの共有 URL を多人数へ
+    // 配る使い方を壊さないよう、また共有 URL を知る第三者が低速な連打で他の
+    // 利用者を締め出せないよう、閾値は十分に緩く取ってある
+    // (wrangler.jsonc の SHARE_RATE_LIMITER)。
+    const shareLimit = await checkRateLimit(
+      env.SHARE_RATE_LIMITER,
+      shareId,
+      "GET /api/download/[shareId]"
+    );
+
+    if (!shareLimit.ok) {
+      return shareLimit.response;
+    }
+
     const share = await env.DB.prepare(
       `
         SELECT id, created_at, expires_at, wrapped_key, key_salt, suspended_at, preview_allowed
