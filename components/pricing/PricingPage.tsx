@@ -8,7 +8,7 @@ export default function PricingPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
 
-      <main className="flex-1 px-4 py-12 sm:px-8">
+      <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-5xl">
           <div className="mb-10 space-y-2 text-center">
             <h1 className="text-2xl font-black leading-snug tracking-normal">
