@@ -8,7 +8,7 @@ export default function NotFound() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
 
-      <main className="flex flex-1 items-center justify-center p-4">
+      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8 text-center">
           <div className="flex flex-col items-center gap-3">
             <DropMark className="h-8 w-8 text-brand" />

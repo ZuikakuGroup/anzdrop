@@ -80,7 +80,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
 
-      <main className="flex flex-1 items-center justify-center p-4">
+      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
             <h1 className="text-2xl font-black leading-snug tracking-normal">

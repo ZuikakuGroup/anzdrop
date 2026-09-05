@@ -162,7 +162,7 @@ export default function AdminContactsPage() {
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
 
-      <main className="flex flex-1 justify-center p-4">
+      <main className="flex min-h-[calc(100svh-4rem)] flex-1 justify-center p-4">
         <div className="w-full max-w-2xl space-y-6 py-8">
           <AdminNav active="contacts" />
 

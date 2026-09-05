@@ -19,7 +19,7 @@ export default function LegalLayout({
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
 
-      <main className="flex-1 px-4 py-12 sm:px-8">
+      <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-2xl space-y-8">
           <div className="relative space-y-3 overflow-hidden rounded-lg border border-ink/10 bg-gradient-to-br from-brand/[0.06] to-transparent p-8 sm:p-10">
             <DropMark
