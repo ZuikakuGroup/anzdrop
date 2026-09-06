@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { saveDecryptedFile } from "@/lib/download/saveFile";
+import {
+  saveDecryptedFile,
+  SMALL_FILE_NO_PICKER_THRESHOLD_BYTES,
+} from "@/lib/download/saveFile";
 import { FileGoneError, FriendlyError } from "@/lib/download/errors";
 import { generateKey, iterateEncryptedChunks } from "@/lib/crypto";
 import type { DecryptedFile } from "@/lib/download/decrypt";
@@ -96,6 +99,12 @@ afterEach(() => {
 });
 
 describe("saveDecryptedFile with showSaveFilePicker", () => {
+  // このブロックはピッカー自体の挙動(書き込み・キャンセル・エラー処理)を
+  // 検証するのが目的で、サイズによる経路選択は別の describe で検証している。
+  // そのため smallFileThresholdBytes に 0 を渡し、サイズによらず常に
+  // showSaveFilePicker を検討させる。
+  const alwaysConsiderPicker = 0;
+
   it("writes the decrypted bytes to the chosen file handle and closes it (never buffered into a Blob)", async () => {
     const key = await generateKey();
     const content = new TextEncoder().encode("streamed straight to disk");
@@ -120,7 +129,8 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
     const result = await saveDecryptedFile(
       { ...testFile, size: content.byteLength },
       key,
-      "video.mp4"
+      "video.mp4",
+      alwaysConsiderPicker
     );
 
     expect(result).toEqual({ saved: true });
@@ -146,7 +156,12 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
     });
     vi.stubGlobal("window", { showSaveFilePicker });
 
-    const result = await saveDecryptedFile(testFile, key, "video.mp4");
+    const result = await saveDecryptedFile(
+      testFile,
+      key,
+      "video.mp4",
+      alwaysConsiderPicker
+    );
 
     expect(result).toEqual({ saved: false });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -170,7 +185,8 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
       saveDecryptedFile(
         { ...testFile, size: content.byteLength },
         key,
-        "video.mp4"
+        "video.mp4",
+        alwaysConsiderPicker
       )
     ).rejects.toThrow();
 
@@ -188,7 +204,7 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
     });
 
     await expect(
-      saveDecryptedFile(testFile, key, "video.mp4")
+      saveDecryptedFile(testFile, key, "video.mp4", alwaysConsiderPicker)
     ).rejects.toThrow(FileGoneError);
 
     // ストリーム取得より後にハンドルへ書き込むため、404では空ファイルを作らない。
@@ -225,7 +241,8 @@ describe("saveDecryptedFile with showSaveFilePicker", () => {
     const result = await saveDecryptedFile(
       { ...testFile, size: content.byteLength },
       key,
-      "video.mp4"
+      "video.mp4",
+      alwaysConsiderPicker
     );
 
     expect(result).toEqual({ saved: true });
@@ -368,5 +385,93 @@ describe("saveDecryptedFile without showSaveFilePicker (Blob fallback)", () => {
     expect(anchor.click).toHaveBeenCalledTimes(1);
     expect(blobParts).toHaveLength(1);
     expect(concatBytes(blobParts[0])).toEqual(content);
+  });
+});
+
+describe("saveDecryptedFile size threshold", () => {
+  function stubBlobDownload() {
+    const blobParts: Uint8Array[][] = [];
+    class FakeBlob {
+      constructor(parts: Uint8Array[]) {
+        blobParts.push(parts);
+      }
+    }
+    vi.stubGlobal("Blob", FakeBlob);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:fake-url"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({ href: "", download: "", click: vi.fn() })),
+    });
+    return blobParts;
+  }
+
+  it("閾値未満のファイルは showSaveFilePicker があっても呼ばずスキップする", async () => {
+    const key = await generateKey();
+    const content = new TextEncoder().encode("small file, no dialog please");
+    const packed = await packEncrypted(content, key);
+    stubFetchReturning(packed);
+    const blobParts = stubBlobDownload();
+
+    const showSaveFilePicker = vi.fn();
+    vi.stubGlobal("window", { showSaveFilePicker });
+
+    const result = await saveDecryptedFile(
+      { ...testFile, size: content.byteLength },
+      key,
+      "video.mp4"
+    );
+
+    expect(result).toEqual({ saved: true });
+    expect(showSaveFilePicker).not.toHaveBeenCalled();
+    expect(blobParts).toHaveLength(1);
+    expect(concatBytes(blobParts[0])).toEqual(content);
+  });
+
+  it("閾値ちょうど1バイト未満(threshold-1)でも showSaveFilePicker を呼ばない(境界値)", async () => {
+    const key = await generateKey();
+    stubFetchReturning(new Uint8Array(0));
+
+    const showSaveFilePicker = vi.fn();
+    vi.stubGlobal("window", { showSaveFilePicker });
+
+    // SW 経路は転送するだけで復号済みストリームを読まないため、宣言サイズと
+    // 実データを一致させなくても検証できる(境界値だけを大容量データなしで
+    // 確認するための単純化)。
+    vi.mocked(canSaveViaServiceWorker).mockResolvedValue(true);
+    vi.mocked(saveViaServiceWorker).mockResolvedValue(undefined);
+
+    const result = await saveDecryptedFile(
+      { ...testFile, size: SMALL_FILE_NO_PICKER_THRESHOLD_BYTES - 1 },
+      key,
+      "video.mp4"
+    );
+
+    expect(result).toEqual({ saved: true });
+    expect(showSaveFilePicker).not.toHaveBeenCalled();
+    expect(saveViaServiceWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it("閾値以上のファイルは showSaveFilePicker を呼ぶ", async () => {
+    const key = await generateKey();
+    const fetchMock = stubFetchReturning(new Uint8Array(0));
+
+    // ピッカーが呼ばれたことだけを見たいので、実際のダウンロードには進ませず
+    // ユーザーがキャンセルした体にする(200MB分の実データを用意せずに済む)。
+    const showSaveFilePicker = vi.fn(async () => {
+      throw new DOMException("The user aborted a request.", "AbortError");
+    });
+    vi.stubGlobal("window", { showSaveFilePicker });
+
+    const result = await saveDecryptedFile(
+      { ...testFile, size: SMALL_FILE_NO_PICKER_THRESHOLD_BYTES },
+      key,
+      "video.mp4"
+    );
+
+    expect(result).toEqual({ saved: false });
+    expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
