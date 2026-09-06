@@ -70,7 +70,7 @@ export default function AboutPage() {
           <div className="relative space-y-3 overflow-hidden rounded-lg border border-ink/10 bg-gradient-to-br from-brand/[0.06] to-transparent p-8 sm:p-10">
             <DropMark
               aria-hidden="true"
-              className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 text-brand/10"
+              className="pointer-events-none absolute -right-6 -top-8 h-40 w-40 text-brand/10"
             />
             <h1 className="relative text-2xl font-black leading-snug tracking-normal sm:text-3xl">
               Anzdropとは

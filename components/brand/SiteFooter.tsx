@@ -35,7 +35,7 @@ export default function SiteFooter({ reportShareId }: SiteFooterProps) {
 
   return (
     <footer className="relative shrink-0 overflow-hidden border-t border-ink/10 bg-paper px-6 py-10 sm:px-8">
-      <DropMark className="pointer-events-none absolute -bottom-10 -right-6 h-40 w-40 text-brand/[0.06]" />
+      <DropMark className="pointer-events-none absolute -bottom-10 -right-6 h-48 w-48 text-brand/[0.06]" />
 
       <div className="relative mx-auto flex max-w-4xl flex-col gap-10 md:flex-row md:items-start md:justify-between md:gap-8">
         <div className="space-y-3">
