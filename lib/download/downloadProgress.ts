@@ -1,5 +1,7 @@
 import type { DecryptedFile } from "./decrypt";
 
+export const SEND_CTA_OPEN_DELAY_MS = 1_500;
+
 // 現在表示しているすべてのファイルについて、保存の開始に成功したかを返す。
 // 空の一覧はダウンロード完了とは扱わない。
 export function hasDownloadedAllFiles(
@@ -24,4 +26,11 @@ export function shouldShowSendCta(
     !isSendCtaDisabled &&
     hasDownloadedAllFiles(files, downloadedFileIds, unavailableFileIds)
   );
+}
+
+// ダウンロード完了の直後にブラウザの保存UIと重ならないよう、CTAは少し待ってから表示する。
+export function scheduleSendCtaOpen(onOpen: () => void): () => void {
+  const timer = setTimeout(onOpen, SEND_CTA_OPEN_DELAY_MS);
+
+  return () => clearTimeout(timer);
 }

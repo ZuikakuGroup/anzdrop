@@ -30,7 +30,10 @@ import {
 } from "@/lib/download/decrypt";
 import { getShowSaveFilePicker, saveDecryptedFile } from "@/lib/download/saveFile";
 import { downloadAllFiles } from "@/lib/download/downloadAll";
-import { shouldShowSendCta } from "@/lib/download/downloadProgress";
+import {
+  scheduleSendCtaOpen,
+  shouldShowSendCta,
+} from "@/lib/download/downloadProgress";
 import {
   isSendCtaDisabled as getSendCtaDisabled,
   setSendCtaDisabled,
@@ -345,7 +348,8 @@ export default function DownloadPage({
   const closePreview = () => setPreview(null);
 
   // 要件書10.12・29章。受け取り側から送信側への転換導線(Growth Loop)を
-  // 計測する。全ファイルのダウンロード完了時にモーダルを表示し、1回だけ計測する。
+  // 計測する。ブラウザの保存UIを妨げないよう少し待ってモーダルを表示し、
+  // 実際に表示する時点で1回だけ計測する。
   useEffect(() => {
     if (
       shouldShowSendCta(
@@ -356,10 +360,12 @@ export default function DownloadPage({
       ) &&
       !ctaViewTrackedRef.current
     ) {
-      ctaViewTrackedRef.current = true;
-      setIsSendCtaOpen(true);
-      track("recipient_send_cta_view", {
-        analyticsTransferId: analyticsTransferIdRef.current,
+      return scheduleSendCtaOpen(() => {
+        ctaViewTrackedRef.current = true;
+        setIsSendCtaOpen(true);
+        track("recipient_send_cta_view", {
+          analyticsTransferId: analyticsTransferIdRef.current,
+        });
       });
     }
   }, [downloadedFileIds, files, isSendCtaDisabled, unavailableFileIds]);
@@ -677,7 +683,7 @@ export default function DownloadPage({
             role="dialog"
             aria-modal="true"
             aria-labelledby="send-cta-title"
-            className="relative w-full max-w-sm rounded-lg bg-paper p-6 text-center"
+            className="relative w-full max-w-md rounded-xl bg-paper p-8 text-center sm:p-10"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -689,20 +695,20 @@ export default function DownloadPage({
             >
               <XIcon className="h-4 w-4" />
             </button>
-            <h2 id="send-cta-title" className="text-lg font-black">
+            <h2 id="send-cta-title" className="text-xl font-black">
               ダウンロードが完了しました
             </h2>
-            <p className="mt-2 text-sm text-ink/60">
+            <p className="mt-3 text-sm leading-relaxed text-ink/60">
               Anzdropなら、あなたもかんたんにファイルを送れます。
             </p>
             <Link
               href="/"
               onClick={handleSendCtaClick}
-              className="mt-5 block rounded bg-brand px-4 py-3 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+              className="mt-7 block rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
             >
               Anzdropでファイルを送る
             </Link>
-            <label className="mt-4 flex items-center justify-center gap-2 text-xs text-ink/60">
+            <label className="mt-5 flex items-center justify-center gap-2 text-xs text-ink/60">
               <input
                 ref={sendCtaDisableCheckboxRef}
                 type="checkbox"
