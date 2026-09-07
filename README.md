@@ -60,6 +60,7 @@ npm run dev
 | [`docs/crypto.md`](./docs/crypto.md) | E2EEの設計(鍵の生成・共有・パスワード保護の仕組み) |
 | [`docs/api.md`](./docs/api.md) | APIエンドポイント一覧 |
 | [`docs/database.md`](./docs/database.md) | D1のテーブル定義・マイグレーション |
+| [`docs/analytics.md`](./docs/analytics.md) | 計測・分析基盤の設計・イベント一覧・KPI定義 |
 | [`docs/development.md`](./docs/development.md) | ローカル開発環境の構築手順 |
 | [`docs/deployment.md`](./docs/deployment.md) | デプロイ・CI/CD・必要なシークレット |
 | [`docs/moderation.md`](./docs/moderation.md) | 通報・モデレーション機能の仕様 |

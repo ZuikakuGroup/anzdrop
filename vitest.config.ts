@@ -40,6 +40,19 @@ export default defineConfig({
     // (real CHUNK_SIZE boundaries) through AES-GCM; that's slow in this
     // environment's software crypto path, so the default 5s is too tight.
     testTimeout: 60_000,
+    // Node 22+ has its own experimental global `localStorage`, gated behind
+    // `--localstorage-file`. It shadows jsdom's own Storage implementation
+    // in `// @vitest-environment jsdom` test files (lib/analytics/*), making
+    // `window.localStorage` undefined there. Disabling the Node feature lets
+    // jsdom provide the real, working implementation instead.
+    env: {
+      NODE_OPTIONS: "--no-experimental-webstorage",
+    },
+    environmentOptions: {
+      jsdom: {
+        url: "http://localhost/",
+      },
+    },
   },
   resolve: {
     alias: {

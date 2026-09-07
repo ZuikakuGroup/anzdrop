@@ -20,12 +20,14 @@ import {
 } from "@/test/env";
 import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 import { RETENTION_DAYS } from "@/lib/retention";
+import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 
 type StartResponseBody = {
   success: boolean;
   shareId: string;
   uploadToken: string;
   uploadSessionId: string;
+  analyticsTransferId: string;
 };
 
 let env: TestEnv;
@@ -250,6 +252,9 @@ describe("POST /api/upload/start", () => {
     expect(typeof body.shareId).toBe("string");
     expect(typeof body.uploadToken).toBe("string");
     expect(typeof body.uploadSessionId).toBe("string");
+    expect(body.analyticsTransferId).toBe(
+      await computeAnalyticsTransferId(body.shareId, env.ANALYTICS_SECRET)
+    );
 
     const share = await getShare(body.shareId);
     expect(share).toBeTruthy();

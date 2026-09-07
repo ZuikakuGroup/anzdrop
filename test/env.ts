@@ -45,6 +45,7 @@ export const RATE_LIMITER_BINDINGS = [
   "SHARE_RATE_LIMITER",
   "UPLOAD_RATE_LIMITER",
   "ACCOUNT_RATE_LIMITER",
+  "ANALYTICS_RATE_LIMITER",
 ] as const;
 
 export type RateLimiterBinding = (typeof RATE_LIMITER_BINDINGS)[number];
@@ -155,6 +156,7 @@ export async function createTestEnv(): Promise<TestEnvHandle> {
     STRIPE_SECRET_KEY: "sk_test_dummy",
     STRIPE_WEBHOOK_SECRET: "whsec_test_dummy",
     OPENNODE_API_KEY: "test-opennode-api-key",
+    ANALYTICS_SECRET: "test-analytics-secret",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MiniflareのD1/R2バインディングは型上完全に一致しないため
   } as any as TestEnv;
 
@@ -174,6 +176,8 @@ const ALL_TABLES = [
   "btc_payments",
   "stripe_events",
   "accounts",
+  "analytics_events",
+  "analytics_daily_metrics",
 ];
 
 // テスト間の分離のため、テーブルの中身だけを空にする(スキーマは再利用)。

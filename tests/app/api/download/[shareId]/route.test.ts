@@ -14,10 +14,12 @@ import {
   resetRateLimiters,
   type TestEnv,
 } from "@/test/env";
+import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 
 type DownloadResponseBody = {
   share: { previewAllowed: boolean };
   files: { id: string; isOneTime: boolean }[];
+  analyticsTransferId: string;
 };
 
 let env: TestEnv;
@@ -167,6 +169,18 @@ describe("GET /api/download/[shareId]", () => {
     expect(response.status).toBe(200);
     const body = await readJson<DownloadResponseBody>(response);
     expect(body.share.previewAllowed).toBe(false);
+  });
+
+  it("returns an analyticsTransferId derived from the shareId, not the raw shareId", async () => {
+    const shareId = await insertShare();
+
+    const response = await getDownload(shareId);
+    const body = await readJson<DownloadResponseBody>(response);
+
+    expect(body.analyticsTransferId).toBe(
+      await computeAnalyticsTransferId(shareId, env.ANALYTICS_SECRET)
+    );
+    expect(body.analyticsTransferId).not.toBe(shareId);
   });
 
   it("excludes files that have already hit their max_downloads limit, and reports isOneTime correctly", async () => {

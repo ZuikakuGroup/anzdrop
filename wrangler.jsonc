@@ -7,6 +7,8 @@
 
   "compatibility_flags": ["nodejs_compat"],
 
+  // ANALYTICS_SECRET(lib/analytics/transferId.tsのHMAC鍵)は秘密情報のため
+  // ここには書かず、`wrangler secret put ANALYTICS_SECRET` で別途設定する。
   "vars": {
     "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",
     "CF_ACCESS_AUD": "ad07f142d7df7dd4fc8e6bf43afa688083a2c1dd42b725af3763d97b5d4c7f88",
@@ -25,8 +27,12 @@
   // 期限切れ共有・放置アップロードの掃除(lib/cleanup.ts)。6時間ごとに実行し、
   // 1回の失敗やバックログで期限切れファイルが長く残り続けないようにする
   // (掃除処理自体も1件の失敗で全体が止まらないバッチ方式。GitHub issue #63)。
+  //
+  // 毎日UTC 00:10には計測基盤(lib/analytics/aggregate.ts)の日次集計と
+  // 生イベントの保持期限切れ削除を実行する。custom-worker.tsのscheduled()が
+  // event.cronの値でどちらの処理か振り分ける。
   "triggers": {
-    "crons": ["0 */6 * * *"]
+    "crons": ["0 */6 * * *", "10 0 * * *"]
   },
 
   "assets": {
@@ -75,6 +81,11 @@
       "name": "ACCOUNT_RATE_LIMITER",
       "namespace_id": "81004",
       "simple": { "limit": 60, "period": 60 }
+    },
+    {
+      "name": "ANALYTICS_RATE_LIMITER",
+      "namespace_id": "81005",
+      "simple": { "limit": 600, "period": 60 }
     }
   ],
 

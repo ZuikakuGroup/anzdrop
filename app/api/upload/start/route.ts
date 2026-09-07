@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 import { requireTurnstile } from "@/lib/turnstile";
 import {
   calculateExpiresAt,
@@ -175,12 +176,18 @@ export const POST = withApiHandler(
       )
       .run();
 
+    const analyticsTransferId = await computeAnalyticsTransferId(
+      shareId,
+      env.ANALYTICS_SECRET
+    );
+
     const responseBody: UploadStartResponse = {
       success: true,
       shareId,
       uploadToken,
       uploadSessionId,
       expiresAt,
+      analyticsTransferId,
     };
 
     return Response.json(responseBody);

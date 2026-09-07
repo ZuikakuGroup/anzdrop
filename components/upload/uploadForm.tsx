@@ -27,6 +27,7 @@ import {
   LineIcon,
   ChevronIcon,
   QrCodeIcon,
+  ShareIcon,
 } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
@@ -34,6 +35,9 @@ import PasswordInput from "@/components/brand/PasswordInput";
 import QrCodeModal from "@/components/brand/QrCodeModal";
 import type { MeResponse } from "@/app/api/account/me/schema";
 import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
+import { track } from "@/lib/analytics/client";
+import { getSizeBucket } from "@/lib/analytics/sizeBucket";
+import { classifyUploadError } from "@/lib/analytics/errorCodes";
 import {
   type PendingFile,
   collectDataTransferFiles,
@@ -93,9 +97,22 @@ export default function UploadForm() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [plan, setPlan] = useState<Plan>("free");
   const [isQrOpen, setIsQrOpen] = useState(false);
+  const [canShareNatively, setCanShareNatively] = useState(false);
   const dragCounterRef = useRef(0);
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
+
+  // 要件書10.1章。トップページ(=アップロード画面)への訪問を1回だけ計測する。
+  useEffect(() => {
+    track("landing_view");
+  }, []);
+
+  // navigator.shareの有無はサーバー側では判定できないため、マウント後に
+  // クライアントで判定する(SSRとのハイドレーション不一致を避ける)。
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 購読すべき外部イベントの無い、マウント時一度きりのブラウザ機能検出
+    setCanShareNatively(typeof navigator.share === "function");
+  }, []);
 
   // 未ログインなら常にfree(既存の匿名アップロードの挙動を維持)。ログイン
   // していれば有料プランの上限緩和・保存期間延長を反映する。
@@ -119,6 +136,8 @@ export default function UploadForm() {
   // クリック(実アップロード)をまたいで同じ共有に相乗りできるよう保持する
   const shareIdRef = useRef<string | undefined>(undefined);
   const uploadTokenRef = useRef<string | undefined>(undefined);
+  // 共有リンクのコピー/ネイティブ共有イベントに添えるための、直近のtransfer相関ID。
+  const analyticsTransferIdRef = useRef<string | undefined>(undefined);
   // この共有がパスワード保護付きで作成されたか。作成後に詳細設定を変えて
   // リトライしても、鍵の受け渡し方法(URLフラグメント or パスワード)が
   // 共有の実態とズレないよう、作成時点の事実として1度だけ記録する。
@@ -171,6 +190,15 @@ export default function UploadForm() {
     }
 
     setFiles((prev) => [...prev, ...newFiles]);
+
+    track("file_select", {
+      properties: {
+        fileCount: newFiles.length,
+        totalSizeBucket: getSizeBucket(
+          newFiles.reduce((sum, pendingFile) => sum + pendingFile.file.size, 0)
+        ),
+      },
+    });
 
     for (const pendingFile of newFiles) {
       // ファイル名の暗号化(単一チャンク・数十バイト)だけは先に始めておく。
@@ -295,43 +323,80 @@ export default function UploadForm() {
         // ファイル名の暗号化はすぐ終わるので待つ。
         const encryptedFileName = await item.encryptedFileName;
 
-        const result = await uploadEncryptedFile({
-          path,
-          encryptedFileName,
-          fileSize: item.pendingFile.file.size,
-          retention,
-          shareId: shareIdRef.current,
-          uploadToken: uploadTokenRef.current,
-          wrappedKey: passwordWrap?.wrappedKey,
-          keySalt: passwordWrap?.keySalt,
-          turnstileToken,
-          concurrency: getUploadConcurrencyForPlan(plan),
-          onBytesUploaded: (bytes) => {
-            uploadedBytes += bytes;
-            setProgress(
-              totalBytes > 0
-                ? Math.min(
-                    100,
-                    Math.round((uploadedBytes / totalBytes) * 100)
-                  )
-                : 100
-            );
-          },
-          // ファイル本体の暗号化ストリームは、このファイルを処理する直前に
-          // 作る。失敗後のリトライでこのループに再入した場合も毎回作り直す
-          // (途中まで消費したストリームを再利用しない。issue #58 / #60)。
-          createChunkStream: () =>
-            createEncryptedChunkStream(item.pendingFile),
-        });
+        const attemptId = crypto.randomUUID();
+        const startedAt = Date.now();
+        let analyticsTransferId: string | undefined;
 
-        shareIdRef.current = result.shareId;
-        uploadTokenRef.current = result.uploadToken;
-        setHasCreatedShare(true);
-        if (isNewShare && passwordWrap) {
-          passwordProtectedRef.current = true;
+        try {
+          const result = await uploadEncryptedFile({
+            path,
+            encryptedFileName,
+            fileSize: item.pendingFile.file.size,
+            retention,
+            shareId: shareIdRef.current,
+            uploadToken: uploadTokenRef.current,
+            wrappedKey: passwordWrap?.wrappedKey,
+            keySalt: passwordWrap?.keySalt,
+            turnstileToken,
+            concurrency: getUploadConcurrencyForPlan(plan),
+            onBytesUploaded: (bytes) => {
+              uploadedBytes += bytes;
+              setProgress(
+                totalBytes > 0
+                  ? Math.min(
+                      100,
+                      Math.round((uploadedBytes / totalBytes) * 100)
+                    )
+                  : 100
+              );
+            },
+            onStarted: (info) => {
+              analyticsTransferId = info.analyticsTransferId;
+              track("upload_start", {
+                attemptId,
+                analyticsTransferId,
+                properties: {
+                  fileCount: 1,
+                  totalSizeBucket: getSizeBucket(item.pendingFile.file.size),
+                },
+              });
+            },
+            // ファイル本体の暗号化ストリームは、このファイルを処理する直前に
+            // 作る。失敗後のリトライでこのループに再入した場合も毎回作り直す
+            // (途中まで消費したストリームを再利用しない。issue #58 / #60)。
+            createChunkStream: () =>
+              createEncryptedChunkStream(item.pendingFile),
+          });
+
+          track("upload_success", {
+            attemptId,
+            analyticsTransferId: result.analyticsTransferId ?? analyticsTransferId,
+            properties: { durationMs: Date.now() - startedAt },
+          });
+
+          shareIdRef.current = result.shareId;
+          uploadTokenRef.current = result.uploadToken;
+          analyticsTransferIdRef.current =
+            result.analyticsTransferId ?? analyticsTransferId;
+          setHasCreatedShare(true);
+          if (isNewShare && passwordWrap) {
+            passwordProtectedRef.current = true;
+          }
+
+          item.completed = true;
+        } catch (uploadError) {
+          track("upload_error", {
+            attemptId,
+            analyticsTransferId,
+            properties: {
+              errorCode: classifyUploadError(uploadError),
+              errorStage: analyticsTransferId ? "chunk_or_complete" : "start",
+              retryCount: 0,
+            },
+          });
+
+          throw uploadError;
         }
-
-        item.completed = true;
       }
 
       if (passwordProtectedRef.current) {
@@ -360,6 +425,9 @@ export default function UploadForm() {
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopyState("copied");
+      track("share_link_copy", {
+        analyticsTransferId: analyticsTransferIdRef.current,
+      });
     } catch {
       setCopyState("failed");
     } finally {
@@ -383,6 +451,7 @@ export default function UploadForm() {
     queueRef.current = [];
     shareIdRef.current = undefined;
     uploadTokenRef.current = undefined;
+    analyticsTransferIdRef.current = undefined;
     passwordProtectedRef.current = false;
   };
 
@@ -391,6 +460,17 @@ export default function UploadForm() {
       shareUrl
     )}&text=${encodeURIComponent(SHARE_MESSAGE)}`;
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const shareNative = async () => {
+    try {
+      await navigator.share({ title: SHARE_MESSAGE, url: shareUrl });
+      track("share_native", {
+        analyticsTransferId: analyticsTransferIdRef.current,
+      });
+    } catch {
+      // ユーザーによるキャンセル、または非対応環境。何もしない。
+    }
   };
 
   return (
@@ -445,6 +525,16 @@ export default function UploadForm() {
                 </p>
 
                 <div className="flex items-center gap-3">
+                  {canShareNatively && (
+                    <button
+                      onClick={shareNative}
+                      aria-label="共有"
+                      title="共有"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
+                    >
+                      <ShareIcon className="h-4 w-4" />
+                    </button>
+                  )}
                   <button
                     onClick={shareToLine}
                     aria-label="LINEで共有"
