@@ -11,8 +11,14 @@ vi.mock("@/lib/download/decrypt", async (importOriginal) => {
   return { ...actual, fetchDecryptedStream, fetchAndDecrypt };
 });
 
-const { downloadAllFiles, IN_MEMORY_ZIP_MAX_BYTES } = await import(
+const {
+  downloadAllFiles,
+  IN_MEMORY_ZIP_MAX_BYTES,
+} = await import(
   "@/lib/download/downloadAll"
+);
+const { SMALL_FILE_NO_PICKER_THRESHOLD_BYTES } = await import(
+  "@/lib/download/saveFile"
 );
 const { unzipSync } = await import("fflate");
 
@@ -69,7 +75,7 @@ afterEach(() => {
 });
 
 describe("downloadAllFiles — 経路の選択", () => {
-  it("showSaveFilePicker があり zip64 不要なら、ストリーミング ZIP をディスクへ書く", async () => {
+  it("合計サイズが閾値以上で showSaveFilePicker があり zip64 不要なら、ストリーミング ZIP をディスクへ書く", async () => {
     const writes: Uint8Array[] = [];
     const createWritable = vi.fn(async () => ({
       write: async (c: Uint8Array) => {
@@ -86,7 +92,10 @@ describe("downloadAllFiles — 経路の選択", () => {
     );
 
     const result = await downloadAllFiles(
-      [file("a", "a.txt", 10), file("b", "a.txt", 10)],
+      [
+        file("a", "a.txt", SMALL_FILE_NO_PICKER_THRESHOLD_BYTES),
+        file("b", "a.txt", 10),
+      ],
       KEY
     );
 
@@ -110,15 +119,34 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(new TextDecoder().decode(unzipped["a (1).txt"])).toBe("content-of-b");
   });
 
-  it("キャンセル(AbortError)なら started=false で返る", async () => {
+  it("合計サイズが閾値以上でピッカーをキャンセル(AbortError)したら started=false で返る", async () => {
     const showSaveFilePicker = vi.fn(async () => {
       throw new DOMException("cancelled", "AbortError");
     });
     vi.stubGlobal("window", { showSaveFilePicker });
 
-    const result = await downloadAllFiles([file("a", "a.txt", 10)], KEY);
+    const result = await downloadAllFiles(
+      [file("a", "a.txt", SMALL_FILE_NO_PICKER_THRESHOLD_BYTES)],
+      KEY
+    );
 
     expect(result).toEqual({ cancelled: true, goneFileIds: [], started: false });
+  });
+
+  it("合計サイズが閾値未満なら両方のピッカーがあっても Blob 経路へ進む", async () => {
+    const showSaveFilePicker = vi.fn();
+    const showDirectoryPicker = vi.fn();
+    vi.stubGlobal("window", { showSaveFilePicker, showDirectoryPicker });
+    const blob = stubBlobDownload();
+    fetchAndDecrypt.mockResolvedValue(new TextEncoder().encode("small zip"));
+
+    const result = await downloadAllFiles([file("a", "a.txt", 10)], KEY);
+
+    expect(result.started).toBe(true);
+    expect(showSaveFilePicker).not.toHaveBeenCalled();
+    expect(showDirectoryPicker).not.toHaveBeenCalled();
+    expect(fetchDecryptedStream).not.toHaveBeenCalled();
+    expect(blob.downloadedName()).toBe("anzdrop.zip");
   });
 
   it("4GiB を超える場合は showDirectoryPicker でフォルダへ1ファイルずつ保存", async () => {
@@ -542,7 +570,10 @@ describe("downloadAllFiles — 404 の扱い", () => {
 
     await expect(
       downloadAllFiles(
-        [file("a", "a.txt", 10), file("b", "b.txt", 10)],
+        [
+          file("a", "a.txt", SMALL_FILE_NO_PICKER_THRESHOLD_BYTES),
+          file("b", "b.txt", 10),
+        ],
         KEY,
         { onFileGone: (id) => gone.push(id) }
       )
