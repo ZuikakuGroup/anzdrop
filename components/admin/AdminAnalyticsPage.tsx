@@ -168,6 +168,7 @@ function AcquisitionView({ data }: { data: { rows: AcquisitionRow[] } }) {
           <th className="py-2 font-bold">Campaign</th>
           <th className="py-2 font-bold">Landing Path</th>
           <th className="py-2 font-bold">Sessions</th>
+          <th className="py-2 font-bold">New Senders</th>
           <th className="py-2 font-bold">Upload Success</th>
         </tr>
       </thead>
@@ -179,6 +180,7 @@ function AcquisitionView({ data }: { data: { rows: AcquisitionRow[] } }) {
             <td className="py-1.5">{row.campaign ?? "—"}</td>
             <td className="py-1.5">{row.landingPath ?? "—"}</td>
             <td className="py-1.5">{formatNumber(row.sessions)}</td>
+            <td className="py-1.5">{formatNumber(row.newSenders)}</td>
             <td className="py-1.5">{formatNumber(row.uploadSuccesses)}</td>
           </tr>
         ))}

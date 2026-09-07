@@ -88,7 +88,7 @@
 - リクエスト: `{ events: AnalyticsEvent[] }`(最大20件/回)。各イベントの形は[`lib/analytics/schema.ts`](../lib/analytics/schema.ts)のallowlistスキーマで固定。
 - 未定義の`event_name`・許可されていない`properties`キーが1件でも含まれる場合、リクエスト全体を400で拒否する。
 - `event_id`が既存行と重複する場合は無視する(重複送信・再送によるイベントの二重計上を防ぐ)。
-- レート制限: `anonymous_client_id`単位([`lib/rateLimit.ts`](../lib/rateLimit.ts)、`ANALYTICS_RATE_LIMITER`)。バッチ内で`anonymousClientId`が一致しない場合は400。
+- レート制限: エンドポイント全体の固定キーと`anonymous_client_id`単位を併用([`lib/rateLimit.ts`](../lib/rateLimit.ts)、`ANALYTICS_RATE_LIMITER`)。WAFの送信元IP単位ルールが未適用でも、固定キーの上限によりD1への大量書き込みを抑止する。バッチ内で`anonymousClientId`が一致しない場合は400。
 - 認証・CSRF検証は不要(cookieを使わない匿名エンドポイント)。ファイル転送機能とは完全に独立しており、このエンドポイントの障害・レート制限はアップロード/ダウンロード/共有を一切ブロックしない。
 
 ## 通報

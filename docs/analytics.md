@@ -41,7 +41,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 | `event_id` | ブラウザ(`crypto.randomUUID()`) | — | 重複送信の除外(`analytics_events.event_id` にUNIQUE制約) |
 | `analytics_transfer_id` | サーバー([`lib/analytics/transferId.ts`](../lib/analytics/transferId.ts)) | — | `HMAC-SHA256(shareId, ANALYTICS_SECRET)`。生の`shareId`をAnalytics DBへ保存せずに、同一transferのupload/downloadイベントを相関する |
 
-`analytics_transfer_id` は `POST /api/upload/start` と `GET /api/download/[shareId]` のレスポンスに含まれます(どちらも既に`shareId`自体を返しているため、追加の情報漏洩にはなりません)。
+`analytics_transfer_id` は `POST /api/upload/start` と `GET /api/download/[shareId]` のレスポンスに含まれます(どちらも既に`shareId`自体を返しているため、追加の情報漏洩にはなりません)。`ANALYTICS_SECRET`の未設定・不正により生成できない場合だけ省略し、ファイルのアップロードやダウンロード自体は継続します。
 
 ## イベント一覧(Phase 1 + Phase 2)
 

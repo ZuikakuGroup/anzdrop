@@ -70,6 +70,18 @@ async function postEvents(events: unknown[]) {
   );
 }
 
+async function postRawBody(body: string, headers?: HeadersInit) {
+  const { POST } = await import("@/app/api/analytics/events/route");
+
+  return POST(
+    new Request("http://localhost/api/analytics/events", {
+      method: "POST",
+      headers,
+      body,
+    })
+  );
+}
+
 async function allEvents(): Promise<AnalyticsEventRow[]> {
   const { results } = await env.DB.prepare(
     `SELECT * FROM analytics_events`
@@ -144,6 +156,30 @@ describe("POST /api/analytics/events", () => {
     expect(await allEvents()).toHaveLength(0);
   });
 
+  it.each([
+    ["missing", undefined],
+    ["invalid", { "content-length": "invalid" }],
+    ["forged", { "content-length": "1" }],
+    ["chunked", { "transfer-encoding": "chunked" }],
+  ])("rejects an oversized body with a %s length header before rate limiting", async (_name, headers) => {
+    const response = await postRawBody("x".repeat(32 * 1024 + 1), headers);
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("リクエストサイズが上限を超えています");
+    expect(env.ANALYTICS_RATE_LIMITER.keys).toEqual([]);
+  });
+
+  it("preserves the oversized response when Content-Length declares an oversized body", async () => {
+    const response = await postRawBody("{}", {
+      "content-length": String(32 * 1024 + 1),
+    });
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("リクエストサイズが上限を超えています");
+  });
+
   it("rejects an empty events array", async () => {
     const response = await postEvents([]);
 
@@ -167,6 +203,16 @@ describe("POST /api/analytics/events", () => {
     const response = await postEvents([uploadStartEvent()]);
 
     expect(response.status).toBe(429);
+    expect(await allEvents()).toHaveLength(0);
+  });
+
+  it("applies an endpoint-wide limit before the anonymous client limit", async () => {
+    env.ANALYTICS_RATE_LIMITER.denyKeyFrom("endpoint:all", 1);
+
+    const response = await postEvents([uploadStartEvent()]);
+
+    expect(response.status).toBe(429);
+    expect(env.ANALYTICS_RATE_LIMITER.keys).toEqual(["endpoint:all"]);
     expect(await allEvents()).toHaveLength(0);
   });
 

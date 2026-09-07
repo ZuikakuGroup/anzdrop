@@ -12,6 +12,45 @@ import {
 // 各イベントは小さなJSONのため十分な余裕を見た上限)。
 const MAX_BODY_BYTES = 32 * 1024;
 
+async function readBodyWithinLimit(
+  request: Request
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (!request.body) {
+    return new Uint8Array();
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    totalBytes += value.byteLength;
+
+    if (totalBytes > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+
+    chunks.push(value);
+  }
+
+  const body: Uint8Array<ArrayBuffer> = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return body;
+}
+
 // クライアント時刻を信頼しすぎないための妥当性チェック(要件書19章の
 // 「計測処理がUXをブロックしない」とは独立に、明らかに壊れた/なりすました
 // タイムスタンプのイベントを弾く)。
@@ -63,11 +102,27 @@ export const POST = withApiHandler(
 
     const contentLength = request.headers.get("content-length");
 
-    if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
+    if (
+      /^\d+$/.test(contentLength?.trim() ?? "") &&
+      Number(contentLength) > MAX_BODY_BYTES
+    ) {
       return rejectedResponse("リクエストサイズが上限を超えています");
     }
 
-    const parsed = await parseJsonBody(request, AnalyticsEventsRequestSchema);
+    const body = await readBodyWithinLimit(request);
+
+    if (!body) {
+      return rejectedResponse("リクエストサイズが上限を超えています");
+    }
+
+    const parsed = await parseJsonBody(
+      new Request(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: body.buffer,
+      }),
+      AnalyticsEventsRequestSchema
+    );
 
     if (!parsed.ok) {
       return parsed.response;
@@ -118,19 +173,27 @@ export const POST = withApiHandler(
     // このキー(anonymousClientId)はクライアントが自己申告する値で、
     // shareId/fileId等と異なり事前に「知っている」必要のある秘密ではない
     // ため、悪意ある送信者は毎回新しい値を名乗ることでこのキー単位の枠を
-    // 回避できる(SHARE_RATE_LIMITER/FILE_RATE_LIMITER も同様に、キー自体の
-    // 列挙・使い捨てへの耐性はない設計)。この層はあくまで「1つの匿名ID
-    // からの連打」を頭打ちにする内側の防御で、列挙・使い捨てへの対策は
-    // 既存方針どおり外側のCloudflare WAFルール(送信元IP単位)に委ねる
-    // (docs/architecture.mdの「レート制限」参照)。
-    const rateLimit = await checkRateLimit(
+    // 回避できるため、まず固定キーでエンドポイント全体の書き込み量を頭打ちにし、
+    // 続けて匿名ID単位の連打も制限する。Cloudflare WAFの送信元IP単位ルールが
+    // 未適用の環境でも、固定キー側は使い捨てIDでは回避できない。
+    const endpointRateLimit = await checkRateLimit(
+      env.ANALYTICS_RATE_LIMITER,
+      "endpoint:all",
+      "POST /api/analytics/events"
+    );
+
+    if (!endpointRateLimit.ok) {
+      return endpointRateLimit.response;
+    }
+
+    const clientRateLimit = await checkRateLimit(
       env.ANALYTICS_RATE_LIMITER,
       anonymousClientId,
       "POST /api/analytics/events"
     );
 
-    if (!rateLimit.ok) {
-      return rateLimit.response;
+    if (!clientRateLimit.ok) {
+      return clientRateLimit.response;
     }
 
     const receivedAt = new Date().toISOString();

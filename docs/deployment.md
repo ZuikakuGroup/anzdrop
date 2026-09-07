@@ -50,7 +50,7 @@
 - **D1**: `binding: "DB"`, `database_name: "anzdrop-db"`(`database_id` は固定値でリポジトリに含まれる。新しい環境向けに作り直す場合は `wrangler d1 create anzdrop-db` 後にIDを書き換える)。
 - **R2**: `binding: "FILES_BUCKET"`, `bucket_name: "anzdrop"`。
 - **Cron Trigger**: `"0 */6 * * *"`(6時間ごと、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)。
-- **Rate Limiting バインディング**: `ratelimits` に4つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81004`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
+- **Rate Limiting バインディング**: `ratelimits` に5つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81005`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
 

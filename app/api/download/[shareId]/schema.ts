@@ -20,5 +20,5 @@ export type DownloadResponse = ApiResponse<{
   files: DownloadResponseFile[];
   // 計測基盤(要件定義書v1.0)がupload/downloadイベントを相関するための
   // shareIdの一方向ハッシュ(lib/analytics/transferId.ts)。
-  analyticsTransferId: string;
+  analyticsTransferId?: string;
 }>;

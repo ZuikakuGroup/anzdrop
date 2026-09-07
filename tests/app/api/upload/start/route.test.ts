@@ -27,7 +27,7 @@ type StartResponseBody = {
   shareId: string;
   uploadToken: string;
   uploadSessionId: string;
-  analyticsTransferId: string;
+  analyticsTransferId?: string;
 };
 
 let env: TestEnv;
@@ -278,6 +278,35 @@ describe("POST /api/upload/start", () => {
     expect(upload?.share_id).toBe(body.shareId);
     expect(upload?.encrypted_file_name).toBe("file.enc");
     expect(upload?.max_downloads).toBeNull();
+  });
+
+  it("keeps a persisted upload usable when analytics transfer ID generation fails", async () => {
+    stubTurnstileSuccess();
+    const originalSecret = env.ANALYTICS_SECRET;
+    env.ANALYTICS_SECRET = "";
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await postStart({
+        encryptedFileName: "file.enc",
+        fileSize: 1024,
+        retention: "7d",
+        turnstileToken: "tok",
+      });
+      const body = await readJson<StartResponseBody>(response);
+
+      expect(response.status).toBe(200);
+      expect(body.analyticsTransferId).toBeUndefined();
+      expect(await getShare(body.shareId)).toBeTruthy();
+      expect(
+        await env.DB.prepare("SELECT id FROM uploads WHERE id = ?")
+          .bind(body.uploadSessionId)
+          .first()
+      ).toBeTruthy();
+    } finally {
+      env.ANALYTICS_SECRET = originalSecret;
+      consoleError.mockRestore();
+    }
   });
 
   it("creates a new share for a premium uploader with preview_allowed=1", async () => {

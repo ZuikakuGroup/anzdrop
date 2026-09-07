@@ -45,7 +45,21 @@ export async function fetchAnalytics<V extends AnalyticsView>(
   }
 
   const response = await fetch(`/api/admin/analytics?${params.toString()}`);
-  const result: AnalyticsApiResponse<V> = await response.json();
+  let result: AnalyticsApiResponse<V>;
+
+  try {
+    result = (await response.json()) as AnalyticsApiResponse<V>;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "サーバーから正しい応答を受信できませんでした。"
+        : `読み込みに失敗しました。(HTTP ${response.status})`
+    );
+  }
+
+  if (typeof result !== "object" || result === null) {
+    throw new Error("サーバーから正しい応答を受信できませんでした。");
+  }
 
   if (!response.ok || !result.success || !result.data) {
     throw new Error(result.error ?? "読み込みに失敗しました。");

@@ -126,7 +126,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 | `SHARE_RATE_LIMITER` | `GET /api/download/[shareId]` | `shareId` | 正当な利用ではダウンロードページを開くたびに1回だけ([`components/download/DownloadPage.tsx`](../components/download/DownloadPage.tsx)。ポーリングもリトライもしない)。ただし1つの共有URLを多人数へ配る使い方があるため、人数ぶんの余裕を大きく取る |
 | `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
 | `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
-| `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。他の層と同じくIPは使わず、クライアントが自己申告する匿名IDをキーにする |
+| `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | エンドポイント全体の固定キー + `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。固定キーでD1への総書き込み量を抑え、匿名ID単位でも連打を止める。IPは扱わない |
 
 実際の閾値は [`wrangler.jsonc`](../wrangler.jsonc) の `ratelimits` にあります(`period` は 10 か 60 のみ指定可能)。
 

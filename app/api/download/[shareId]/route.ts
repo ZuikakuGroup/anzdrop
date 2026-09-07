@@ -124,16 +124,22 @@ export const GET = withApiHandler(
       isOneTime: file.max_downloads !== null,
     }));
 
-    const analyticsTransferId = await computeAnalyticsTransferId(
-      shareId,
-      env.ANALYTICS_SECRET
-    );
+    let analyticsTransferId: string | undefined;
+
+    try {
+      analyticsTransferId = await computeAnalyticsTransferId(
+        shareId,
+        env.ANALYTICS_SECRET
+      );
+    } catch (error) {
+      console.error("GET /api/download/[shareId]: analytics transfer ID generation failed:", error);
+    }
 
     const responseBody: DownloadResponse = {
       success: true,
       share: responseShare,
       files: responseFiles,
-      analyticsTransferId,
+      ...(analyticsTransferId ? { analyticsTransferId } : {}),
     };
 
     return Response.json(responseBody, {

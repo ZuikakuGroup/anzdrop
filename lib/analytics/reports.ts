@@ -7,6 +7,8 @@
 // (要件書22章の90日という保持期間とRetentionダッシュボードの最大観測
 // 期間=90日が一致しているのはこのため)。
 
+import { computeDailyMetrics } from "@/lib/analytics/aggregate";
+
 export type OverviewReport = {
   today: {
     successfulTransfers: number;
@@ -121,7 +123,7 @@ async function computeRepeatSenderRate(
             WHERE u.event_name = 'upload_success'
               AND u.anonymous_client_id = e.anonymous_client_id
               AND u.occurred_at > e.first_at
-              AND u.occurred_at <= datetime(e.first_at, '+30 days')
+              AND u.occurred_at <= strftime('%Y-%m-%dT%H:%M:%fZ', e.first_at, '+30 days')
           )
         )
         SELECT
@@ -143,8 +145,8 @@ export async function getOverviewReport(
   const today = toUtcDateString(now);
   const last30Start = toUtcDateString(daysAgo(now, 29));
 
-  const [todayMetrics, last30, repeatSenderRate] = await Promise.all([
-    sumDailyMetrics(db, today, today),
+  const todayMetrics = await computeDailyMetrics(env, today);
+  const [last30, repeatSenderRate] = await Promise.all([
     sumDailyMetrics(db, last30Start, today),
     computeRepeatSenderRate(db, now),
   ]);
@@ -396,7 +398,6 @@ export type AcquisitionRow = {
   sessions: number;
   newSenders: number;
   uploadSuccesses: number;
-  successfulTransfers: number;
 };
 
 export async function getAcquisitionReport(
@@ -407,21 +408,26 @@ export async function getAcquisitionReport(
   const from = `${fromDate}T00:00:00.000Z`;
   const to = `${toDate}T23:59:59.999Z`;
 
-  // newSenders/successfulTransfersは要件書5.2/4章の定義(=そのクライアント
-  // にとって初めてのupload_success/そのtransferにdownload_successが実在する
-  // か)をここでも満たす必要があるため、単純にupload_success件数を使い回さず、
-  // aggregate.tsのcountNewSenders/countSuccessfulTransfersと同じ条件を
-  // セッション単位のjoinの中で評価する。
+  // newSendersは要件書5.2章の定義(=そのクライアントにとって初めての
+  // upload_success)を満たす必要があるため、セッション単位のjoinの中で評価する。
   const { results } = await env.DB.prepare(
     `
       WITH landing AS (
         SELECT session_id, source, medium, campaign, landing_path
-        FROM analytics_events
-        WHERE event_name = 'landing_view' AND occurred_at BETWEEN ? AND ?
+        FROM (
+          SELECT
+            session_id, source, medium, campaign, landing_path,
+            ROW_NUMBER() OVER (
+              PARTITION BY session_id ORDER BY occurred_at, event_id
+            ) AS session_landing_number
+          FROM analytics_events
+          WHERE event_name = 'landing_view' AND occurred_at BETWEEN ? AND ?
+        )
+        WHERE session_landing_number = 1
       ),
       session_uploads AS (
         SELECT l.session_id, l.source, l.medium, l.campaign, l.landing_path,
-               u.anonymous_client_id, u.analytics_transfer_id, u.occurred_at
+               u.anonymous_client_id, u.occurred_at
         FROM landing l
         JOIN analytics_events u
           ON u.session_id = l.session_id AND u.event_name = 'upload_success'
@@ -434,12 +440,7 @@ export async function getAcquisitionReport(
             WHERE prev.event_name = 'upload_success'
               AND prev.anonymous_client_id = su.anonymous_client_id
               AND prev.occurred_at < su.occurred_at
-          ) AS is_new_sender,
-          EXISTS (
-            SELECT 1 FROM analytics_events dl
-            WHERE dl.event_name = 'download_success'
-              AND dl.analytics_transfer_id = su.analytics_transfer_id
-          ) AS is_successful_transfer
+          ) AS is_new_sender
         FROM session_uploads su
       )
       SELECT
@@ -448,9 +449,8 @@ export async function getAcquisitionReport(
         l.campaign AS campaign,
         l.landing_path AS landing_path,
         COUNT(DISTINCT l.session_id) AS sessions,
-        COUNT(DISTINCT t.anonymous_client_id) AS upload_successes,
-        COUNT(DISTINCT CASE WHEN t.is_new_sender THEN t.anonymous_client_id END) AS new_senders,
-        COUNT(DISTINCT CASE WHEN t.is_successful_transfer THEN t.analytics_transfer_id END) AS successful_transfers
+        COUNT(t.anonymous_client_id) AS upload_successes,
+        COUNT(DISTINCT CASE WHEN t.is_new_sender THEN t.anonymous_client_id END) AS new_senders
       FROM landing l
       LEFT JOIN tagged t ON t.session_id = l.session_id
       GROUP BY l.source, l.medium, l.campaign, l.landing_path
@@ -466,7 +466,6 @@ export async function getAcquisitionReport(
       sessions: number;
       upload_successes: number;
       new_senders: number;
-      successful_transfers: number;
     }>();
 
   const rows: AcquisitionRow[] = (results ?? []).map((row) => ({
@@ -477,7 +476,6 @@ export async function getAcquisitionReport(
     sessions: row.sessions,
     newSenders: row.new_senders,
     uploadSuccesses: row.upload_successes,
-    successfulTransfers: row.successful_transfers,
   }));
 
   return { rows };
@@ -540,13 +538,16 @@ export async function getRetentionReport(
   // クエリにまとめ、6つのオフセット分の判定列を一度に集計する。
   const selectColumns = RETENTION_DAY_OFFSETS.map(
     (offset) => `
+      SUM(CASE WHEN cohort.first_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-${offset} days')
+        THEN 1 ELSE 0 END) AS eligible_${offset},
       SUM(CASE WHEN EXISTS (
         SELECT 1 FROM analytics_events later
         WHERE later.event_name = 'upload_success'
           AND later.anonymous_client_id = cohort.anonymous_client_id
-          AND later.occurred_at >= datetime(cohort.first_at, '+${offset} days')
-          AND later.occurred_at < datetime(cohort.first_at, '+${offset + 1} days')
-      ) THEN 1 ELSE 0 END) AS day_${offset}
+          AND later.occurred_at >= strftime('%Y-%m-%dT%H:%M:%fZ', cohort.first_at, '+${offset} days')
+          AND later.occurred_at < strftime('%Y-%m-%dT%H:%M:%fZ', cohort.first_at, '+${offset + 1} days')
+      ) AND cohort.first_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-${offset} days')
+        THEN 1 ELSE 0 END) AS day_${offset}
     `
   ).join(",\n");
 
@@ -569,13 +570,20 @@ export async function getRetentionReport(
       `
     )
     .bind(from, to)
-    .first<Record<`day_${(typeof RETENTION_DAY_OFFSETS)[number]}`, number>>();
+    .first<
+      Record<
+        `day_${(typeof RETENTION_DAY_OFFSETS)[number]}` |
+          `eligible_${(typeof RETENTION_DAY_OFFSETS)[number]}`,
+        number
+      >
+    >();
 
   for (const offset of RETENTION_DAY_OFFSETS) {
     const retainedCount = row?.[`day_${offset}`] ?? 0;
+    const eligibleCount = row?.[`eligible_${offset}`] ?? 0;
 
     dayRates[String(offset) as keyof RetentionReport["dayRates"]] =
-      retainedCount / cohortSize;
+      rate(retainedCount, eligibleCount);
   }
 
   return { cohortSize, dayRates };

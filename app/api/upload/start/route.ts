@@ -176,10 +176,16 @@ export const POST = withApiHandler(
       )
       .run();
 
-    const analyticsTransferId = await computeAnalyticsTransferId(
-      shareId,
-      env.ANALYTICS_SECRET
-    );
+    let analyticsTransferId: string | undefined;
+
+    try {
+      analyticsTransferId = await computeAnalyticsTransferId(
+        shareId,
+        env.ANALYTICS_SECRET
+      );
+    } catch (error) {
+      console.error("POST /api/upload/start: analytics transfer ID generation failed:", error);
+    }
 
     const responseBody: UploadStartResponse = {
       success: true,
@@ -187,7 +193,7 @@ export const POST = withApiHandler(
       uploadToken,
       uploadSessionId,
       expiresAt,
-      analyticsTransferId,
+      ...(analyticsTransferId ? { analyticsTransferId } : {}),
     };
 
     return Response.json(responseBody);

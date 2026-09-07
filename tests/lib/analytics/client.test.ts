@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { track } from "@/lib/analytics/client";
+
+let track: typeof import("@/lib/analytics/client").track;
 
 function stubSendBeacon(returnValue: boolean | undefined) {
   const sendBeacon = returnValue === undefined ? undefined : vi.fn().mockReturnValue(returnValue);
@@ -13,9 +14,11 @@ function stubSendBeacon(returnValue: boolean | undefined) {
   return sendBeacon;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
   window.localStorage.clear();
   vi.useFakeTimers();
+  ({ track } = await import("@/lib/analytics/client"));
 });
 
 afterEach(() => {

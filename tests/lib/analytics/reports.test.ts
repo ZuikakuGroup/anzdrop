@@ -74,7 +74,7 @@ async function insertEvent(input: EventInput): Promise<void> {
 const TODAY = new Date("2026-05-10T12:00:00.000Z");
 
 describe("getOverviewReport", () => {
-  it("reads today's snapshot from analytics_daily_metrics", async () => {
+  it("includes today's events before a daily snapshot has been created", async () => {
     await insertEvent({
       eventName: "upload_success",
       occurredAt: "2026-05-10T09:00:00.000Z",
@@ -85,8 +85,6 @@ describe("getOverviewReport", () => {
       occurredAt: "2026-05-10T08:59:00.000Z",
       anonymousClientId: "c1",
     });
-    await computeDailyMetrics(env, "2026-05-10");
-
     const report = await getOverviewReport(env, TODAY);
 
     expect(report.today.uniqueSenders).toBe(1);
@@ -258,10 +256,17 @@ describe("getAcquisitionReport", () => {
     expect(report.rows[0]).toMatchObject({ uploadSuccesses: 1, newSenders: 0 });
   });
 
-  it("only counts a transfer as successful once a matching download_success exists", async () => {
+  it("counts every upload_success event, including repeats from one client", async () => {
     await insertEvent({
       eventName: "landing_view",
       occurredAt: "2026-05-10T09:00:00.000Z",
+      anonymousClientId: "c1",
+      sessionId: "s1",
+      source: "google",
+    });
+    await insertEvent({
+      eventName: "landing_view",
+      occurredAt: "2026-05-10T09:00:30.000Z",
       anonymousClientId: "c1",
       sessionId: "s1",
       source: "google",
@@ -271,23 +276,19 @@ describe("getAcquisitionReport", () => {
       occurredAt: "2026-05-10T09:01:00.000Z",
       anonymousClientId: "c1",
       sessionId: "s1",
-      analyticsTransferId: "transfer-without-download",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: "2026-05-10T09:02:00.000Z",
+      anonymousClientId: "c1",
+      sessionId: "s1",
+      analyticsTransferId: "transfer-2",
     });
 
     const report = await getAcquisitionReport(env, "2026-05-10", "2026-05-10");
 
-    expect(report.rows[0]).toMatchObject({ uploadSuccesses: 1, successfulTransfers: 0 });
-
-    await insertEvent({
-      eventName: "download_success",
-      occurredAt: "2026-05-10T09:02:00.000Z",
-      anonymousClientId: "c2",
-      analyticsTransferId: "transfer-without-download",
-    });
-
-    const reportAfterDownload = await getAcquisitionReport(env, "2026-05-10", "2026-05-10");
-
-    expect(reportAfterDownload.rows[0]).toMatchObject({ successfulTransfers: 1 });
+    expect(report.rows[0]).toMatchObject({ uploadSuccesses: 2, newSenders: 1 });
   });
 });
 
@@ -321,6 +322,39 @@ describe("getRetentionReport", () => {
 
     expect(report.cohortSize).toBe(0);
     expect(report.dayRates["30"]).toBeNull();
+  });
+
+  it("excludes immature cohorts from each day-specific denominator", async () => {
+    const now = new Date();
+    const matureFirst = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+    const retainedAtDay7 = new Date(matureFirst.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const immatureFirst = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: matureFirst.toISOString(),
+      anonymousClientId: "mature-retained",
+    });
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: retainedAtDay7.toISOString(),
+      anonymousClientId: "mature-retained",
+    });
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: immatureFirst.toISOString(),
+      anonymousClientId: "immature",
+    });
+
+    const report = await getRetentionReport(
+      env,
+      matureFirst.toISOString().slice(0, 10),
+      now.toISOString().slice(0, 10)
+    );
+
+    expect(report.cohortSize).toBe(2);
+    expect(report.dayRates["7"]).toBe(1);
+    expect(report.dayRates["90"]).toBeNull();
   });
 });
 

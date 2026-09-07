@@ -19,7 +19,7 @@ import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 type DownloadResponseBody = {
   share: { previewAllowed: boolean };
   files: { id: string; isOneTime: boolean }[];
-  analyticsTransferId: string;
+  analyticsTransferId?: string;
 };
 
 let env: TestEnv;
@@ -181,6 +181,24 @@ describe("GET /api/download/[shareId]", () => {
       await computeAnalyticsTransferId(shareId, env.ANALYTICS_SECRET)
     );
     expect(body.analyticsTransferId).not.toBe(shareId);
+  });
+
+  it("returns the download successfully without an analytics ID when generation fails", async () => {
+    const shareId = await insertShare();
+    const originalSecret = env.ANALYTICS_SECRET;
+    env.ANALYTICS_SECRET = "";
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const response = await getDownload(shareId);
+      const body = await readJson<DownloadResponseBody>(response);
+
+      expect(response.status).toBe(200);
+      expect(body.analyticsTransferId).toBeUndefined();
+    } finally {
+      env.ANALYTICS_SECRET = originalSecret;
+      consoleError.mockRestore();
+    }
   });
 
   it("excludes files that have already hit their max_downloads limit, and reports isOneTime correctly", async () => {

@@ -244,7 +244,11 @@ export default function DownloadPage({
 
       track("download_start", { attemptId, analyticsTransferId });
 
-      await saveDecryptedFile(file, key, file.name);
+      const { saved } = await saveDecryptedFile(file, key, file.name);
+
+      if (!saved) {
+        return;
+      }
 
       track("download_success", {
         attemptId,
@@ -364,7 +368,13 @@ export default function DownloadPage({
 
       track("download_start", { attemptId, analyticsTransferId });
 
-      await downloadAllFiles(files, key, { onFileGone: removeFile });
+      const { cancelled } = await downloadAllFiles(files, key, {
+        onFileGone: removeFile,
+      });
+
+      if (cancelled) {
+        return;
+      }
 
       track("download_success", {
         attemptId,

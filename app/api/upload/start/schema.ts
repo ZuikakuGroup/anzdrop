@@ -65,5 +65,5 @@ export type UploadStartResponse = ApiResponse<{
   // 計測基盤(要件定義書v1.0)がupload/downloadイベントを相関するための
   // shareIdの一方向ハッシュ(lib/analytics/transferId.ts)。shareId自体は
   // 既にこのレスポンスに含まれているため、追加の情報漏洩にはならない。
-  analyticsTransferId: string;
+  analyticsTransferId?: string;
 }>;
