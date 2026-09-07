@@ -704,7 +704,7 @@ export default function DownloadPage({
             <Link
               href="/"
               onClick={handleSendCtaClick}
-              className="mt-7 block rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+              className="mt-7 inline-flex items-center justify-center rounded bg-brand px-5 py-2.5 text-xs font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
             >
               Anzdropでファイルを送る
             </Link>
