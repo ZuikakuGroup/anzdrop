@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   hasDownloadedAllFiles,
+  scheduleSendCtaOpen,
+  SEND_CTA_OPEN_DELAY_MS,
   shouldShowSendCta,
 } from "@/lib/download/downloadProgress";
 import type { DecryptedFile } from "@/lib/download/decrypt";
@@ -11,6 +13,10 @@ const files = [
 ] as DecryptedFile[];
 
 describe("hasDownloadedAllFiles", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("一覧が空の場合は完了として扱わない", () => {
     expect(hasDownloadedAllFiles([], new Set())).toBe(false);
   });
@@ -48,5 +54,27 @@ describe("hasDownloadedAllFiles", () => {
         true
       )
     ).toBe(false);
+  });
+
+  it("CTAを保存UIと重ならないよう少し待って表示する", () => {
+    vi.useFakeTimers();
+    const open = vi.fn();
+
+    scheduleSendCtaOpen(open);
+    vi.advanceTimersByTime(SEND_CTA_OPEN_DELAY_MS - 1);
+    expect(open).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it("待機中に画面を離れるとCTAを表示しない", () => {
+    vi.useFakeTimers();
+    const open = vi.fn();
+
+    scheduleSendCtaOpen(open)();
+    vi.advanceTimersByTime(SEND_CTA_OPEN_DELAY_MS);
+
+    expect(open).not.toHaveBeenCalled();
   });
 });
