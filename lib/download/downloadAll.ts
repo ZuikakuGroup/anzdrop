@@ -4,6 +4,7 @@ import {
   getShowDirectoryPicker,
   getShowSaveFilePicker,
   isAbortError,
+  SMALL_FILE_NO_PICKER_THRESHOLD_BYTES,
   saveDecryptedFilesToDirectory,
   triggerBlobDownload,
 } from "./saveFile";
@@ -69,12 +70,13 @@ function writableStreamToSink(
 
 // 共有内の全ファイルを一括ダウンロードする。環境と合計サイズに応じて経路を選ぶ:
 //
-// 1. showSaveFilePicker(Chromium 系)かつ zip64 不要 → ストリーミング ZIP を
-//    選んだ .zip ファイルへ直接書き出す(1ファイル分も ZIP 全体もメモリに
-//    載せない。GitHub issue #59)。
-// 2. showSaveFilePicker が無く Service Worker が使える(Firefox/Safari)かつ
-//    zip64 不要 → Service Worker 経由でストリーミング ZIP をダウンロード
-//    (GitHub issue #61)。
+// 1. 合計サイズが 200MiB 以上かつ showSaveFilePicker(Chromium 系)が使え、
+//    zip64 不要 → ストリーミング ZIP を選んだ .zip ファイルへ直接書き出す
+//    (1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。
+// 2. 200MiB 未満、または showSaveFilePicker が無く Service Worker が使える
+//    (Firefox/Safari)かつ zip64 不要 → Service Worker 経由でストリーミング
+//    ZIP をダウンロード(GitHub issue #61)。小さい個別ファイルと同様、
+//    小さい ZIP では保存先選択ダイアログを出さない。
 // 3. showDirectoryPicker(Chromium 系で 4GiB 超) → フォルダを選んで1ファイル
 //    ずつストリーミング保存。
 // 4. どのストリーミング経路も使えない → 合計サイズが上限内ならメモリ内 ZIP、
@@ -86,6 +88,7 @@ export async function downloadAllFiles(
 ): Promise<DownloadAllResult> {
   const named = assignZipNames(files);
   const sizes = files.map((file) => file.size);
+  const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
   const goneFileIds: string[] = [];
 
   const markGone = (fileId: string): void => {
@@ -119,7 +122,11 @@ export async function downloadAllFiles(
   const directoryPicker = getShowDirectoryPicker();
 
   // --- 1. ストリーミング ZIP をディスクへ ---
-  if (savePicker && canStreamFilesAsZip(sizes)) {
+  if (
+    totalBytes >= SMALL_FILE_NO_PICKER_THRESHOLD_BYTES &&
+    savePicker &&
+    canStreamFilesAsZip(sizes)
+  ) {
     let handle;
     try {
       handle = await savePicker({ suggestedName: "anzdrop.zip" });
@@ -203,8 +210,6 @@ export async function downloadAllFiles(
   }
 
   // --- 4. どのストリーミング経路も使えない: メモリ内 ZIP(サイズ制限つき) ---
-  const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
-
   if (totalBytes > IN_MEMORY_ZIP_MAX_BYTES) {
     throw new FriendlyError(
       "合計サイズが大きいため、この環境では一括ダウンロードできません。ファイルを1つずつダウンロードしてください。"
