@@ -1,6 +1,10 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
-import { computeDailyMetrics } from "@/lib/analytics/aggregate";
+import {
+  computeDailyMetrics,
+  collectDailyMetrics,
+  recomputeRecentDailyMetrics,
+} from "@/lib/analytics/aggregate";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
@@ -249,5 +253,49 @@ describe("computeDailyMetrics", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].unique_senders).toBe(2);
+  });
+});
+
+describe("recomputeRecentDailyMetrics", () => {
+  it("passes the two most recent completed UTC dates to aggregation", async () => {
+    const compute = vi.fn().mockResolvedValue({});
+
+    await recomputeRecentDailyMetrics(
+      env,
+      new Date("2026-05-10T00:10:00.000Z"),
+      compute
+    );
+
+    expect(compute).toHaveBeenNthCalledWith(1, env, "2026-05-08");
+    expect(compute).toHaveBeenNthCalledWith(2, env, "2026-05-09");
+  });
+});
+
+describe("collectDailyMetrics", () => {
+  it("does not recount a transfer whose first download was before the requested range", async () => {
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: "2026-05-08T09:00:00.000Z",
+      anonymousClientId: "sender",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "download_success",
+      occurredAt: "2026-05-09T09:00:00.000Z",
+      anonymousClientId: "recipient",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "download_success",
+      occurredAt: DAY_TS("09:00"),
+      anonymousClientId: "recipient",
+      analyticsTransferId: "transfer-1",
+    });
+
+    const metrics = await collectDailyMetrics(env, DAY, {
+      limitRelatedEventsToRange: true,
+    });
+
+    expect(metrics.successfulTransfers).toBe(0);
   });
 });

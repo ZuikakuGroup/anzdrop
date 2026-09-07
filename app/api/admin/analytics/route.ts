@@ -31,6 +31,16 @@ function defaultDateRange(): { from: string; to: string } {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 export const GET = withApiHandler(
   "GET /api/admin/analytics",
   async (request: Request): Promise<Response> => {
@@ -55,6 +65,13 @@ export const GET = withApiHandler(
     const defaults = defaultDateRange();
     const from = url.searchParams.get("from") ?? defaults.from;
     const to = url.searchParams.get("to") ?? defaults.to;
+
+    if (!isValidDate(from) || !isValidDate(to) || from > to) {
+      return Response.json(
+        { success: false, error: "from/toは有効なYYYY-MM-DD形式で指定してください" },
+        { status: 400 }
+      );
+    }
 
     const data = await (async () => {
       switch (view) {

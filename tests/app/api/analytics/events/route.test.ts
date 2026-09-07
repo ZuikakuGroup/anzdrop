@@ -216,15 +216,10 @@ describe("POST /api/analytics/events", () => {
     expect(await allEvents()).toHaveLength(0);
   });
 
-  it("normalizes a non-canonical (but validly parseable) timestamp before storing it", async () => {
-    // +09:00オフセット表記はDate.parseでは正当だが、UTC/Z終端のtoISOString()
-    // 表記とは文字列としての大小関係が食い違いうる。DBへは正規化した値
-    // (常にUTC・Z終端)を保存し、日付範囲での文字列比較(BETWEEN等)が
-    // 表記ゆれで狂わないことを確認する。timestampPlausibleの24時間許容幅に
-    // 収まるよう、現在時刻を+09:00表記に書き換えたものを使う。
+  it("rejects a non-canonical timestamp before storing it", async () => {
+    // +09:00オフセット表記はDate.parseでは正当でも、厳密なUTC ISO形式ではない。
     const now = new Date();
     now.setUTCMilliseconds(0);
-    const expectedCanonical = now.toISOString();
 
     const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -232,11 +227,10 @@ describe("POST /api/analytics/events", () => {
       `${jst.getUTCFullYear()}-${pad(jst.getUTCMonth() + 1)}-${pad(jst.getUTCDate())}` +
       `T${pad(jst.getUTCHours())}:${pad(jst.getUTCMinutes())}:${pad(jst.getUTCSeconds())}+09:00`;
 
-    await postEvents([uploadStartEvent({ timestamp: nonCanonical })]);
+    const response = await postEvents([uploadStartEvent({ timestamp: nonCanonical })]);
 
-    const rows = await allEvents();
-
-    expect(rows[0].occurred_at).toBe(expectedCanonical);
+    expect(response.status).toBe(400);
+    expect(await allEvents()).toHaveLength(0);
   });
 
   it("does not persist the raw shareId, only the hashed analyticsTransferId", async () => {
@@ -245,5 +239,27 @@ describe("POST /api/analytics/events", () => {
     const rows = await allEvents();
 
     expect(rows[0].analytics_transfer_id).toBe("f".repeat(64));
+  });
+
+  it.each([
+    ["anonymous client ID", { anonymousClientId: "alice@example.com" }],
+    ["UTM source", { attribution: { source: "https://example.com/?token=secret" } }],
+    ["IP address", { sessionId: "203.0.113.1" }],
+    [
+      "error stage",
+      {
+        eventName: "upload_error",
+        properties: {
+          errorCode: "UPLOAD_NETWORK_ERROR",
+          errorStage: "+81 90 1234 5678",
+          retryCount: 0,
+        },
+      },
+    ],
+  ])("rejects a sensitive %s in direct API requests before persisting it", async (_field, override) => {
+    const response = await postEvents([uploadStartEvent(override)]);
+
+    expect(response.status).toBe(400);
+    expect(await allEvents()).toHaveLength(0);
   });
 });

@@ -89,12 +89,9 @@ export function findForbiddenPropertyKeys(properties: unknown): string[] {
   );
 }
 
-// クライアント時刻をそのまま信頼するのではなく、ISO 8601として解釈できる
-// ことだけを確認する(zodバージョン非依存にするため`Date.parse`で検証)。
-const isoTimestamp = z.string().refine(
-  (value) => !Number.isNaN(Date.parse(value)),
-  { message: "timestamp must be an ISO 8601 date string" }
-);
+// D1で時刻を文字列比較するため、曖昧なDate.parse()ではなく、UTCの厳密な
+// ISO 8601表記だけを受け付ける。
+const isoTimestamp = z.iso.datetime();
 
 // HMAC-SHA256のhex digest(64文字)を基本としつつ、将来アルゴリズムを
 // 変えても壊れないよう長さの範囲だけを検証する。
@@ -120,10 +117,33 @@ export const AttributionSchema = z
   .optional();
 
 // 要件書13章。referrerはホスト名のみ保持する。
+function isPathname(value: string): boolean {
+  if (!value.startsWith("/") || value.startsWith("//") || /[?#]/.test(value)) {
+    return false;
+  }
+
+  return new URL(value, "https://anzdrop.invalid").pathname === value;
+}
+
+function isHostname(value: string): boolean {
+  if (!value || /[/?#@:\s]/.test(value)) {
+    return false;
+  }
+
+  try {
+    const hostname = new URL(`https://${value}`).hostname;
+    const isIpAddress = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);
+
+    return hostname === value && !isIpAddress;
+  } catch {
+    return false;
+  }
+}
+
 export const ContextSchema = z
   .object({
-    landingPath: z.string().max(500).optional(),
-    referrerDomain: z.string().max(255).optional(),
+    landingPath: z.string().max(500).refine(isPathname, "landingPath must be a pathname").optional(),
+    referrerDomain: z.string().max(255).refine(isHostname, "referrerDomain must be a hostname").optional(),
     deviceClass: z.enum(DEVICE_CLASSES).optional(),
     browserFamily: z.string().max(100).optional(),
     locale: z.string().max(35).optional(),
@@ -315,3 +335,40 @@ export const AnalyticsEventsRequestSchema = z
   .strict();
 
 export type AnalyticsEventsRequest = z.infer<typeof AnalyticsEventsRequestSchema>;
+
+const SENSITIVE_VALUE_PATTERNS = [
+  /(?:https?:\/\/|[?#])/i,
+  /\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/,
+  /(?:^|[?&])(filename|key|encryptionkey|decryptionkey|url|hash|fragment|email|ip(?:address)?)=/i,
+  /\b(?:\d{1,3}\.){3}\d{1,3}\b/,
+  /(?:\+?\d[\d\s().-]{7,}\d)/,
+  /[A-Za-z0-9_-]{43,}/,
+] as const;
+
+// Propertiesのキーだけでなく、直接APIへ送られる各文字列値にもPrivacy Guardを
+// 適用する。値そのものはログへ出さず、D1へ書き込む前にリクエスト全体を拒否する。
+export function findForbiddenAnalyticsValueFields(event: AnalyticsEvent): string[] {
+  const errorStage =
+    event.eventName === "upload_error" || event.eventName === "download_error"
+      ? event.properties.errorStage
+      : undefined;
+
+  const values: Record<string, string | undefined> = {
+    anonymousClientId: event.anonymousClientId,
+    sessionId: event.sessionId,
+    source: event.attribution?.source,
+    medium: event.attribution?.medium,
+    campaign: event.attribution?.campaign,
+    content: event.attribution?.content,
+    term: event.attribution?.term,
+    landingPath: event.context?.landingPath,
+    referrerDomain: event.context?.referrerDomain,
+    browserFamily: event.context?.browserFamily,
+    locale: event.context?.locale,
+    errorStage,
+  };
+
+  return Object.entries(values)
+    .filter(([, value]) => value !== undefined && SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value)))
+    .map(([field]) => field);
+}

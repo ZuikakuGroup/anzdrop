@@ -159,7 +159,7 @@ migration 0009。
 | `landing_path` / `referrer_domain` / `device_class` / `browser_family` / `locale` | TEXT (nullable) | 文脈情報(Referrerはホスト名のみ、User-Agentは大まかな分類のみ) |
 | `properties` | TEXT (nullable) | イベント固有の追加情報(JSON文字列、allowlist済みキーのみ) |
 
-migration 0016。ファイル名・復号鍵・URL全体・メールアドレス・真のIPはこのテーブルに含まれない。
+migration 0016(保持期限切れ削除用の`occurred_at`単独インデックスは0017)。ファイル名・復号鍵・URL全体・メールアドレス・真のIPはこのテーブルに含まれない。
 
 ### `analytics_daily_metrics`
 
@@ -171,7 +171,7 @@ migration 0016。ファイル名・復号鍵・URL全体・メールアドレス
 | `unique_senders` / `new_senders` / `upload_starts` / `upload_successes` / `download_starts` / `download_successes` / `successful_transfers` / `recipient_to_sender_conversions` / `sessions` / `landing_sessions` | INTEGER | 各KPIの日次集計値([`analytics.md`](./analytics.md)のKPI定義参照) |
 | `computed_at` | TEXT | 集計実行日時 |
 
-migration 0016。毎日UTC 00:10のCron Triggerから[`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が前日分を計算して書き込む。
+migration 0016。毎日UTC 00:10のCron Triggerから[`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が前日分とその前日分を再計算して書き込む。
 
 ## マイグレーション一覧
 
@@ -193,5 +193,6 @@ migration 0016。毎日UTC 00:10のCron Triggerから[`lib/analytics/aggregate.t
 | `0014_add_btc_payments_plan.sql` | `btc_payments.plan` 追加(Bitcoin決済がどのプラン向けかをWebhook確定時に判定するため) |
 | `0015_add_contacts.sql` | `contacts` テーブル新設(一般的なお問い合わせ) |
 | `0016_create_analytics_tables.sql` | `analytics_events`/`analytics_daily_metrics` テーブル新設(計測・分析基盤) |
+| `0017_add_analytics_occurred_at_index.sql` | `analytics_events.occurred_at` 単独インデックスを追加(分析イベントの期限切れ削除を効率化) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

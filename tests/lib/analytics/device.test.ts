@@ -19,6 +19,22 @@ describe("classifyDevice", () => {
     ).toBe("tablet");
   });
 
+  it("classifies an Android user agent without mobi as tablet", () => {
+    expect(
+      classifyDevice(
+        "Mozilla/5.0 (Linux; Android 14; SM-X910) AppleWebKit/537.36 Chrome/120.0 Safari/537.36"
+      )
+    ).toBe("tablet");
+  });
+
+  it("keeps mobile Android user agents classified as mobile", () => {
+    expect(
+      classifyDevice(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36"
+      )
+    ).toBe("mobile");
+  });
+
   it("classifies a desktop Chrome user agent as desktop", () => {
     expect(
       classifyDevice(

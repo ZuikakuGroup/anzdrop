@@ -73,6 +73,27 @@ describe("AnalyticsEventSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects a non-ISO timestamp that Date.parse accepts", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      ...baseUploadStartEvent(),
+      timestamp: "January 1, 2026 00:00:00 UTC",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a context URL instead of accepting it as a pathname or hostname", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      ...baseUploadStartEvent(),
+      context: {
+        landingPath: "https://anzdrop.com/?secret=value",
+        referrerDomain: "https://example.com/path",
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects an attribution object containing the full query string as a single field", () => {
     const result = AnalyticsEventSchema.safeParse({
       eventId: "11111111-1111-4111-8111-111111111111",

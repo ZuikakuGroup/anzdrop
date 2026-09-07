@@ -29,6 +29,7 @@
 | `STRIPE_SECRET_KEY` | Stripe APIキー(Customer/Subscriptionの作成・取得・更新などのAPI呼び出しに使用) |
 | `STRIPE_WEBHOOK_SECRET` | `/api/billing/stripe/webhook` の署名検証用シークレット(Stripeダッシュボードで作成したWebhookエンドポイントごとに発行される) |
 | `OPENNODE_API_KEY` | OpenNode APIキー。charge作成とWebhook署名検証(HMAC鍵)の両方に使う |
+| `ANALYTICS_SECRET` | `shareId`から分析用の相関IDを生成するHMAC鍵 |
 
 ### `wrangler.jsonc` の `vars`(非シークレット、リポジトリにコミット)
 
@@ -49,7 +50,7 @@
 - **Workers**: `name: "anzdrop"`、エントリーポイントは `custom-worker.ts`。
 - **D1**: `binding: "DB"`, `database_name: "anzdrop-db"`(`database_id` は固定値でリポジトリに含まれる。新しい環境向けに作り直す場合は `wrangler d1 create anzdrop-db` 後にIDを書き換える)。
 - **R2**: `binding: "FILES_BUCKET"`, `bucket_name: "anzdrop"`。
-- **Cron Trigger**: `"0 */6 * * *"`(6時間ごと、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)。
+- **Cron Trigger**: `"0 */6 * * *"`(6時間ごと、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)と`"10 0 * * *"`(毎日UTC 00:10、分析日次集計)。
 - **Rate Limiting バインディング**: `ratelimits` に5つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81005`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
@@ -114,6 +115,7 @@ Cloudflare Workersにはスクリプトサイズの上限があり、**無料プ
 4. OpenNodeでビジネスアカウントを作成(要KYB/KYC)し、APIキーを取得して`wrangler secret put OPENNODE_API_KEY`で設定する。OpenNode側でのWebhookエンドポイント登録は不要(charge作成時に`callback_url`として都度指定している)。
 5. `wrangler.jsonc`の`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`・`OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM`・`OPENNODE_BTC_DAYS_PER_CHARGE`を実際の価格に合わせて調整する。
 6. `SESSION_SECRET`(ログインセッションJWTの署名鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put SESSION_SECRET`で設定する。
+7. `ANALYTICS_SECRET`(shareIdから分析用相関IDを生成するHMAC鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put ANALYTICS_SECRET`で設定する。未設定でもアップロード・ダウンロードは継続するが、分析用の相関IDは発行されない。
 
 ## 手動デプロイ・プレビュー
 

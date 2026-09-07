@@ -67,4 +67,17 @@ describe("getSessionId", () => {
 
     vi.useRealTimers();
   });
+
+  it("issues a new session exactly at the idle timeout", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
+    const first = getSessionId();
+    vi.setSystemTime(new Date("2026-01-01T00:30:00Z"));
+
+    const second = getSessionId();
+
+    expect(second.sessionId).not.toBe(first.sessionId);
+    expect(second.isNewSession).toBe(true);
+  });
 });

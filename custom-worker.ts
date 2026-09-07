@@ -2,7 +2,7 @@
 // @ts-ignore `.open-next/worker.js` is generated at build time
 import { default as handler } from "./.open-next/worker.js";
 import { runScheduledCleanup } from "./lib/cleanup";
-import { computeDailyMetrics, yesterdayUtc } from "./lib/analytics/aggregate";
+import { recomputeRecentDailyMetrics } from "./lib/analytics/aggregate";
 import { deleteExpiredAnalyticsEvents } from "./lib/analytics/retention";
 
 // wrangler.jsonc の triggers.crons で登録した式ごとに処理を振り分ける。
@@ -15,7 +15,7 @@ export default {
 
   async scheduled(event, env) {
     if (event.cron === ANALYTICS_DAILY_CRON) {
-      await computeDailyMetrics(env, yesterdayUtc());
+      await recomputeRecentDailyMetrics(env);
       await deleteExpiredAnalyticsEvents(env);
 
       return;

@@ -74,7 +74,7 @@ function parseStoredSession(raw: string | null): StoredSession | null {
 }
 
 function isSessionExpired(session: StoredSession): boolean {
-  return Date.now() - session.lastActivityAt > SESSION_IDLE_TIMEOUT_MS;
+  return Date.now() - session.lastActivityAt >= SESSION_IDLE_TIMEOUT_MS;
 }
 
 // 呼び出すたびに「使われた」とみなしてlastActivityAtを更新する

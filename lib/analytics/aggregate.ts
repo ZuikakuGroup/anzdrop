@@ -73,9 +73,10 @@ async function countNewSenders(
           WHERE prev.event_name = 'upload_success'
             AND prev.anonymous_client_id = cur.anonymous_client_id
             AND prev.occurred_at < ?
+            AND prev.occurred_at >= strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days')
         )
     `,
-    [start, end, start]
+    [start, end, start, start]
   );
 }
 
@@ -86,8 +87,36 @@ async function countNewSenders(
 async function countSuccessfulTransfers(
   db: D1Database,
   start: string,
-  end: string
+  end: string,
+  limitRelatedEventsToRange: boolean
 ): Promise<number> {
+  if (limitRelatedEventsToRange) {
+    return countScalar(
+      db,
+      `
+        SELECT COUNT(DISTINCT download.analytics_transfer_id) AS count
+        FROM analytics_events download
+        WHERE download.event_name = 'download_success'
+          AND download.analytics_transfer_id IS NOT NULL
+          AND download.occurred_at BETWEEN ? AND ?
+          AND EXISTS (
+            SELECT 1 FROM analytics_events upload
+            WHERE upload.event_name = 'upload_success'
+              AND upload.analytics_transfer_id = download.analytics_transfer_id
+              AND upload.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND download.occurred_at
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM analytics_events previous_download
+            WHERE previous_download.event_name = 'download_success'
+              AND previous_download.analytics_transfer_id = download.analytics_transfer_id
+              AND previous_download.occurred_at < download.occurred_at
+              AND previous_download.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND download.occurred_at
+          )
+      `,
+      [start, end, start, start]
+    );
+  }
+
   return countScalar(
     db,
     `
@@ -118,8 +147,36 @@ async function countSuccessfulTransfers(
 async function countRecipientToSenderConversions(
   db: D1Database,
   start: string,
-  end: string
+  end: string,
+  limitRelatedEventsToRange: boolean
 ): Promise<number> {
+  if (limitRelatedEventsToRange) {
+    return countScalar(
+      db,
+      `
+        SELECT COUNT(DISTINCT us.anonymous_client_id) AS count
+        FROM analytics_events us
+        WHERE us.event_name = 'upload_start'
+          AND us.occurred_at BETWEEN ? AND ?
+          AND EXISTS (
+            SELECT 1
+            FROM analytics_events de
+            JOIN analytics_events ue
+              ON ue.analytics_transfer_id = de.analytics_transfer_id
+              AND ue.event_name = 'upload_success'
+            WHERE de.event_name = 'download_success'
+              AND de.analytics_transfer_id IS NOT NULL
+              AND de.anonymous_client_id = us.anonymous_client_id
+              AND ue.anonymous_client_id != de.anonymous_client_id
+              AND de.occurred_at < us.occurred_at
+              AND de.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND us.occurred_at
+              AND ue.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND de.occurred_at
+          )
+      `,
+      [start, end, start, start]
+    );
+  }
+
   return countScalar(
     db,
     `
@@ -156,36 +213,9 @@ export async function computeDailyMetrics(
   env: CloudflareEnv,
   dateUtc: string
 ): Promise<DailyMetrics> {
-  const { start, end } = dayRange(dateUtc);
-  const db = env.DB;
+  const metrics = await collectDailyMetrics(env, dateUtc);
 
-  const metrics: DailyMetrics = {
-    date: dateUtc,
-    uniqueSenders: await countEventName(db, "upload_success", start, end, true),
-    newSenders: await countNewSenders(db, start, end),
-    uploadStarts: await countEventName(db, "upload_start", start, end),
-    uploadSuccesses: await countEventName(db, "upload_success", start, end),
-    downloadStarts: await countEventName(db, "download_start", start, end),
-    downloadSuccesses: await countEventName(db, "download_success", start, end),
-    successfulTransfers: await countSuccessfulTransfers(db, start, end),
-    recipientToSenderConversions: await countRecipientToSenderConversions(
-      db,
-      start,
-      end
-    ),
-    sessions: await countScalar(
-      db,
-      `SELECT COUNT(DISTINCT session_id) AS count FROM analytics_events WHERE occurred_at BETWEEN ? AND ?`,
-      [start, end]
-    ),
-    landingSessions: await countScalar(
-      db,
-      `SELECT COUNT(DISTINCT session_id) AS count FROM analytics_events WHERE event_name = 'landing_view' AND occurred_at BETWEEN ? AND ?`,
-      [start, end]
-    ),
-  };
-
-  await db
+  await env.DB
     .prepare(
       `
         INSERT OR REPLACE INTO analytics_daily_metrics (
@@ -215,10 +245,67 @@ export async function computeDailyMetrics(
   return metrics;
 }
 
+// Overviewの当日分など、D1への書き込みを伴わない集計に使う。
+export async function collectDailyMetrics(
+  env: CloudflareEnv,
+  dateUtc: string,
+  options: { limitRelatedEventsToRange?: boolean } = {}
+): Promise<DailyMetrics> {
+  const { start, end } = dayRange(dateUtc);
+  const db = env.DB;
+
+  const metrics: DailyMetrics = {
+    date: dateUtc,
+    uniqueSenders: await countEventName(db, "upload_success", start, end, true),
+    newSenders: await countNewSenders(db, start, end),
+    uploadStarts: await countEventName(db, "upload_start", start, end),
+    uploadSuccesses: await countEventName(db, "upload_success", start, end),
+    downloadStarts: await countEventName(db, "download_start", start, end),
+    downloadSuccesses: await countEventName(db, "download_success", start, end),
+    successfulTransfers: await countSuccessfulTransfers(
+      db,
+      start,
+      end,
+      options.limitRelatedEventsToRange ?? false
+    ),
+    recipientToSenderConversions: await countRecipientToSenderConversions(
+      db,
+      start,
+      end,
+      options.limitRelatedEventsToRange ?? false
+    ),
+    sessions: await countScalar(
+      db,
+      `SELECT COUNT(DISTINCT session_id) AS count FROM analytics_events WHERE occurred_at BETWEEN ? AND ?`,
+      [start, end]
+    ),
+    landingSessions: await countScalar(
+      db,
+      `SELECT COUNT(DISTINCT session_id) AS count FROM analytics_events WHERE event_name = 'landing_view' AND occurred_at BETWEEN ? AND ?`,
+      [start, end]
+    ),
+  };
+
+  return metrics;
+}
+
 export function formatUtcDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
 export function yesterdayUtc(now: Date = new Date()): string {
   return formatUtcDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+}
+
+export async function recomputeRecentDailyMetrics(
+  env: CloudflareEnv,
+  now: Date = new Date(),
+  compute: (env: CloudflareEnv, dateUtc: string) => Promise<DailyMetrics> =
+    computeDailyMetrics
+): Promise<void> {
+  const yesterday = yesterdayUtc(now);
+  const precedingDay = yesterdayUtc(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+
+  await compute(env, precedingDay);
+  await compute(env, yesterday);
 }

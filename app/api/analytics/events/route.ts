@@ -2,7 +2,11 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import { checkRateLimit } from "@/lib/rateLimit";
-import { findForbiddenPropertyKeys, type AnalyticsEvent } from "@/lib/analytics/schema";
+import {
+  findForbiddenAnalyticsValueFields,
+  findForbiddenPropertyKeys,
+  type AnalyticsEvent,
+} from "@/lib/analytics/schema";
 import {
   AnalyticsEventsRequestSchema,
   type AnalyticsEventsResponse,
@@ -131,7 +135,7 @@ export const POST = withApiHandler(
     const { events } = parsed.data;
 
     // Privacy Guard(要件書33章)。allowlistスキーマ自体も未知キーを
-    // reject するが、名指しの禁止キーはより分かりやすいログを残して
+    // reject する。さらに、許可済みキーの値にもPrivacy Guardを適用して
     // リクエスト全体を拒否する。timestampは正規化した値をこのループで
     // 確定させ、以降のINSERTでは元の(表記ゆれがありうる)値を使わない。
     const normalizedTimestamps: string[] = [];
@@ -144,6 +148,16 @@ export const POST = withApiHandler(
       if (forbiddenKeys.length > 0) {
         console.error(
           `POST /api/analytics/events: forbidden property keys detected: ${forbiddenKeys.join(", ")}`
+        );
+
+        return rejectedResponse("許可されていないデータが含まれています");
+      }
+
+      const forbiddenValueFields = findForbiddenAnalyticsValueFields(event);
+
+      if (forbiddenValueFields.length > 0) {
+        console.error(
+          `POST /api/analytics/events: forbidden values detected in: ${forbiddenValueFields.join(", ")}`
         );
 
         return rejectedResponse("許可されていないデータが含まれています");

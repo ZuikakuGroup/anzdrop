@@ -11,6 +11,10 @@ export function classifyDevice(userAgent: string): DeviceClass {
     return "tablet";
   }
 
+  if (/android/.test(ua) && !/mobi/.test(ua)) {
+    return "tablet";
+  }
+
   if (/mobi|iphone|android/.test(ua)) {
     return "mobile";
   }

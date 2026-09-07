@@ -61,6 +61,18 @@ describe("GET /api/admin/analytics", () => {
     expect(response.status).toBe(400);
   });
 
+  it.each([
+    "from=2026-02-30&to=2026-03-01",
+    "from=2026-1-01&to=2026-01-31",
+    "from=2026-02-01&to=2026-01-31",
+  ])("rejects an invalid date range before generating a report: %s", async (range) => {
+    authorize();
+
+    const response = await getAnalytics(`view=funnel&${range}`);
+
+    expect(response.status).toBe(400);
+  });
+
   it("returns the overview report for view=overview", async () => {
     authorize();
 

@@ -23,8 +23,8 @@
 - リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
   - `wrappedKey`/`keySalt` は新規共有かつパスワード保護を設定した場合のみ。
   - `encryptedFileName`・`wrappedKey`・`keySalt` は、クライアントが送る base64url(パディングなし)を前提に、ヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する(不正な文字・長さは400)。`encrypted_file_name` は `GET /api/file/[fileId]` の `Content-Disposition` ヘッダに載るため、制御文字・改行・`"` の混入を入口で防ぎ、さらに `GET /api/file/[fileId]` 側でもヘッダ生成直前に安全な文字集合へ丸める(`safeAttachmentFilename`。検証前に保存された古い行・破損データ対策)。
-- レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt, analyticsTransferId }`
-  - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。`shareId`自体を既に返しているため追加の情報漏洩にはならない。
+- レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt, analyticsTransferId? }`
+  - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。`ANALYTICS_SECRET`未設定などでID生成に失敗した場合は省略されるが、フィールドがなくても成功レスポンスとして有効。`shareId`自体を既に返しているため追加の情報漏洩にはならない。
 - ファイルサイズ上限・選べる`retention`はアップローダーの実効プランによって異なる(free: 5GB・`once`/`1d`/`3d`/`7d`、standard: 20GB・上記+`15d`、premium: 50GB・上記+`30d`)。詳細は[`accounts.md`](./accounts.md#プランの差libplants)の表を参照。超過・許可外の場合はそれぞれ400/403。
 
 ### `POST /api/upload/chunk`
@@ -56,8 +56,8 @@
 
 - 共有が存在しない/期限切れ/一時停止中の場合はそれぞれ404/410/403。
 - `shareId` 単位のレート制限あり。超過時は本文を返さず429(`Retry-After: 60`)。存在しない `shareId` でも枠を消費する(共有の有無で応答が変わらないようにするため)。ただしカウンタはキーごとに独立しているので、**`shareId` の総当たり(列挙)対策にはならない**(列挙の抑止は外側のWAFルールの役目)。
-- レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt, previewAllowed }, files: [{ id, name, size, isOneTime }], analyticsTransferId }`
-  - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。
+- レスポンス: `{ success: true, share: { id, expires_at, wrappedKey, keySalt, previewAllowed }, files: [{ id, name, size, isOneTime }], analyticsTransferId? }`
+  - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。`ANALYTICS_SECRET`未設定などでID生成に失敗した場合は省略されるが、フィールドがなくても成功レスポンスとして有効。
   - `files` の `name` は暗号化済みファイル名(クライアント側で復号が必要)。
   - `previewAllowed` は共有作成時のアップローダーの実効プランから一度だけ決まる(有料プランのみ`true`)。`true`の場合、対応拡張子(MP4/MP3/JPEG/PNG)のファイルはクライアント側で`/api/file/[fileId]`を使ってブラウザ内プレビューできる([`lib/preview.ts`](../lib/preview.ts))。
   - `isOneTime`が`true`のファイル(保存期間「1回」)は、プレビューが`/api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、`previewAllowed`が`true`でもクライアント側でプレビューを非表示にする。

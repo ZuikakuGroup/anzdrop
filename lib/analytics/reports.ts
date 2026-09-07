@@ -7,7 +7,7 @@
 // (要件書22章の90日という保持期間とRetentionダッシュボードの最大観測
 // 期間=90日が一致しているのはこのため)。
 
-import { computeDailyMetrics } from "@/lib/analytics/aggregate";
+import { collectDailyMetrics } from "@/lib/analytics/aggregate";
 
 export type OverviewReport = {
   today: {
@@ -100,6 +100,7 @@ async function computeRepeatSenderRate(
   now: Date
 ): Promise<number | null> {
   const observationEnd = daysAgo(now, 30).toISOString();
+  const lookbackStart = daysAgo(now, 90).toISOString();
 
   const row = await db
     .prepare(
@@ -107,7 +108,7 @@ async function computeRepeatSenderRate(
         WITH first_upload AS (
           SELECT anonymous_client_id, MIN(occurred_at) AS first_at
           FROM analytics_events
-          WHERE event_name = 'upload_success'
+          WHERE event_name = 'upload_success' AND occurred_at BETWEEN ? AND ?
           GROUP BY anonymous_client_id
         ),
         eligible AS (
@@ -124,6 +125,7 @@ async function computeRepeatSenderRate(
               AND u.anonymous_client_id = e.anonymous_client_id
               AND u.occurred_at > e.first_at
               AND u.occurred_at <= strftime('%Y-%m-%dT%H:%M:%fZ', e.first_at, '+30 days')
+              AND u.occurred_at BETWEEN ? AND ?
           )
         )
         SELECT
@@ -131,7 +133,7 @@ async function computeRepeatSenderRate(
           (SELECT COUNT(*) FROM repeaters) AS repeat_count
       `
     )
-    .bind(observationEnd)
+    .bind(lookbackStart, observationEnd, lookbackStart, observationEnd, observationEnd)
     .first<{ eligible_count: number; repeat_count: number }>();
 
   return rate(row?.repeat_count ?? 0, row?.eligible_count ?? 0);
@@ -144,10 +146,13 @@ export async function getOverviewReport(
   const db = env.DB;
   const today = toUtcDateString(now);
   const last30Start = toUtcDateString(daysAgo(now, 29));
+  const yesterday = toUtcDateString(daysAgo(now, 1));
 
-  const todayMetrics = await computeDailyMetrics(env, today);
+  const todayMetrics = await collectDailyMetrics(env, today, {
+    limitRelatedEventsToRange: true,
+  });
   const [last30, repeatSenderRate] = await Promise.all([
-    sumDailyMetrics(db, last30Start, today),
+    sumDailyMetrics(db, last30Start, yesterday),
     computeRepeatSenderRate(db, now),
   ]);
 
@@ -162,11 +167,12 @@ export async function getOverviewReport(
       ),
     },
     last30Days: {
-      uniqueSenders: last30.uniqueSenders,
-      successfulTransfers: last30.successfulTransfers,
-      newSenders: last30.newSenders,
+      uniqueSenders: last30.uniqueSenders + todayMetrics.uniqueSenders,
+      successfulTransfers: last30.successfulTransfers + todayMetrics.successfulTransfers,
+      newSenders: last30.newSenders + todayMetrics.newSenders,
       repeatSenderRate,
-      recipientToSenderConversions: last30.recipientToSenderConversions,
+      recipientToSenderConversions:
+        last30.recipientToSenderConversions + todayMetrics.recipientToSenderConversions,
     },
   };
 }
@@ -608,7 +614,7 @@ export async function getRecipientGrowthReport(
   const db = env.DB;
 
   const [uniqueRecipients, ctaViews, ctaClicks] = await Promise.all([
-    countEvents(db, ["download_success"], from, to, true),
+    countRecipients(db, from, to),
     countEvents(db, ["recipient_send_cta_view"], from, to),
     countEvents(db, ["recipient_send_cta_click"], from, to),
   ]);
@@ -653,4 +659,25 @@ export async function getRecipientGrowthReport(
     conversions: conversionRow?.count ?? 0,
     averageDaysToConversion: conversionRow?.avg_days ?? null,
   };
+}
+
+async function countRecipients(db: D1Database, from: string, to: string): Promise<number> {
+  const row = await db
+    .prepare(
+      `
+        SELECT COUNT(DISTINCT de.anonymous_client_id) AS count
+        FROM analytics_events de
+        JOIN analytics_events ue
+          ON ue.analytics_transfer_id = de.analytics_transfer_id
+          AND ue.event_name = 'upload_success'
+        WHERE de.event_name = 'download_success'
+          AND de.analytics_transfer_id IS NOT NULL
+          AND de.occurred_at BETWEEN ? AND ?
+          AND ue.anonymous_client_id != de.anonymous_client_id
+      `
+    )
+    .bind(from, to)
+    .first<{ count: number }>();
+
+  return row?.count ?? 0;
 }

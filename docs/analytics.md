@@ -61,7 +61,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 `migrations/0016_create_analytics_tables.sql`:
 
 - `analytics_events`: 生イベント。90日保持([`lib/analytics/retention.ts`](../lib/analytics/retention.ts)が毎日削除)。
-- `analytics_daily_metrics`: 日次集計。無期限保持([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が毎日UTC 00:10に前日分を計算)。
+- `analytics_daily_metrics`: 日次集計。無期限保持([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が毎日UTC 00:10に前日分とその前日分を再計算)。
 
 **既知の制約**: `successful_transfers`・`recipient_to_sender_conversions`・Retentionダッシュボードのコホート分析は、対象クライアント/transferの過去の全イベントを参照する集計です。生イベントの保持期間(90日)を超えた期間をまたぐ場合、当時のイベントが既に削除されているため正確に計算できないことがあります。Retentionダッシュボードの観測上限をDay 90に揃えているのはこのためです。
 

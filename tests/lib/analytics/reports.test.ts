@@ -91,6 +91,41 @@ describe("getOverviewReport", () => {
     expect(report.today.uploadSuccessRate).toBe(1);
   });
 
+  it("does not write daily metrics while reading the overview", async () => {
+    await getOverviewReport(env, TODAY);
+
+    const row = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM analytics_daily_metrics"
+    ).first<{ count: number }>();
+
+    expect(row?.count).toBe(0);
+  });
+
+  it("includes today's recipient-to-sender conversions in the last 30 days", async () => {
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: "2026-05-10T08:00:00.000Z",
+      anonymousClientId: "sender",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "download_success",
+      occurredAt: "2026-05-10T09:00:00.000Z",
+      anonymousClientId: "recipient",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "upload_start",
+      occurredAt: "2026-05-10T10:00:00.000Z",
+      anonymousClientId: "recipient",
+      analyticsTransferId: "transfer-2",
+    });
+
+    const report = await getOverviewReport(env, TODAY);
+
+    expect(report.last30Days.recipientToSenderConversions).toBe(1);
+  });
+
   it("returns null rates when there is no data (avoids division by zero)", async () => {
     const report = await getOverviewReport(env, TODAY);
 
@@ -396,5 +431,24 @@ describe("getRecipientGrowthReport", () => {
     expect(report.ctaClicks).toBe(1);
     expect(report.conversions).toBe(1);
     expect(report.averageDaysToConversion).toBe(1);
+  });
+
+  it("excludes a sender downloading their own transfer from unique recipients", async () => {
+    await insertEvent({
+      eventName: "upload_success",
+      occurredAt: "2026-05-01T00:00:00.000Z",
+      anonymousClientId: "sender",
+      analyticsTransferId: "transfer-1",
+    });
+    await insertEvent({
+      eventName: "download_success",
+      occurredAt: "2026-05-02T00:00:00.000Z",
+      anonymousClientId: "sender",
+      analyticsTransferId: "transfer-1",
+    });
+
+    const report = await getRecipientGrowthReport(env, "2026-05-01", "2026-05-31");
+
+    expect(report.uniqueRecipients).toBe(0);
   });
 });
