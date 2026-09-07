@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { hasDownloadedAllFiles } from "@/lib/download/downloadProgress";
+import {
+  hasDownloadedAllFiles,
+  shouldShowSendCta,
+} from "@/lib/download/downloadProgress";
 import type { DecryptedFile } from "@/lib/download/decrypt";
 
 const files = [
@@ -32,6 +35,17 @@ describe("hasDownloadedAllFiles", () => {
         [files[0]],
         new Set(["first"]),
         new Set(["second"])
+      )
+    ).toBe(false);
+  });
+
+  it("次から表示しない設定済みなら、完了後もCTAモーダル・表示計測を行わない", () => {
+    expect(
+      shouldShowSendCta(
+        files,
+        new Set(["first", "second"]),
+        new Set(),
+        true
       )
     ).toBe(false);
   });

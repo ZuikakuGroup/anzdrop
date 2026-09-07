@@ -54,7 +54,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 | `upload_start` / `upload_success` / `upload_error` | `lib/upload/uploadFile.ts` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
 | `share_link_copy` / `share_native` | 共有リンクコピー・Web Share API利用時 |
 | `download_start` / `download_success` / `download_error` | `components/download/DownloadPage.tsx` |
-| `recipient_send_cta_view` / `recipient_send_cta_click` | 全ファイルのダウンロード完了後にモーダル表示される「Anzdropでファイルを送る」導線 |
+| `recipient_send_cta_view` / `recipient_send_cta_click` | 全ファイルのダウンロード完了後にモーダル表示される「Anzdropでファイルを送る」導線。利用者が「次から表示しない」を選ぶと、このブラウザの`localStorage`だけへ設定を保存し、以後は表示・計測しない |
 
 ## データベース
 

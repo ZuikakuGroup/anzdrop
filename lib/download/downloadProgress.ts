@@ -12,3 +12,16 @@ export function hasDownloadedAllFiles(
     && unavailableFileIds.size === 0
   );
 }
+
+// CTAモーダルの表示と表示計測はこの同じ条件に従う。
+export function shouldShowSendCta(
+  files: DecryptedFile[],
+  downloadedFileIds: ReadonlySet<string>,
+  unavailableFileIds: ReadonlySet<string>,
+  isSendCtaDisabled: boolean
+): boolean {
+  return (
+    !isSendCtaDisabled &&
+    hasDownloadedAllFiles(files, downloadedFileIds, unavailableFileIds)
+  );
+}

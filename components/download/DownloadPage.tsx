@@ -30,7 +30,11 @@ import {
 } from "@/lib/download/decrypt";
 import { getShowSaveFilePicker, saveDecryptedFile } from "@/lib/download/saveFile";
 import { downloadAllFiles } from "@/lib/download/downloadAll";
-import { hasDownloadedAllFiles } from "@/lib/download/downloadProgress";
+import { shouldShowSendCta } from "@/lib/download/downloadProgress";
+import {
+  isSendCtaDisabled as getSendCtaDisabled,
+  setSendCtaDisabled,
+} from "@/lib/download/sendCtaPreference";
 import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSaver";
 import { track } from "@/lib/analytics/client";
 import { classifyDownloadError } from "@/lib/analytics/errorCodes";
@@ -104,9 +108,12 @@ export default function DownloadPage({
     () => new Set()
   );
   const [isSendCtaOpen, setIsSendCtaOpen] = useState(false);
+  const [isSendCtaDisabled, setIsSendCtaDisabled] = useState(
+    getSendCtaDisabled
+  );
   const ctaViewTrackedRef = useRef(false);
   const sendCtaCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const sendCtaLinkRef = useRef<HTMLAnchorElement>(null);
+  const sendCtaDisableCheckboxRef = useRef<HTMLInputElement>(null);
 
   // showSaveFilePicker が使えないブラウザ(Firefox/Safari)向けに、
   // 大容量ファイルをメモリに載せずに保存するための Service Worker を登録する
@@ -341,7 +348,12 @@ export default function DownloadPage({
   // 計測する。全ファイルのダウンロード完了時にモーダルを表示し、1回だけ計測する。
   useEffect(() => {
     if (
-      hasDownloadedAllFiles(files, downloadedFileIds, unavailableFileIds) &&
+      shouldShowSendCta(
+        files,
+        downloadedFileIds,
+        unavailableFileIds,
+        isSendCtaDisabled
+      ) &&
       !ctaViewTrackedRef.current
     ) {
       ctaViewTrackedRef.current = true;
@@ -350,7 +362,7 @@ export default function DownloadPage({
         analyticsTransferId: analyticsTransferIdRef.current,
       });
     }
-  }, [downloadedFileIds, files, unavailableFileIds]);
+  }, [downloadedFileIds, files, isSendCtaDisabled, unavailableFileIds]);
 
   useEffect(() => {
     if (!isSendCtaOpen) {
@@ -372,16 +384,16 @@ export default function DownloadPage({
       }
 
       const closeButton = sendCtaCloseButtonRef.current;
-      const ctaLink = sendCtaLinkRef.current;
+      const disableCheckbox = sendCtaDisableCheckboxRef.current;
 
-      if (!closeButton || !ctaLink) {
+      if (!closeButton || !disableCheckbox) {
         return;
       }
 
       if (event.shiftKey && document.activeElement === closeButton) {
         event.preventDefault();
-        ctaLink.focus();
-      } else if (!event.shiftKey && document.activeElement === ctaLink) {
+        disableCheckbox.focus();
+      } else if (!event.shiftKey && document.activeElement === disableCheckbox) {
         event.preventDefault();
         closeButton.focus();
       }
@@ -403,6 +415,11 @@ export default function DownloadPage({
     track("recipient_send_cta_click", {
       analyticsTransferId: analyticsTransferIdRef.current,
     });
+  };
+
+  const handleSendCtaDisabledChange = (disabled: boolean) => {
+    setIsSendCtaDisabled(disabled);
+    setSendCtaDisabled(disabled);
   };
 
   const downloadAll = async () => {
@@ -679,13 +696,24 @@ export default function DownloadPage({
               Anzdropなら、あなたもかんたんにファイルを送れます。
             </p>
             <Link
-              ref={sendCtaLinkRef}
               href="/"
               onClick={handleSendCtaClick}
               className="mt-5 block rounded bg-brand px-4 py-3 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
             >
               Anzdropでファイルを送る
             </Link>
+            <label className="mt-4 flex items-center justify-center gap-2 text-xs text-ink/60">
+              <input
+                ref={sendCtaDisableCheckboxRef}
+                type="checkbox"
+                checked={isSendCtaDisabled}
+                onChange={(event) =>
+                  handleSendCtaDisabledChange(event.target.checked)
+                }
+                className="h-4 w-4 accent-brand"
+              />
+              次から表示しない
+            </label>
           </div>
         </div>
       )}
