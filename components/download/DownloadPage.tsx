@@ -30,6 +30,7 @@ import {
 } from "@/lib/download/decrypt";
 import { getShowSaveFilePicker, saveDecryptedFile } from "@/lib/download/saveFile";
 import { downloadAllFiles } from "@/lib/download/downloadAll";
+import { hasDownloadedAllFiles } from "@/lib/download/downloadProgress";
 import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSaver";
 import { track } from "@/lib/analytics/client";
 import { classifyDownloadError } from "@/lib/analytics/errorCodes";
@@ -96,8 +97,16 @@ export default function DownloadPage({
   const [isUnlocking, setIsUnlocking] = useState(false);
 
   const analyticsTransferIdRef = useRef<string | undefined>(undefined);
-  const [hasDownloadedSomething, setHasDownloadedSomething] = useState(false);
+  const [downloadedFileIds, setDownloadedFileIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [unavailableFileIds, setUnavailableFileIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [isSendCtaOpen, setIsSendCtaOpen] = useState(false);
   const ctaViewTrackedRef = useRef(false);
+  const sendCtaCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const sendCtaLinkRef = useRef<HTMLAnchorElement>(null);
 
   // showSaveFilePicker が使えないブラウザ(Firefox/Safari)向けに、
   // 大容量ファイルをメモリに載せずに保存するための Service Worker を登録する
@@ -256,9 +265,10 @@ export default function DownloadPage({
         // eslint-disable-next-line react-hooks/purity -- 上記と同じ理由
         properties: { durationMs: Date.now() - startedAt },
       });
-      setHasDownloadedSomething(true);
+      setDownloadedFileIds((previous) => new Set(previous).add(file.id));
     } catch (err) {
       if (err instanceof FileGoneError) {
+        setUnavailableFileIds((previous) => new Set(previous).add(file.id));
         setFiles((prev) => prev.filter((f) => f.id !== file.id));
       }
 
@@ -315,6 +325,7 @@ export default function DownloadPage({
       setPreview({ file, url, kind });
     } catch (err) {
       if (err instanceof FileGoneError) {
+        setUnavailableFileIds((previous) => new Set(previous).add(file.id));
         setFiles((prev) => prev.filter((f) => f.id !== file.id));
       }
 
@@ -327,15 +338,66 @@ export default function DownloadPage({
   const closePreview = () => setPreview(null);
 
   // 要件書10.12・29章。受け取り側から送信側への転換導線(Growth Loop)を
-  // 計測する。ダウンロードに成功したタイミングで初めて表示・1回だけ計測する。
+  // 計測する。全ファイルのダウンロード完了時にモーダルを表示し、1回だけ計測する。
   useEffect(() => {
-    if (hasDownloadedSomething && !ctaViewTrackedRef.current) {
+    if (
+      hasDownloadedAllFiles(files, downloadedFileIds, unavailableFileIds) &&
+      !ctaViewTrackedRef.current
+    ) {
       ctaViewTrackedRef.current = true;
+      setIsSendCtaOpen(true);
       track("recipient_send_cta_view", {
         analyticsTransferId: analyticsTransferIdRef.current,
       });
     }
-  }, [hasDownloadedSomething]);
+  }, [downloadedFileIds, files, unavailableFileIds]);
+
+  useEffect(() => {
+    if (!isSendCtaOpen) {
+      return;
+    }
+
+    const previousFocus = document.activeElement;
+    sendCtaCloseButtonRef.current?.focus();
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsSendCtaOpen(false);
+      }
+    };
+
+    const keepFocusInModal = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const closeButton = sendCtaCloseButtonRef.current;
+      const ctaLink = sendCtaLinkRef.current;
+
+      if (!closeButton || !ctaLink) {
+        return;
+      }
+
+      if (event.shiftKey && document.activeElement === closeButton) {
+        event.preventDefault();
+        ctaLink.focus();
+      } else if (!event.shiftKey && document.activeElement === ctaLink) {
+        event.preventDefault();
+        closeButton.focus();
+      }
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", keepFocusInModal);
+
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", keepFocusInModal);
+      if (previousFocus instanceof HTMLElement) {
+        previousFocus.focus();
+      }
+    };
+  }, [isSendCtaOpen]);
 
   const handleSendCtaClick = () => {
     track("recipient_send_cta_click", {
@@ -357,8 +419,10 @@ export default function DownloadPage({
     setIsDownloadingAll(true);
     setError("");
 
-    const removeFile = (fileId: string) =>
+    const removeFile = (fileId: string) => {
+      setUnavailableFileIds((previous) => new Set(previous).add(fileId));
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    };
 
     const attemptId = crypto.randomUUID();
     const analyticsTransferId = analyticsTransferIdRef.current;
@@ -368,7 +432,7 @@ export default function DownloadPage({
 
       track("download_start", { attemptId, analyticsTransferId });
 
-      const { cancelled } = await downloadAllFiles(files, key, {
+      const { cancelled, goneFileIds } = await downloadAllFiles(files, key, {
         onFileGone: removeFile,
       });
 
@@ -381,7 +445,9 @@ export default function DownloadPage({
         analyticsTransferId,
         properties: { durationMs: Date.now() - startedAt },
       });
-      setHasDownloadedSomething(true);
+      if (goneFileIds.length === 0) {
+        setDownloadedFileIds(new Set(files.map((file) => file.id)));
+      }
     } catch (err) {
       track("download_error", {
         attemptId,
@@ -540,15 +606,6 @@ export default function DownloadPage({
                   : "全てダウンロード"}
             </button>
 
-            {hasDownloadedSomething && (
-              <Link
-                href="/"
-                onClick={handleSendCtaClick}
-                className="block rounded border-2 border-ink/20 px-4 py-3 text-center text-xs font-bold text-ink/60 transition-colors hover:border-ink/40 hover:text-ink"
-              >
-                Anzdropでファイルを送る
-              </Link>
-            )}
           </div>
         </div>
       </main>
@@ -590,6 +647,45 @@ export default function DownloadPage({
                 className="max-h-[70vh] w-full rounded object-contain"
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {isSendCtaOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4"
+          onClick={() => setIsSendCtaOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="send-cta-title"
+            className="relative w-full max-w-sm rounded-lg bg-paper p-6 text-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              ref={sendCtaCloseButtonRef}
+              onClick={() => setIsSendCtaOpen(false)}
+              aria-label="閉じる"
+              title="閉じる"
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+            <h2 id="send-cta-title" className="text-lg font-black">
+              ダウンロードが完了しました
+            </h2>
+            <p className="mt-2 text-sm text-ink/60">
+              Anzdropなら、あなたもかんたんにファイルを送れます。
+            </p>
+            <Link
+              ref={sendCtaLinkRef}
+              href="/"
+              onClick={handleSendCtaClick}
+              className="mt-5 block rounded bg-brand px-4 py-3 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+            >
+              Anzdropでファイルを送る
+            </Link>
           </div>
         </div>
       )}
