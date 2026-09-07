@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import BrandHeader from "./BrandHeader";
 import { ChevronIcon, MenuToggleIcon } from "./ShareIcons";
 import type { MeResponse } from "@/app/api/account/me/schema";
@@ -65,7 +66,12 @@ export default function SiteHeader() {
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b border-ink/10 bg-paper px-6 sm:px-8">
       <div className="flex flex-1 items-center">
-        <BrandHeader />
+        <Link
+          href="/"
+          className="rounded transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        >
+          <BrandHeader />
+        </Link>
       </div>
 
       <nav className="hidden flex-1 justify-center gap-6 text-xs font-bold md:flex">
