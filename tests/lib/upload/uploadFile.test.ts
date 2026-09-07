@@ -109,6 +109,45 @@ describe("uploadEncryptedFile", () => {
     expect(factory.createdCount()).toBe(1);
   });
 
+  it("start が成功した直後(チャンク送信の前)に onStarted を呼び、analyticsTransferId を返す", async () => {
+    const factory = makeChunkStreamFactory();
+    const onStartedCalls: unknown[] = [];
+    let chunkCallCountAtOnStarted = 0;
+    let chunkCalls = 0;
+
+    stubFetch((url) => {
+      if (url === "/api/upload/start") {
+        return json({
+          success: true,
+          shareId: "share-xyz",
+          uploadToken: "token-xyz",
+          uploadSessionId: "session-xyz",
+          analyticsTransferId: "a".repeat(64),
+        });
+      }
+      if (url === "/api/upload/chunk") {
+        chunkCalls++;
+        return new Response(null, { status: 200 });
+      }
+      return json({ success: true, fileId: "file-xyz" });
+    });
+
+    const result = await uploadEncryptedFile({
+      ...baseParams,
+      createChunkStream: factory.create,
+      onStarted: (info) => {
+        chunkCallCountAtOnStarted = chunkCalls;
+        onStartedCalls.push(info);
+      },
+    });
+
+    expect(onStartedCalls).toEqual([
+      { shareId: "share-xyz", analyticsTransferId: "a".repeat(64) },
+    ]);
+    expect(chunkCallCountAtOnStarted).toBe(0);
+    expect(result.analyticsTransferId).toBe("a".repeat(64));
+  });
+
   it("start が失敗したらチャンク送信も complete も呼ばずに throw する", async () => {
     const factory = makeChunkStreamFactory();
     const { calls } = stubFetch((url) => {

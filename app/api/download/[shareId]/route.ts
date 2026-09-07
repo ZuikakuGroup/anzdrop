@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 import { checkShareAccessible } from "@/lib/share-auth";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -123,10 +124,22 @@ export const GET = withApiHandler(
       isOneTime: file.max_downloads !== null,
     }));
 
+    let analyticsTransferId: string | undefined;
+
+    try {
+      analyticsTransferId = await computeAnalyticsTransferId(
+        shareId,
+        env.ANALYTICS_SECRET
+      );
+    } catch (error) {
+      console.error("GET /api/download/[shareId]: analytics transfer ID generation failed:", error);
+    }
+
     const responseBody: DownloadResponse = {
       success: true,
       share: responseShare,
       files: responseFiles,
+      ...(analyticsTransferId ? { analyticsTransferId } : {}),
     };
 
     return Response.json(responseBody, {

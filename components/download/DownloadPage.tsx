@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { importKey, decodeBase64Url } from "@/lib/crypto";
 import { formatBytes } from "@/lib/format";
 import {
@@ -30,6 +31,8 @@ import {
 import { getShowSaveFilePicker, saveDecryptedFile } from "@/lib/download/saveFile";
 import { downloadAllFiles } from "@/lib/download/downloadAll";
 import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSaver";
+import { track } from "@/lib/analytics/client";
+import { classifyDownloadError } from "@/lib/analytics/errorCodes";
 
 type DownloadPageProps = {
   shareId: string;
@@ -45,6 +48,7 @@ type DownloadResponse = {
     previewAllowed: boolean;
   };
   files: RawFile[];
+  analyticsTransferId?: string;
   error?: string;
 };
 
@@ -91,6 +95,10 @@ export default function DownloadPage({
   const [passwordError, setPasswordError] = useState("");
   const [isUnlocking, setIsUnlocking] = useState(false);
 
+  const analyticsTransferIdRef = useRef<string | undefined>(undefined);
+  const [hasDownloadedSomething, setHasDownloadedSomething] = useState(false);
+  const ctaViewTrackedRef = useRef(false);
+
   // showSaveFilePicker が使えないブラウザ(Firefox/Safari)向けに、
   // 大容量ファイルをメモリに載せずに保存するための Service Worker を登録する
   // (GitHub issue #61)。失敗しても Blob フォールバックがあるので無視でよい。
@@ -125,6 +133,7 @@ export default function DownloadPage({
         }
 
         setPreviewAllowed(result.share.previewAllowed);
+        analyticsTransferIdRef.current = result.analyticsTransferId;
 
         if (result.share.wrappedKey && result.share.keySalt) {
           setPasswordProtection({
@@ -226,12 +235,42 @@ export default function DownloadPage({
     setDownloadingId(file.id);
     setError("");
 
+    const attemptId = crypto.randomUUID();
+    const analyticsTransferId = analyticsTransferIdRef.current;
+
     try {
-      await saveDecryptedFile(file, key, file.name);
+      // eslint-disable-next-line react-hooks/purity -- onClick越しに呼ばれるだけでレンダー中には実行されない
+      const startedAt = Date.now();
+
+      track("download_start", { attemptId, analyticsTransferId });
+
+      const { saved } = await saveDecryptedFile(file, key, file.name);
+
+      if (!saved) {
+        return;
+      }
+
+      track("download_success", {
+        attemptId,
+        analyticsTransferId,
+        // eslint-disable-next-line react-hooks/purity -- 上記と同じ理由
+        properties: { durationMs: Date.now() - startedAt },
+      });
+      setHasDownloadedSomething(true);
     } catch (err) {
       if (err instanceof FileGoneError) {
         setFiles((prev) => prev.filter((f) => f.id !== file.id));
       }
+
+      track("download_error", {
+        attemptId,
+        analyticsTransferId,
+        properties: {
+          errorCode: classifyDownloadError(err),
+          errorStage: "save",
+          retryCount: 0,
+        },
+      });
 
       setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
     } finally {
@@ -287,6 +326,23 @@ export default function DownloadPage({
 
   const closePreview = () => setPreview(null);
 
+  // 要件書10.12・29章。受け取り側から送信側への転換導線(Growth Loop)を
+  // 計測する。ダウンロードに成功したタイミングで初めて表示・1回だけ計測する。
+  useEffect(() => {
+    if (hasDownloadedSomething && !ctaViewTrackedRef.current) {
+      ctaViewTrackedRef.current = true;
+      track("recipient_send_cta_view", {
+        analyticsTransferId: analyticsTransferIdRef.current,
+      });
+    }
+  }, [hasDownloadedSomething]);
+
+  const handleSendCtaClick = () => {
+    track("recipient_send_cta_click", {
+      analyticsTransferId: analyticsTransferIdRef.current,
+    });
+  };
+
   const downloadAll = async () => {
     if (
       !key ||
@@ -304,9 +360,39 @@ export default function DownloadPage({
     const removeFile = (fileId: string) =>
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
 
+    const attemptId = crypto.randomUUID();
+    const analyticsTransferId = analyticsTransferIdRef.current;
+
     try {
-      await downloadAllFiles(files, key, { onFileGone: removeFile });
+      const startedAt = Date.now();
+
+      track("download_start", { attemptId, analyticsTransferId });
+
+      const { cancelled } = await downloadAllFiles(files, key, {
+        onFileGone: removeFile,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      track("download_success", {
+        attemptId,
+        analyticsTransferId,
+        properties: { durationMs: Date.now() - startedAt },
+      });
+      setHasDownloadedSomething(true);
     } catch (err) {
+      track("download_error", {
+        attemptId,
+        analyticsTransferId,
+        properties: {
+          errorCode: classifyDownloadError(err),
+          errorStage: "save",
+          retryCount: 0,
+        },
+      });
+
       setError(toFriendlyMessage(err, GENERIC_DOWNLOAD_ERROR));
     } finally {
       setDownloadingId("");
@@ -453,6 +539,16 @@ export default function DownloadPage({
                   ? "ダウンロード中..."
                   : "全てダウンロード"}
             </button>
+
+            {hasDownloadedSomething && (
+              <Link
+                href="/"
+                onClick={handleSendCtaClick}
+                className="block rounded border-2 border-ink/20 px-4 py-3 text-center text-xs font-bold text-ink/60 transition-colors hover:border-ink/40 hover:text-ink"
+              >
+                Anzdropでファイルを送る
+              </Link>
+            )}
           </div>
         </div>
       </main>

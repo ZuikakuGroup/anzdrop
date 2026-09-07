@@ -9,12 +9,13 @@ Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.
    │
    ▼
 Cloudflare Workers (Next.js / @opennextjs/cloudflare)
-   ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報のメタデータ
+   ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
    ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
-   └─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
+   ├─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
+   └─ Cron Trigger (毎日UTC 00:10) … 計測基盤の日次集計・生イベントの保持期限切れ削除([`analytics.md`](./analytics.md)参照)
 ```
 
-エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))を呼び出しています。
+エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
 
 ## Cloudflareバインディング
 
@@ -22,11 +23,12 @@ Cloudflare Workers (Next.js / @opennextjs/cloudflare)
 
 | バインディング | 種類 | 用途 |
 | --- | --- | --- |
-| `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` / `accounts` / `btc_payments` / `stripe_events` テーブル |
+| `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` / `accounts` / `btc_payments` / `stripe_events` / `analytics_events` / `analytics_daily_metrics` テーブル |
 | `FILES_BUCKET` | R2 Bucket | 暗号化済みファイル本体(マルチパートアップロード) |
-| `FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` | Rate Limiting | アプリ層のレート制限(下記「レート制限」参照) |
+| `FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER` | Rate Limiting | アプリ層のレート制限(下記「レート制限」参照) |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 環境変数 | 管理画面(`/admin`, `/api/admin/*`)のCloudflare Access JWT検証用 |
 | `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
+| `ANALYTICS_SECRET` | シークレット | 計測基盤がshareIdをHMACでハッシュ化する鍵([`analytics.md`](./analytics.md)参照) |
 | `SESSION_SECRET` / `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` | シークレット | アカウントセッション・有料プラン決済([`accounts.md`](./accounts.md)参照) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | ビルド時埋め込み | Stripe.js / Payment Element の初期化に使う公開可能キー(GitHub Secrets の `STRIPE_PUBLISHABLE_KEY` から埋め込み) |
 | `STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE` | 環境変数 | 有料プランの価格・期間設定([`deployment.md`](./deployment.md)参照)。`*_STANDARD` は提供準備中のStandard用で、現状の購入導線ではPremiumのみ使用する |
@@ -125,6 +127,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 | `SHARE_RATE_LIMITER` | `GET /api/download/[shareId]` | `shareId` | 正当な利用ではダウンロードページを開くたびに1回だけ([`components/download/DownloadPage.tsx`](../components/download/DownloadPage.tsx)。ポーリングもリトライもしない)。ただし1つの共有URLを多人数へ配る使い方があるため、人数ぶんの余裕を大きく取る |
 | `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
 | `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
+| `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | エンドポイント全体の固定キー + `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。固定キーでD1への総書き込み量を抑え、匿名ID単位でも連打を止める。IPは扱わない |
 
 実際の閾値は [`wrangler.jsonc`](../wrangler.jsonc) の `ratelimits` にあります(`period` は 10 か 60 のみ指定可能)。
 

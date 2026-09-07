@@ -7,6 +7,7 @@ type UploadStartResponse = {
   uploadToken?: string;
   uploadSessionId?: string;
   expiresAt?: string;
+  analyticsTransferId?: string;
   error?: string;
 };
 
@@ -33,6 +34,9 @@ export type UploadEncryptedFileParams = {
   turnstileToken?: string;
   concurrency: number;
   onBytesUploaded: (bytes: number) => void;
+  // /api/upload/start が成功した直後(チャンク送信を始める前)に1回呼ぶ。
+  // 計測(upload_start)をチャンク送信の完了を待たずに発火するためのフック。
+  onStarted?: (info: { shareId: string; analyticsTransferId?: string }) => void;
   // 暗号化チャンクストリームを「その場で新規に」生成するファクトリ。
   //
   // 呼び出しごとに、必ずファイルの先頭から作り直したストリームを返すこと。
@@ -46,6 +50,7 @@ export type UploadEncryptedFileParams = {
 export type UploadEncryptedFileResult = {
   shareId: string;
   uploadToken: string;
+  analyticsTransferId?: string;
 };
 
 async function parseJsonOrEmpty<T>(response: Response): Promise<T> {
@@ -89,6 +94,11 @@ export async function uploadEncryptedFile(
     throw new Error(startResult.error ?? `${params.path} の開始に失敗しました`);
   }
 
+  params.onStarted?.({
+    shareId: startResult.shareId,
+    analyticsTransferId: startResult.analyticsTransferId,
+  });
+
   await uploadChunksFromStream(
     params.createChunkStream(),
     startResult.uploadSessionId,
@@ -119,5 +129,6 @@ export async function uploadEncryptedFile(
   return {
     shareId: startResult.shareId,
     uploadToken: startResult.uploadToken,
+    analyticsTransferId: startResult.analyticsTransferId,
   };
 }

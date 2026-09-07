@@ -141,6 +141,38 @@ migration 0009(`plan`は0014)。
 
 migration 0009。
 
+### `analytics_events`
+
+計測基盤([`analytics.md`](./analytics.md)参照)の生イベント。append-only、90日程度で削除される([`lib/analytics/retention.ts`](../lib/analytics/retention.ts))。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `id` | INTEGER PK AUTOINCREMENT | 内部連番 |
+| `event_id` | TEXT UNIQUE | クライアントが発行するUUID。重複送信の除外に使う |
+| `event_name` | TEXT | イベント名(allowlist制、[`lib/analytics/schema.ts`](../lib/analytics/schema.ts)) |
+| `occurred_at` | TEXT | クライアント時刻(ISO8601) |
+| `received_at` | TEXT | サーバー受信時刻 |
+| `anonymous_client_id` / `session_id` | TEXT | 匿名クライアントID・セッションID |
+| `analytics_transfer_id` | TEXT (nullable) | `shareId`のHMAC(生の`shareId`は保存しない) |
+| `attempt_id` | TEXT (nullable) | アップロード/ダウンロード1回分の試行ID |
+| `source` / `medium` / `campaign` / `content` / `term` | TEXT (nullable) | UTM由来の流入情報(許可されたパラメータ値のみ) |
+| `landing_path` / `referrer_domain` / `device_class` / `browser_family` / `locale` | TEXT (nullable) | 文脈情報(Referrerはホスト名のみ、User-Agentは大まかな分類のみ) |
+| `properties` | TEXT (nullable) | イベント固有の追加情報(JSON文字列、allowlist済みキーのみ) |
+
+migration 0016(保持期限切れ削除用の`occurred_at`単独インデックスは0017)。ファイル名・復号鍵・URL全体・メールアドレス・真のIPはこのテーブルに含まれない。
+
+### `analytics_daily_metrics`
+
+計測基盤の日次集計。無期限保持(北極星指標の長期トレンド把握のため)。
+
+| カラム | 型 | 説明 |
+| --- | --- | --- |
+| `date` | TEXT PK | UTC日付(YYYY-MM-DD) |
+| `unique_senders` / `new_senders` / `upload_starts` / `upload_successes` / `download_starts` / `download_successes` / `successful_transfers` / `recipient_to_sender_conversions` / `sessions` / `landing_sessions` | INTEGER | 各KPIの日次集計値([`analytics.md`](./analytics.md)のKPI定義参照) |
+| `computed_at` | TEXT | 集計実行日時 |
+
+migration 0016。毎日UTC 00:10のCron Triggerから[`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が前日分とその前日分を再計算して書き込む。
+
 ## マイグレーション一覧
 
 | ファイル | 内容 |
@@ -160,5 +192,7 @@ migration 0009。
 | `0013_normalize_paid_plan_to_premium.sql` | Standardプラン新設に伴う`Plan`型3値化(`"free"\|"standard"\|"premium"`)。既存の`accounts.plan = 'paid'`を`'premium'`へ正規化 |
 | `0014_add_btc_payments_plan.sql` | `btc_payments.plan` 追加(Bitcoin決済がどのプラン向けかをWebhook確定時に判定するため) |
 | `0015_add_contacts.sql` | `contacts` テーブル新設(一般的なお問い合わせ) |
+| `0016_create_analytics_tables.sql` | `analytics_events`/`analytics_daily_metrics` テーブル新設(計測・分析基盤) |
+| `0017_add_analytics_occurred_at_index.sql` | `analytics_events.occurred_at` 単独インデックスを追加(分析イベントの期限切れ削除を効率化) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。

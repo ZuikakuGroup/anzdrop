@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { computeAnalyticsTransferId } from "@/lib/analytics/transferId";
 import { requireTurnstile } from "@/lib/turnstile";
 import {
   calculateExpiresAt,
@@ -175,12 +176,24 @@ export const POST = withApiHandler(
       )
       .run();
 
+    let analyticsTransferId: string | undefined;
+
+    try {
+      analyticsTransferId = await computeAnalyticsTransferId(
+        shareId,
+        env.ANALYTICS_SECRET
+      );
+    } catch (error) {
+      console.error("POST /api/upload/start: analytics transfer ID generation failed:", error);
+    }
+
     const responseBody: UploadStartResponse = {
       success: true,
       shareId,
       uploadToken,
       uploadSessionId,
       expiresAt,
+      ...(analyticsTransferId ? { analyticsTransferId } : {}),
     };
 
     return Response.json(responseBody);
