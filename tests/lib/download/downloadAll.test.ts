@@ -133,9 +133,10 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(result).toEqual({ cancelled: true, goneFileIds: [], started: false });
   });
 
-  it("合計サイズが閾値未満なら showSaveFilePicker があっても Blob 経路へ進む", async () => {
+  it("合計サイズが閾値未満なら両方のピッカーがあっても Blob 経路へ進む", async () => {
     const showSaveFilePicker = vi.fn();
-    vi.stubGlobal("window", { showSaveFilePicker });
+    const showDirectoryPicker = vi.fn();
+    vi.stubGlobal("window", { showSaveFilePicker, showDirectoryPicker });
     const blob = stubBlobDownload();
     fetchAndDecrypt.mockResolvedValue(new TextEncoder().encode("small zip"));
 
@@ -143,6 +144,7 @@ describe("downloadAllFiles — 経路の選択", () => {
 
     expect(result.started).toBe(true);
     expect(showSaveFilePicker).not.toHaveBeenCalled();
+    expect(showDirectoryPicker).not.toHaveBeenCalled();
     expect(fetchDecryptedStream).not.toHaveBeenCalled();
     expect(blob.downloadedName()).toBe("anzdrop.zip");
   });

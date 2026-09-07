@@ -77,8 +77,8 @@ function writableStreamToSink(
 //    (Firefox/Safari)かつ zip64 不要 → Service Worker 経由でストリーミング
 //    ZIP をダウンロード(GitHub issue #61)。小さい個別ファイルと同様、
 //    小さい ZIP では保存先選択ダイアログを出さない。
-// 3. showDirectoryPicker(Chromium 系で 4GiB 超) → フォルダを選んで1ファイル
-//    ずつストリーミング保存。
+// 3. 合計サイズが 200MiB 以上で showDirectoryPicker(Chromium 系で 4GiB 超)
+//    が使える → フォルダを選んで1ファイルずつストリーミング保存。
 // 4. どのストリーミング経路も使えない → 合計サイズが上限内ならメモリ内 ZIP、
 //    超える場合は個別ダウンロードを案内して中断。
 export async function downloadAllFiles(
@@ -182,7 +182,10 @@ export async function downloadAllFiles(
   }
 
   // --- 3. フォルダへ1ファイルずつストリーミング保存 ---
-  if (directoryPicker) {
+  if (
+    totalBytes >= SMALL_FILE_NO_PICKER_THRESHOLD_BYTES &&
+    directoryPicker
+  ) {
     let directory;
     try {
       directory = await directoryPicker({ mode: "readwrite" });
