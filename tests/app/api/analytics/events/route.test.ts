@@ -244,6 +244,9 @@ describe("POST /api/analytics/events", () => {
   it.each([
     ["anonymous client ID", { anonymousClientId: "alice@example.com" }],
     ["UTM source", { attribution: { source: "https://example.com/?token=secret" } }],
+    ["FTP URL", { attribution: { source: "ftp://example.com/report" } }],
+    ["data URL", { attribution: { source: "data:text/plain,secret" } }],
+    ["protocol-relative URL", { attribution: { source: "//example.com/report" } }],
     ["IP address", { sessionId: "203.0.113.1" }],
     [
       "error stage",

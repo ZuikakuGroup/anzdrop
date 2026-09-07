@@ -31,6 +31,10 @@
 | `OPENNODE_API_KEY` | OpenNode APIキー。charge作成とWebhook署名検証(HMAC鍵)の両方に使う |
 | `ANALYTICS_SECRET` | `shareId`から分析用の相関IDを生成するHMAC鍵 |
 
+### 分析のセットアップ
+
+分析はFreeプランでも利用できる。`ANALYTICS_SECRET`を`openssl rand -base64 32`等で生成し、`wrangler secret put ANALYTICS_SECRET`で設定する。この鍵は`analyticsTransferId`によるアップロード・ダウンロード間の相関に使う。未設定または相関IDの生成に失敗した場合でも、アップロード・ダウンロードの成功レスポンスは有効であり、`analyticsTransferId`は省略される。
+
 ### `wrangler.jsonc` の `vars`(非シークレット、リポジトリにコミット)
 
 | 変数名 | 用途 |
@@ -115,7 +119,6 @@ Cloudflare Workersにはスクリプトサイズの上限があり、**無料プ
 4. OpenNodeでビジネスアカウントを作成(要KYB/KYC)し、APIキーを取得して`wrangler secret put OPENNODE_API_KEY`で設定する。OpenNode側でのWebhookエンドポイント登録は不要(charge作成時に`callback_url`として都度指定している)。
 5. `wrangler.jsonc`の`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`・`OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM`・`OPENNODE_BTC_DAYS_PER_CHARGE`を実際の価格に合わせて調整する。
 6. `SESSION_SECRET`(ログインセッションJWTの署名鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put SESSION_SECRET`で設定する。
-7. `ANALYTICS_SECRET`(shareIdから分析用相関IDを生成するHMAC鍵)を`openssl rand -base64 32`等で生成し、`wrangler secret put ANALYTICS_SECRET`で設定する。未設定でもアップロード・ダウンロードは継続するが、分析用の相関IDは発行されない。
 
 ## 手動デプロイ・プレビュー
 

@@ -345,6 +345,19 @@ const SENSITIVE_VALUE_PATTERNS = [
   /[A-Za-z0-9_-]{43,}/,
 ] as const;
 
+function isAbsoluteOrProtocolRelativeUrl(value: string): boolean {
+  if (value.startsWith("//")) {
+    return true;
+  }
+
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Propertiesのキーだけでなく、直接APIへ送られる各文字列値にもPrivacy Guardを
 // 適用する。値そのものはログへ出さず、D1へ書き込む前にリクエスト全体を拒否する。
 export function findForbiddenAnalyticsValueFields(event: AnalyticsEvent): string[] {
@@ -369,6 +382,11 @@ export function findForbiddenAnalyticsValueFields(event: AnalyticsEvent): string
   };
 
   return Object.entries(values)
-    .filter(([, value]) => value !== undefined && SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value)))
+    .filter(
+      ([, value]) =>
+        value !== undefined &&
+        (isAbsoluteOrProtocolRelativeUrl(value) ||
+          SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value)))
+    )
     .map(([field]) => field);
 }
