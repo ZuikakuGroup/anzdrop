@@ -61,6 +61,7 @@ describe("hasDownloadedAllFiles", () => {
     const open = vi.fn();
 
     scheduleSendCtaOpen(open);
+    expect(SEND_CTA_OPEN_DELAY_MS).toBe(1_500);
     vi.advanceTimersByTime(SEND_CTA_OPEN_DELAY_MS - 1);
     expect(open).not.toHaveBeenCalled();
 
