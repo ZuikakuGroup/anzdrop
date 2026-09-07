@@ -14,9 +14,9 @@
     "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^5.20260827.1",
+    "@cloudflare/workers-types": "^5.20260903.1",
     "@opennextjs/cloudflare": "^1.20.4",
-    "@stripe/react-stripe-js": "^6.8.2",
+    "@stripe/react-stripe-js": "^6.9.0",
     "@stripe/stripe-js": "^9.15.0",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
@@ -34,7 +34,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "hash-wasm": "^4.12.0",
@@ -43,7 +43,7 @@
     "open-next": "^3.1.3",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.0",
     "wrangler": "^4.127.0"
   }
 }

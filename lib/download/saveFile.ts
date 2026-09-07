@@ -239,13 +239,23 @@ export type SaveResult = {
   saved: boolean;
 };
 
-// 復号済みファイルを保存する。保存経路は環境に応じて次の順で選ぶ。
+// この値未満のファイルは showSaveFilePicker を使わず、保存先ダイアログを
+// 出さない経路(Service Worker ストリーミング / Blob)へ直行させる。
+// Blob フォールバックのピーク使用量はファイルサイズの1〜2倍程度になりうる
+// ため、Windows 11 の最小要件(RAM 4GB)機でも安全な値として 200MB とした。
+export const SMALL_FILE_NO_PICKER_THRESHOLD_BYTES = 200 * 1024 * 1024;
+
+// 復号済みファイルを保存する。保存経路は次の優先順で選ぶ。
 //
-// 1. showSaveFilePicker(Chromium系): 保存先を選ばせてディスクへ逐次書き込み。
-// 2. Service Worker(Firefox/Safari で対応・制御中): 復号済みストリームを
-//    Service Worker へ渡し、Content-Disposition: attachment の Response として
-//    ブラウザにストリーミングダウンロードさせる(GitHub issue #61)。
-// 3. Blob フォールバック: ファイル全体をメモリに集めてから保存。大容量ファイル
+// 1. 200MB未満のファイル: 保存先ダイアログを出さず、下記2→3の経路へ直行する
+//    (ダウンロードのたびにポップアップが出る煩わしさを避けるため)。
+// 2. showSaveFilePicker(Chromium系、200MB以上のみ): 保存先を選ばせてディスク
+//    へ逐次書き込み。大容量ファイルでもメモリに載せずに済む。
+// 3. Service Worker(Firefox/Safari で対応・制御中、または1で直行した場合):
+//    復号済みストリームを Service Worker へ渡し、Content-Disposition:
+//    attachment の Response としてブラウザにストリーミングダウンロードさせる
+//    (GitHub issue #61)。
+// 4. Blob フォールバック: ファイル全体をメモリに集めてから保存。大容量ファイル
 //    ではタブが落ちうるので最後の手段。
 //
 // showSaveFilePicker はユーザー操作(クリック)直後の transient activation を
@@ -253,9 +263,13 @@ export type SaveResult = {
 export async function saveDecryptedFile(
   file: DecryptedFile,
   key: CryptoKey,
-  filename: string
+  filename: string,
+  // テストからしきい値を差し替えられるようにするための引数。呼び出し側は
+  // 通常指定しない。
+  smallFileThresholdBytes: number = SMALL_FILE_NO_PICKER_THRESHOLD_BYTES
 ): Promise<SaveResult> {
-  const showSaveFilePicker = getShowSaveFilePicker();
+  const showSaveFilePicker =
+    file.size < smallFileThresholdBytes ? null : getShowSaveFilePicker();
 
   if (showSaveFilePicker) {
     let handle: MinimalFileSystemFileHandle;
