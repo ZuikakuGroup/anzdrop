@@ -636,8 +636,14 @@ export default function DownloadPage({
       <SiteFooter reportShareId={shareId} />
 
       {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4">
-          <div className="relative max-h-[90vh] w-full max-w-2xl rounded-lg bg-paper p-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4"
+          onClick={closePreview}
+        >
+          <div
+            className="relative max-h-[90vh] w-full max-w-2xl rounded-lg bg-paper p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
             <button
               onClick={closePreview}
               aria-label="閉じる"
