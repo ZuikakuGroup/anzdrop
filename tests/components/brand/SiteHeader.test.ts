@@ -20,6 +20,15 @@ function navBlocks(html: string): string[] {
 }
 
 describe("SiteHeader のナビゲーション", () => {
+  it("ロゴとサービス名をルートへのリンクにまとめる", () => {
+    const brandLink = renderHeader().match(
+      /<a\b[^>]*href="\/"[^>]*>([\s\S]*?)<\/a>/
+    );
+
+    expect(brandLink?.[1]).toContain("Anzdrop");
+    expect(brandLink?.[1]).toContain("<svg");
+  });
+
   it("問い合わせリンクが PC 中央ナビとモバイルメニューの両方に描画される", () => {
     const navs = navBlocks(renderHeader());
 
