@@ -143,7 +143,7 @@ migration 0009。
 
 ### `analytics_events`
 
-計測基盤([`analytics.md`](./analytics.md)参照)の生イベント。append-only、90日程度で削除される([`lib/analytics/retention.ts`](../lib/analytics/retention.ts))。
+計測基盤([`analytics.md`](./analytics.md)参照)の生イベント。append-only、1年で削除される([`lib/analytics/retention.ts`](../lib/analytics/retention.ts))。
 
 | カラム | 型 | 説明 |
 | --- | --- | --- |

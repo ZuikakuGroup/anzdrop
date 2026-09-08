@@ -73,10 +73,21 @@ export const GET = withApiHandler(
       );
     }
 
+    const latest = new Date().toISOString().slice(0, 10);
+    const earliest = new Date(Date.now() - 364 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    if (from < earliest || to > latest) {
+      return Response.json(
+        { success: false, error: "指定できる期間は直近1年以内です" },
+        { status: 400 }
+      );
+    }
+
     const data = await (async () => {
       switch (view) {
         case "overview":
-          return getOverviewReport(env);
+          return getOverviewReport(env, new Date(`${to}T12:00:00.000Z`), from, to);
         case "funnel":
           return getFunnelReport(env, from, to);
         case "reliability":

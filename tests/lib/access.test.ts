@@ -23,6 +23,37 @@ describe("verifyAccessJwt", () => {
   afterEach(() => {
     jwtVerify.mockReset();
     createRemoteJWKSet.mockClear();
+    vi.unstubAllEnvs();
+  });
+
+  it("明示的な開発用フラグとlocalhostを満たす場合だけローカル管理者を返す", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("LOCAL_ADMIN_BYPASS", "true");
+
+    const result = await verifyAccessJwt(headersWith({ host: "localhost:3000" }), ENV);
+
+    expect(result).toEqual({ email: "local-admin@localhost" });
+    expect(jwtVerify).not.toHaveBeenCalled();
+  });
+
+  it("開発用フラグがあってもlocalhost以外ではAccessをバイパスしない", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("LOCAL_ADMIN_BYPASS", "true");
+
+    const result = await verifyAccessJwt(headersWith({ host: "admin.example.com" }), ENV);
+
+    expect(result).toBeNull();
+    expect(jwtVerify).not.toHaveBeenCalled();
+  });
+
+  it("本番モードでは開発用フラグを無視する", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("LOCAL_ADMIN_BYPASS", "true");
+
+    const result = await verifyAccessJwt(headersWith({ host: "localhost:3000" }), ENV);
+
+    expect(result).toBeNull();
+    expect(jwtVerify).not.toHaveBeenCalled();
   });
 
   it("returns null without calling jose when the header/cookie is missing", async () => {

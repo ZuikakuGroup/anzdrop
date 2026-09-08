@@ -89,9 +89,13 @@ describe("GET /api/admin/analytics", () => {
 
   it("returns the funnel report for view=funnel with the requested date range", async () => {
     authorize();
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
 
     const response = await getAnalytics(
-      "view=funnel&from=2026-01-01&to=2026-01-31"
+      `view=funnel&from=${from}&to=${to}`
     );
     const body = await readJson<{
       success: boolean;
@@ -101,9 +105,19 @@ describe("GET /api/admin/analytics", () => {
     }>(response);
 
     expect(response.status).toBe(200);
-    expect(body.from).toBe("2026-01-01");
-    expect(body.to).toBe("2026-01-31");
+    expect(body.from).toBe(from);
+    expect(body.to).toBe(to);
     expect(Array.isArray(body.data.steps)).toBe(true);
+  });
+
+  it("rejects ranges older than 1 year or in the future", async () => {
+    authorize();
+    const today = new Date().toISOString().slice(0, 10);
+    const old = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    expect((await getAnalytics(`view=funnel&from=${old}&to=${today}`)).status).toBe(400);
+    expect((await getAnalytics(`view=funnel&from=${today}&to=${future}`)).status).toBe(400);
   });
 
   it("returns the reliability, acquisition, retention, and recipient-growth reports", async () => {

@@ -134,15 +134,15 @@ describe("getOverviewReport", () => {
     expect(report.last30Days.repeatSenderRate).toBeNull();
   });
 
-  it("sums last30Days across multiple daily_metrics rows", async () => {
+  it("counts a sender once across the selected period", async () => {
     await insertEvent({ eventName: "upload_success", occurredAt: "2026-05-08T00:00:00.000Z", anonymousClientId: "a" });
-    await insertEvent({ eventName: "upload_success", occurredAt: "2026-05-09T00:00:00.000Z", anonymousClientId: "b" });
+    await insertEvent({ eventName: "upload_success", occurredAt: "2026-05-09T00:00:00.000Z", anonymousClientId: "a" });
     await computeDailyMetrics(env, "2026-05-08");
     await computeDailyMetrics(env, "2026-05-09");
 
     const report = await getOverviewReport(env, TODAY);
 
-    expect(report.last30Days.uniqueSenders).toBe(2);
+    expect(report.last30Days.uniqueSenders).toBe(1);
   });
 });
 

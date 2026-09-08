@@ -1,10 +1,10 @@
 // 要件書21章。Dashboard表示のたびにRaw Eventを集計しないよう、日次で
 // analytics_daily_metricsへ書き出す。各カウントはUTC日付(YYYY-MM-DD)単位。
 //
-// 生イベントの保持期間が90日(lib/analytics/retention.ts)であるため、
+// 生イベントの保持期間が1年(lib/analytics/retention.ts)であるため、
 // successful_transfersやrecipient_to_sender_conversionsのように「そのtransfer/
-// clientの過去全期間」を参照する集計は、90日より前の関連イベントが既に
-// 削除されていると正しく数えられない。要件書22章の「90日程度」という
+// clientの過去全期間」を参照する集計は、1年より前の関連イベントが既に
+// 削除されていると正しく数えられない。要件書22章の「1年」という
 // デフォルト値と合わせて許容している既知の制約(docs/analytics.md参照)。
 
 export type DailyMetrics = {
@@ -73,7 +73,7 @@ async function countNewSenders(
           WHERE prev.event_name = 'upload_success'
             AND prev.anonymous_client_id = cur.anonymous_client_id
             AND prev.occurred_at < ?
-            AND prev.occurred_at >= strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days')
+            AND prev.occurred_at >= strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-365 days')
         )
     `,
     [start, end, start, start]
@@ -103,14 +103,14 @@ async function countSuccessfulTransfers(
             SELECT 1 FROM analytics_events upload
             WHERE upload.event_name = 'upload_success'
               AND upload.analytics_transfer_id = download.analytics_transfer_id
-              AND upload.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND download.occurred_at
+              AND upload.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-365 days') AND download.occurred_at
           )
           AND NOT EXISTS (
             SELECT 1 FROM analytics_events previous_download
             WHERE previous_download.event_name = 'download_success'
               AND previous_download.analytics_transfer_id = download.analytics_transfer_id
               AND previous_download.occurred_at < download.occurred_at
-              AND previous_download.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND download.occurred_at
+              AND previous_download.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-365 days') AND download.occurred_at
           )
       `,
       [start, end, start, start]
@@ -169,8 +169,8 @@ async function countRecipientToSenderConversions(
               AND de.anonymous_client_id = us.anonymous_client_id
               AND ue.anonymous_client_id != de.anonymous_client_id
               AND de.occurred_at < us.occurred_at
-              AND de.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND us.occurred_at
-              AND ue.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-90 days') AND de.occurred_at
+              AND de.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-365 days') AND us.occurred_at
+              AND ue.occurred_at BETWEEN strftime('%Y-%m-%dT%H:%M:%fZ', ?, '-365 days') AND de.occurred_at
           )
       `,
       [start, end, start, start]

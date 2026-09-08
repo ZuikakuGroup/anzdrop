@@ -21,7 +21,7 @@ Anzdropの成長・改善判断に必要な最小限のデータを、E2E暗号�
 POST /api/analytics/events
         │ Zod validation (allowlist) → Privacy Guard → 重複除去(event_id) → レート制限(anonymous_client_id)
         ▼
-D1: analytics_events (append-only, 90日保持)
+D1: analytics_events (append-only, 1年保持)
         │ 日次バッチ (Cron Trigger, 毎日UTC 00:10)
         ▼
 D1: analytics_daily_metrics (24ヶ月以上保持)
@@ -60,14 +60,14 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 `migrations/0016_create_analytics_tables.sql`:
 
-- `analytics_events`: 生イベント。90日保持([`lib/analytics/retention.ts`](../lib/analytics/retention.ts)が毎日削除)。
+- `analytics_events`: 生イベント。1年保持([`lib/analytics/retention.ts`](../lib/analytics/retention.ts)が毎日削除)。
 - `analytics_daily_metrics`: 日次集計。無期限保持([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が毎日UTC 00:10に前日分とその前日分を再計算)。
 
-**既知の制約**: `successful_transfers`・`recipient_to_sender_conversions`・Retentionダッシュボードのコホート分析は、対象クライアント/transferの過去の全イベントを参照する集計です。生イベントの保持期間(90日)を超えた期間をまたぐ場合、当時のイベントが既に削除されているため正確に計算できないことがあります。Retentionダッシュボードの観測上限をDay 90に揃えているのはこのためです。
+**既知の制約**: `successful_transfers`・`recipient_to_sender_conversions`・Retentionダッシュボードのコホート分析は、対象クライアント/transferの過去の全イベントを参照する集計です。生イベントの保持期間(1年)を超えた期間をまたぐ場合、当時のイベントが既に削除されているため正確に計算できないことがあります。Retentionダッシュボードの観測上限はDay 90です。
 
 ## Admin Dashboard
 
-`/admin/analytics`(Cloudflare Access保護 + `requireAdmin()`)、`GET /api/admin/analytics?view=...` から以下の6種のレポートを取得します(`lib/analytics/reports.ts`):
+`/admin/analytics`(Cloudflare Access保護 + `requireAdmin()`)、`GET /api/admin/analytics?view=...&from=YYYY-MM-DD&to=YYYY-MM-DD` から以下の6種のレポートを取得します(`lib/analytics/reports.ts`)。管理画面では開始日・終了日を指定でき、CSVは同じ選択期間における全6レポートの集計結果をブラウザ内で1ファイルにまとめて出力します。生イベントを読む詳細レポートは保持期限のため直近1年までです。
 
 - `overview` — 本日・直近30日のNorth Star / 主要KPI
 - `funnel` — landing_view → file_select → upload_start → upload_success → share → download_success

@@ -1,7 +1,7 @@
-// 要件書22章。生イベントは90日程度で削除し、日次集計(analytics_daily_metrics)
+// 要件書22章。生イベントは1年で削除し、日次集計(analytics_daily_metrics)
 // は削除しない。
 
-export const RAW_EVENT_RETENTION_DAYS = 90;
+export const RAW_EVENT_RETENTION_DAYS = 365;
 
 export async function deleteExpiredAnalyticsEvents(
   env: CloudflareEnv,

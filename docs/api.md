@@ -251,4 +251,4 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `GET /api/admin/analytics?view=overview|funnel|reliability|acquisition|retention|recipient-growth&from&to`
 
-計測ダッシュボード([`analytics.md`](./analytics.md)参照)向けの集計データを返す、読み取り専用ルート(Origin検証は行わない)。`from`/`to`(`YYYY-MM-DD`)省略時は直近30日。レスポンスは `{ success: true, view, from, to, data }` で、`data` の形は`view`ごとに異なる([`lib/analytics/reports.ts`](../lib/analytics/reports.ts)の各関数の戻り値)。
+計測ダッシュボード([`analytics.md`](./analytics.md)参照)向けの集計データを返す、読み取り専用ルート(Origin検証は行わない)。`from`/`to`(`YYYY-MM-DD`)省略時は直近30日で、指定時は当日を含む直近1年以内でなければ400を返す。レスポンスは `{ success: true, view, from, to, data }` で、`data` の形は`view`ごとに異なる([`lib/analytics/reports.ts`](../lib/analytics/reports.ts)の各関数の戻り値)。
