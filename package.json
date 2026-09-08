@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -18,6 +18,7 @@
     "@opennextjs/cloudflare": "^1.20.6",
     "@stripe/react-stripe-js": "^6.9.0",
     "@stripe/stripe-js": "^9.15.0",
+    "chart.js": "^4.5.1",
     "fflate": "^0.8.3",
     "jose": "^6.2.10",
     "nanoid": "^6.0.1",

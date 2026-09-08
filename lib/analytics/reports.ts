@@ -3,9 +3,8 @@
 // Overviewは分析用に前計算済みのanalytics_daily_metrics(24ヶ月以上保持)を
 // 読む。Funnel/Reliability/Acquisition/Retention/Recipient Growthは、
 // daily_metricsに含まれない粒度(event_name別・properties別・属性別)の
-// 内訳が必要なため、90日保持のanalytics_eventsを直接集計する
-// (要件書22章の90日という保持期間とRetentionダッシュボードの最大観測
-// 期間=90日が一致しているのはこのため)。
+// 内訳が必要なため、1年保持のanalytics_eventsを直接集計する。
+// Retentionダッシュボードの最大観測期間は90日である。
 
 import { collectDailyMetrics } from "@/lib/analytics/aggregate";
 
@@ -141,19 +140,29 @@ async function computeRepeatSenderRate(
 
 export async function getOverviewReport(
   env: CloudflareEnv,
-  now: Date = new Date()
+  now: Date = new Date(),
+  fromDate: string = toUtcDateString(daysAgo(now, 29)),
+  toDate: string = toUtcDateString(now)
 ): Promise<OverviewReport> {
   const db = env.DB;
-  const today = toUtcDateString(now);
-  const last30Start = toUtcDateString(daysAgo(now, 29));
-  const yesterday = toUtcDateString(daysAgo(now, 1));
+  const previousDay = toUtcDateString(daysAgo(new Date(`${toDate}T12:00:00.000Z`), 1));
 
-  const todayMetrics = await collectDailyMetrics(env, today, {
+  const todayMetrics = await collectDailyMetrics(env, toDate, {
     limitRelatedEventsToRange: true,
   });
-  const [last30, repeatSenderRate] = await Promise.all([
-    sumDailyMetrics(db, last30Start, yesterday),
-    computeRepeatSenderRate(db, now),
+  const [last30, repeatSenderRate, uniqueSenders] = await Promise.all([
+    fromDate < toDate
+      ? sumDailyMetrics(db, fromDate, previousDay)
+      : Promise.resolve({ uniqueSenders: 0, newSenders: 0, uploadStarts: 0, uploadSuccesses: 0, downloadStarts: 0, downloadSuccesses: 0, successfulTransfers: 0, recipientToSenderConversions: 0 }),
+    fromDate === toUtcDateString(daysAgo(new Date(`${toDate}T12:00:00.000Z`), 29))
+      ? computeRepeatSenderRate(db, new Date(`${toDate}T12:00:00.000Z`))
+      : Promise.resolve(null),
+    db.prepare(
+      `SELECT COUNT(DISTINCT anonymous_client_id) AS count FROM analytics_events
+       WHERE event_name = 'upload_success' AND occurred_at BETWEEN ? AND ?`
+    )
+      .bind(`${fromDate}T00:00:00.000Z`, `${toDate}T23:59:59.999Z`)
+      .first<{ count: number }>(),
   ]);
 
   return {
@@ -167,7 +176,7 @@ export async function getOverviewReport(
       ),
     },
     last30Days: {
-      uniqueSenders: last30.uniqueSenders + todayMetrics.uniqueSenders,
+      uniqueSenders: uniqueSenders?.count ?? 0,
       successfulTransfers: last30.successfulTransfers + todayMetrics.successfulTransfers,
       newSenders: last30.newSenders + todayMetrics.newSenders,
       repeatSenderRate,

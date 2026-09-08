@@ -7,6 +7,8 @@ export type AccessIdentity = {
 
 const ACCESS_JWT_HEADER = "Cf-Access-Jwt-Assertion";
 const ACCESS_JWT_COOKIE = "CF_Authorization";
+const LOCAL_ADMIN_BYPASS_ENV = "LOCAL_ADMIN_BYPASS";
+const LOCAL_ADMIN_IDENTITY: AccessIdentity = { email: "local-admin@localhost" };
 
 // createRemoteJWKSetは内部で鍵セットをキャッシュするが、リクエストごとに
 // 新しいインスタンスを作るとそのキャッシュが効かず毎回JWKSを取得しに行って
@@ -27,6 +29,29 @@ function getJwks(teamDomain: string): ReturnType<typeof createRemoteJWKSet> {
   return cachedJwks;
 }
 
+function isLocalHost(host: string | null): boolean {
+  if (!host) {
+    return false;
+  }
+
+  const hostname = host.startsWith("[")
+    ? host.slice(1, host.indexOf("]"))
+    : host.split(":")[0];
+
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+// ローカルで管理画面のUIを確認するための明示的な開発専用バイパス。
+// 本番/PreviewではNODE_ENVがdevelopmentでないため、環境変数が誤って設定
+// されても有効にならない。さらにlocalhostからのリクエストに限定する。
+function canBypassAccessForLocalDevelopment(headers: Headers): boolean {
+  return (
+    process.env.NODE_ENV === "development" &&
+    process.env[LOCAL_ADMIN_BYPASS_ENV] === "true" &&
+    isLocalHost(headers.get("host"))
+  );
+}
+
 // Cloudflare Accessは/admin*向けのリクエストをエッジで既に認証済みだが、
 // Access側の設定ミスでその関門が働かなかった場合にオリジン側でも
 // 拒否できるようにする多層防御。あくまで補助であり、主たる関門は
@@ -35,6 +60,10 @@ export async function verifyAccessJwt(
   headers: Headers,
   env: CloudflareEnv
 ): Promise<AccessIdentity | null> {
+  if (canBypassAccessForLocalDevelopment(headers)) {
+    return LOCAL_ADMIN_IDENTITY;
+  }
+
   const token =
     headers.get(ACCESS_JWT_HEADER) ??
     extractCookie(headers.get("cookie"), ACCESS_JWT_COOKIE);

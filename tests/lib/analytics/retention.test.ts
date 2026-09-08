@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
 import { deleteExpiredAnalyticsEvents } from "@/lib/analytics/retention";
 
@@ -45,20 +45,29 @@ async function eventIds(): Promise<string[]> {
 
 describe("deleteExpiredAnalyticsEvents", () => {
   it("deletes events older than the retention window and keeps recent ones", async () => {
-    const oldEventId = await insertEventAt(
-      new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString()
-    );
-    const recentEventId = await insertEventAt(
-      new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
-    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-08T00:00:00.000Z"));
+    try {
+      const oldEventId = await insertEventAt(
+        new Date(Date.now() - 366 * 24 * 60 * 60 * 1000).toISOString()
+      );
+      const recentEventId = await insertEventAt(
+        new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
+      );
+      const boundaryEventId = await insertEventAt(
+        new Date(Date.now() - (365 * 24 * 60 * 60 * 1000 - 1000)).toISOString()
+      );
 
-    const deletedCount = await deleteExpiredAnalyticsEvents(env);
+      const deletedCount = await deleteExpiredAnalyticsEvents(env);
+      const remaining = await eventIds();
 
-    const remaining = await eventIds();
-
-    expect(deletedCount).toBe(1);
-    expect(remaining).toEqual([recentEventId]);
-    expect(remaining).not.toContain(oldEventId);
+      expect(deletedCount).toBe(1);
+      expect(remaining).toEqual(expect.arrayContaining([recentEventId, boundaryEventId]));
+      expect(remaining).toHaveLength(2);
+      expect(remaining).not.toContain(oldEventId);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does nothing when there are no expired events", async () => {
