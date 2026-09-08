@@ -25,13 +25,21 @@ beforeEach(async () => {
   const addDocumentListener = document.addEventListener.bind(document);
   const addWindowListener = window.addEventListener.bind(window);
   vi.spyOn(document, "addEventListener").mockImplementation(
-    ((type, listener, options) => {
+    ((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
       registeredDocumentListeners.push([type, listener]);
       addDocumentListener(type, listener, options);
     }) as typeof document.addEventListener
   );
   vi.spyOn(window, "addEventListener").mockImplementation(
-    ((type, listener, options) => {
+    ((
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions
+    ) => {
       registeredWindowListeners.push([type, listener]);
       addWindowListener(type, listener, options);
     }) as typeof window.addEventListener
@@ -182,7 +190,7 @@ describe("track", () => {
     expect(sendBeacon).toHaveBeenCalledTimes(2);
 
     const batches = await Promise.all(
-      sendBeacon.mock.calls.map(async ([, blob]) => {
+      sendBeacon!.mock.calls.map(async ([, blob]) => {
         const body = await (blob as Blob).text();
         return JSON.parse(body) as { events: { eventId: string }[] };
       })
