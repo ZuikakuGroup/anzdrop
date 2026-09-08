@@ -131,7 +131,7 @@ export function track(eventName: AnalyticsEventName, payload?: TrackPayload): vo
       return;
     }
 
-    if (isDev() && payload?.properties) {
+    if (payload?.properties) {
       const forbidden = findForbiddenPropertyKeys(payload.properties);
 
       if (forbidden.length > 0) {

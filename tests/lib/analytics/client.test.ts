@@ -56,6 +56,7 @@ afterEach(() => {
   }
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
@@ -114,6 +115,24 @@ describe("track", () => {
         } as unknown as Record<string, unknown>,
       })
     ).not.toThrow();
+  });
+
+  it("does not send forbidden properties in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const sendBeacon = stubSendBeacon(true);
+
+    track("upload_error", {
+      attemptId: crypto.randomUUID(),
+      properties: {
+        errorCode: "UPLOAD_UNKNOWN",
+        errorStage: "encrypt",
+        retryCount: 0,
+        fullUrl: "https://anzdrop.example/d/share#decryption-key",
+      } as unknown as Record<string, unknown>,
+    });
+    vi.advanceTimersByTime(3000);
+
+    expect(sendBeacon).not.toHaveBeenCalled();
   });
 
   it("never throws even when sendBeacon and fetch both fail", () => {
