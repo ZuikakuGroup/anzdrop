@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let track: typeof import("@/lib/analytics/client").track;
+let registeredDocumentListeners: Array<[string, EventListenerOrEventListenerObject]>;
+let registeredWindowListeners: Array<[string, EventListenerOrEventListenerObject]>;
 
 function stubSendBeacon(returnValue: boolean | undefined) {
   const sendBeacon = returnValue === undefined ? undefined : vi.fn().mockReturnValue(returnValue);
@@ -18,11 +20,34 @@ beforeEach(async () => {
   vi.resetModules();
   window.localStorage.clear();
   vi.useFakeTimers();
+  registeredDocumentListeners = [];
+  registeredWindowListeners = [];
+  const addDocumentListener = document.addEventListener.bind(document);
+  const addWindowListener = window.addEventListener.bind(window);
+  vi.spyOn(document, "addEventListener").mockImplementation(
+    ((type, listener, options) => {
+      registeredDocumentListeners.push([type, listener]);
+      addDocumentListener(type, listener, options);
+    }) as typeof document.addEventListener
+  );
+  vi.spyOn(window, "addEventListener").mockImplementation(
+    ((type, listener, options) => {
+      registeredWindowListeners.push([type, listener]);
+      addWindowListener(type, listener, options);
+    }) as typeof window.addEventListener
+  );
   ({ track } = await import("@/lib/analytics/client"));
 });
 
 afterEach(() => {
+  for (const [type, listener] of registeredDocumentListeners) {
+    document.removeEventListener(type, listener);
+  }
+  for (const [type, listener] of registeredWindowListeners) {
+    window.removeEventListener(type, listener);
+  }
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -115,5 +140,58 @@ describe("track", () => {
     track("landing_view");
 
     expect(sendBeacon).toHaveBeenCalledTimes(1);
+  });
+
+  it("development mode rejects forbidden properties before they are queued", () => {
+    const sendBeacon = stubSendBeacon(true);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    track("landing_view", {
+      properties: { fullUrl: "https://anzdrop.example/d/id#decryption-key" },
+    });
+    vi.advanceTimersByTime(3000);
+
+    expect(sendBeacon).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("flushes a queued event when the page is hidden, without waiting for the interval", () => {
+    const sendBeacon = stubSendBeacon(true);
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true,
+    });
+
+    track("landing_view");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(sendBeacon).toHaveBeenCalledOnce();
+  });
+
+  it("keeps each transmission at the server batch limit and schedules the remainder", async () => {
+    const sendBeacon = stubSendBeacon(true);
+    const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    for (let index = 0; index < 21; index += 1) {
+      track("landing_view");
+    }
+
+    expect(sendBeacon).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(3000);
+    expect(sendBeacon).toHaveBeenCalledTimes(2);
+
+    const batches = await Promise.all(
+      sendBeacon.mock.calls.map(async ([, blob]) => {
+        const body = await (blob as Blob).text();
+        return JSON.parse(body) as { events: { eventId: string }[] };
+      })
+    );
+    expect(batches.every((batch) => batch.events.length <= 20)).toBe(true);
+    expect(batches.map((batch) => batch.events.length)).toEqual([20, 1]);
+    expect(
+      new Set(batches.flatMap((batch) => batch.events.map((event) => event.eventId))).size
+    ).toBe(21);
+    consoleLog.mockRestore();
   });
 });
