@@ -20,7 +20,7 @@ npm install
 
 いずれもリポジトリには含まれないため、各自発行して設定する。`NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`は[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)から発行する(開発用にはテスト用の常時成功/失敗キーも利用可能)。`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`はStripeダッシュボード(テストモード)の「開発者」→「APIキー」から取得できる公開可能キー(`pk_test_...`)を使う。
 
-ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは`NODE_ENV=development`かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を通す。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・Preview・外部Hostでは有効にならない。確認後は設定を外す。
+ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは`NODE_ENV=development`かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・Preview・外部Hostでは有効にならない。確認後は設定を外す。
 
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 
@@ -76,4 +76,4 @@ GitHub Actions(`.github/workflows/deploy.yml`)でも `main` へのpush時に同�
 ## 動作確認のコツ
 
 - ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。
-- `/admin` はCloudflare Access配下のため、ローカルでは `lib/access.ts` の `verifyAccessJwt()` が(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`が本物のAccess設定を指していない限り)常に401/403相当を返す。管理画面のロジック単体を確認したい場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
+- `/admin` はCloudflare Access配下のため、通常は `lib/access.ts` の `verifyAccessJwt()` に有効なAccess設定が必要となる。ただし上記の開発専用バイパスの条件をすべて満たす場合は、ローカル管理者として確認できる。条件を満たさない場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
