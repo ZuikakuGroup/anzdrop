@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { BlogAuthor, BlogCategory, BlogPage, BlogPost, BlogTag } from "./types";
 import { isAllowedExternalUrl, isMicrocmsImageUrl } from "./validation";
 
-export const PAGE_SIZE = 12;
+export { PAGE_SIZE } from "./pagination";
 const API_PAGE_SIZE = 100;
 
 const imageUrlSchema = z.string().url().refine(isMicrocmsImageUrl, "microCMS image URL is required");
@@ -55,7 +55,7 @@ async function getAll<T>(endpoint: string, schema: z.ZodType<T>, query: Query = 
 }
 
 export const getPosts = (query: Query = {}) => get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { orders: "-publishedAt", depth: 2, ...query });
-export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { orders: "-publishedAt", depth: 2, ...query });
+export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { ...query, orders: "-publishedAt,id", depth: 2 });
 export const getPost = async (id: string) => get<BlogPost>(`blog-posts/${encodeURIComponent(id)}`, postSchema, { depth: 2 });
 export const getCategory = async (id: string) => get<BlogCategory>(`blog-categories/${encodeURIComponent(id)}`, categorySchema);
 export const getTag = async (id: string) => get<BlogTag>(`blog-tags/${encodeURIComponent(id)}`, tagSchema);
@@ -63,6 +63,6 @@ export const getAuthor = async (id: string) => get<BlogAuthor>(`blog-authors/${e
 export const getCategories = () => get<BlogPage<BlogCategory>>("blog-categories", listSchema(categorySchema));
 export const getTags = () => get<BlogPage<BlogTag>>("blog-tags", listSchema(tagSchema));
 export const getAuthors = () => get<BlogPage<BlogAuthor>>("blog-authors", listSchema(authorSchema));
-export const getAllCategories = () => getAll<BlogCategory>("blog-categories", categorySchema);
-export const getAllTags = () => getAll<BlogTag>("blog-tags", tagSchema);
-export const getAllAuthors = () => getAll<BlogAuthor>("blog-authors", authorSchema);
+export const getAllCategories = () => getAll<BlogCategory>("blog-categories", categorySchema, { orders: "id" });
+export const getAllTags = () => getAll<BlogTag>("blog-tags", tagSchema, { orders: "id" });
+export const getAllAuthors = () => getAll<BlogAuthor>("blog-authors", authorSchema, { orders: "id" });
