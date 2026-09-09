@@ -94,7 +94,7 @@ function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
     // 比べ危険度が低く、厳格な CSP でも一般的に許容される。
     `style-src 'self' 'unsafe-inline'`,
     // プレビュー・QR は blob:/data: を使う。
-    `img-src 'self' blob: data:`,
+    `img-src 'self' blob: data: https://images.microcms-assets.io`,
     `font-src 'self'`,
     `connect-src ${connectSrc}`,
     // Turnstile / Stripe の iframe。

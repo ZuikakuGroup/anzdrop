@@ -1,0 +1,5 @@
+import type { MetadataRoute } from "next";
+import { getAllAuthors, getAllCategories, getAllPosts, getAllTags } from "@/lib/blog/client";
+import { absoluteUrl } from "@/lib/blog/site";
+export const dynamic = "force-dynamic";
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> { const [posts, categories, tags, authors] = await Promise.all([getAllPosts(), getAllCategories(), getAllTags(), getAllAuthors()]); return [{ url: absoluteUrl("/blog"), changeFrequency: "daily", priority: 0.8 }, ...posts.map(post => ({ url: absoluteUrl(`/blog/${post.id}`), lastModified: post.updatedAt, changeFrequency: "weekly" as const, priority: 0.7 })), ...categories.map(category => ({ url: absoluteUrl(`/blog/categories/${category.id}`), changeFrequency: "weekly" as const, priority: 0.5 })), ...tags.map(tag => ({ url: absoluteUrl(`/blog/tags/${tag.id}`), changeFrequency: "weekly" as const, priority: 0.4 })), ...authors.map(author => ({ url: absoluteUrl(`/blog/authors/${author.id}`), changeFrequency: "monthly" as const, priority: 0.4 }))]; }
