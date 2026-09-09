@@ -22,6 +22,8 @@
 
 ### Cloudflare Workersのシークレット(`wrangler secret put`、リポジトリには含まれない)
 
+オウンドメディアを有効化する場合は、`MICROCMS_API_KEY`（GET専用の Content API key）と `MICROCMS_WEBHOOK_SECRET` を設定する。`MICROCMS_SERVICE_DOMAIN` と `SITE_URL` は `wrangler.jsonc` の非秘密変数として本番値に更新する。詳しくは [`media.md`](./media.md) を参照。
+
 | Secret名 | 用途 |
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Turnstile検証用のシークレットキー |
