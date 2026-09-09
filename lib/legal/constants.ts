@@ -13,7 +13,7 @@ export const LEGAL_LAST_UPDATED = "2026年9月8日";
 export const OPERATOR = {
   groupName: "瑞鶴グループ",
   representative: "相澤遼",
-  email: "zuikakugroup@gmail.com",
+  email: "support@anzdrop.com",
   contactFormPath: "/contact",
 } as const;
 
