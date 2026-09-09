@@ -4,8 +4,8 @@ import { z } from "zod";
 import type { BlogAuthor, BlogCategory, BlogPage, BlogPost, BlogTag } from "./types";
 import { isAllowedExternalUrl, isMicrocmsImageUrl } from "./validation";
 
-export const BLOG_CACHE_TAG = "blog";
 export const PAGE_SIZE = 12;
+const API_PAGE_SIZE = 100;
 
 const imageUrlSchema = z.string().url().refine(isMicrocmsImageUrl, "microCMS image URL is required");
 const externalUrlSchema = z.string().url().refine(isAllowedExternalUrl, "HTTP(S) URL is required");
@@ -18,6 +18,17 @@ const listSchema = <T extends z.ZodType>(item: T) => z.object({ contents: z.arra
 
 type Query = Record<string, string | number | undefined>;
 
+export class MicrocmsApiError extends Error {
+  constructor(public readonly status: number) {
+    super(`microCMS request failed: ${status}`);
+    this.name = "MicrocmsApiError";
+  }
+}
+
+export function isMicrocmsNotFoundError(error: unknown): boolean {
+  return error instanceof MicrocmsApiError && error.status === 404;
+}
+
 async function get<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {}): Promise<T> {
   const { env: cloudflareEnv } = getCloudflareContext();
   const env = cloudflareEnv as CloudflareEnv & { MICROCMS_API_KEY?: string };
@@ -27,11 +38,24 @@ async function get<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {})
   // OpenNextの共有Tag Cacheを追加するとD1/R2/DOへ永続データを追加するため、
   // 現時点では保存を伴わないno-storeでmicroCMSの公開内容を直接返す。
   const response = await fetch(url, { headers: { "X-MICROCMS-API-KEY": env.MICROCMS_API_KEY }, cache: "no-store" });
-  if (!response.ok) throw new Error(`microCMS request failed: ${response.status}`);
+  if (!response.ok) throw new MicrocmsApiError(response.status);
   return schema.parse(await response.json());
 }
 
+async function getAll<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {}): Promise<T[]> {
+  const contents: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await get<BlogPage<T>>(endpoint, listSchema(schema), { ...query, limit: API_PAGE_SIZE, offset });
+    contents.push(...page.contents);
+    offset += page.contents.length;
+    if (offset >= page.totalCount || page.contents.length === 0) return contents;
+  }
+}
+
 export const getPosts = (query: Query = {}) => get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { orders: "-publishedAt", depth: 2, ...query });
+export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { orders: "-publishedAt", depth: 2, ...query });
 export const getPost = async (id: string) => get<BlogPost>(`blog-posts/${encodeURIComponent(id)}`, postSchema, { depth: 2 });
 export const getCategory = async (id: string) => get<BlogCategory>(`blog-categories/${encodeURIComponent(id)}`, categorySchema);
 export const getTag = async (id: string) => get<BlogTag>(`blog-tags/${encodeURIComponent(id)}`, tagSchema);
@@ -39,3 +63,6 @@ export const getAuthor = async (id: string) => get<BlogAuthor>(`blog-authors/${e
 export const getCategories = () => get<BlogPage<BlogCategory>>("blog-categories", listSchema(categorySchema));
 export const getTags = () => get<BlogPage<BlogTag>>("blog-tags", listSchema(tagSchema));
 export const getAuthors = () => get<BlogPage<BlogAuthor>>("blog-authors", listSchema(authorSchema));
+export const getAllCategories = () => getAll<BlogCategory>("blog-categories", categorySchema);
+export const getAllTags = () => getAll<BlogTag>("blog-tags", tagSchema);
+export const getAllAuthors = () => getAll<BlogAuthor>("blog-authors", authorSchema);
