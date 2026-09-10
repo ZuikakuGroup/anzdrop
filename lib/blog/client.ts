@@ -14,9 +14,15 @@ const categorySchema = z.object({ id: z.string().min(1), name: z.string().min(1)
 const tagSchema = categorySchema;
 const authorSchema = z.object({ id: z.string().min(1), name: z.string().min(1), bio: z.string().default(""), image: imageSchema, externalUrl: externalUrlSchema.optional() });
 const postSchema = z.object({ id: z.string().min(1), title: z.string().min(1), excerpt: z.string().min(1), body: z.string(), eyecatch: imageSchema, category: categorySchema, tags: z.array(tagSchema), author: authorSchema, publishedAt: z.string().datetime(), updatedAt: z.string().datetime() });
+const publishedStatusSchema = z.object({ publishedAt: z.string().datetime().nullable().optional() }).passthrough();
 const listSchema = <T extends z.ZodType>(item: T) => z.object({ contents: z.array(item), totalCount: z.number().int().nonnegative() });
 
 type Query = Record<string, string | number | undefined>;
+
+function publishedPostQuery(query: Query): Query {
+  const filters = query.filters;
+  return { ...query, filters: typeof filters === "string" && filters ? `publishedAt[exists][and]${filters}` : "publishedAt[exists]" };
+}
 
 export class MicrocmsApiError extends Error {
   constructor(public readonly status: number) {
@@ -54,9 +60,13 @@ async function getAll<T>(endpoint: string, schema: z.ZodType<T>, query: Query = 
   }
 }
 
-export const getPosts = (query: Query = {}) => get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { orders: "-publishedAt", depth: 2, ...query });
-export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { ...query, orders: "-publishedAt,id", depth: 2 });
-export const getPost = async (id: string) => get<BlogPost>(`blog-posts/${encodeURIComponent(id)}`, postSchema, { depth: 2 });
+export const getPosts = (query: Query = {}) => get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { ...publishedPostQuery(query), orders: "-publishedAt", depth: 2 });
+export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { ...publishedPostQuery(query), orders: "-publishedAt,id", depth: 2 });
+export const getPost = async (id: string): Promise<BlogPost> => {
+  const post = await get(`blog-posts/${encodeURIComponent(id)}`, publishedStatusSchema, { depth: 2 });
+  if (!post.publishedAt) throw new MicrocmsApiError(404);
+  return postSchema.parse(post);
+};
 export const getCategory = async (id: string) => get<BlogCategory>(`blog-categories/${encodeURIComponent(id)}`, categorySchema);
 export const getTag = async (id: string) => get<BlogTag>(`blog-tags/${encodeURIComponent(id)}`, tagSchema);
 export const getAuthor = async (id: string) => get<BlogAuthor>(`blog-authors/${encodeURIComponent(id)}`, authorSchema);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/client";
+import { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, getPosts, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/client";
 import { isAllowedExternalUrl } from "@/lib/blog/validation";
 
 vi.mock("server-only", () => ({}));
@@ -82,5 +82,31 @@ describe("microCMS client", () => {
     await getAll();
 
     expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("orders")).toBe(orders);
+  });
+
+  it("filters draft posts from lists while preserving the caller's filter", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ contents: [post], totalCount: 1 }))
+      .mockResolvedValueOnce(Response.json({ contents: [post], totalCount: 1 }))
+      .mockResolvedValueOnce(Response.json({ contents: [post], totalCount: 1 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getPosts({ filters: "category[equals]category-1" });
+    await getAllPosts({ filters: "tags[contains]tag-1" });
+    await getPosts();
+
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("filters")).toBe("publishedAt[exists][and]category[equals]category-1");
+    expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get("filters")).toBe("publishedAt[exists][and]tags[contains]tag-1");
+    expect(new URL(fetchMock.mock.calls[2][0]).searchParams.get("filters")).toBe("publishedAt[exists]");
+  });
+
+  it("treats a draft fetched by its ID as not found", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ id: "draft-post" })));
+
+    const error = await getPost("draft-post").catch(cause => cause);
+
+    expect(error).toBeInstanceOf(MicrocmsApiError);
+    expect(error.status).toBe(404);
   });
 });
