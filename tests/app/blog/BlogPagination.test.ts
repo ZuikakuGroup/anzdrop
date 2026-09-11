@@ -76,6 +76,9 @@ describe("BlogPagination", () => {
   });
 
   it("ページ番号欄にフォーカスすると現在値を選択する", async () => {
+    // jsdom では type=number の selectionStart/End が常に null のため、select() 呼び出しを検証する
+    const select = vi.spyOn(HTMLInputElement.prototype, "select").mockImplementation(() => undefined);
+
     await act(async () => {
       root.render(createElement(BlogPagination, { page: 2, lastPage: 3 }));
     });
@@ -84,8 +87,8 @@ describe("BlogPagination", () => {
     expect(input).not.toBeNull();
 
     await act(async () => input!.focus());
-    expect(input!.selectionStart).toBe(0);
-    expect(input!.selectionEnd).toBe(1);
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockRestore();
   });
 
   it("範囲外のページ番号は移動せず現在ページへ戻す", async () => {
