@@ -1,0 +1,58 @@
+.overlay {
+  animation: overlay-in 180ms ease-out both;
+}
+
+.overlayClosing {
+  animation: overlay-out 160ms ease-in both;
+}
+
+.dialog {
+  animation: dialog-in 180ms ease-out both;
+}
+
+.overlayClosing .dialog {
+  animation: dialog-out 160ms ease-in both;
+}
+
+.image {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100svh - 2rem);
+}
+
+@media (min-width: 640px) {
+  .image {
+    max-width: min(70vw, 48rem);
+    max-height: 70vh;
+  }
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dialog-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .overlayClosing,
+  .dialog,
+  .overlayClosing .dialog {
+    animation-duration: 1ms;
+  }
+}
