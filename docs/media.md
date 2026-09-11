@@ -10,7 +10,7 @@
 | --- | --- |
 | `blog-posts` | title、excerpt、body（リッチエディタ）、eyecatch（必須）、category（1件）、tags（複数）、author（1件） |
 | `blog-categories` / `blog-tags` | name、description |
-| `blog-authors` | name、bio、image（必須）、externalUrl（任意） |
+| `blog-authors` | name、bio（プレーンテキスト。改行を著者ページで保持）、image（必須）、externalUrl（任意） |
 
 記事のアイキャッチは必須で、一覧・詳細・OG画像に共用する。外部リンクは HTTPS を推奨する。本文は表示前にサニタイズされ、microCMS 画像 CDN 以外の本文画像は表示されない。記事本文とアイキャッチの画像は、クリックまたはキーボード操作で拡大表示できる。microCMSリッチエディタでMarkdown記法から変換される見出し・段落・リスト・引用・コード・表などのHTMLを、記事本文用のスタイルで表示する。
 
