@@ -52,6 +52,16 @@ describe("SiteHeader のナビゲーション", () => {
     }
   });
 
+  it("PC・モバイルともに主要ナビゲーションを指定順で表示する", () => {
+    const navs = navBlocks(renderHeader());
+    const expected = ["Anzdropとは", "料金プラン", "ブログ", "問い合わせ"];
+
+    for (const nav of navs) {
+      const labels = [...nav.matchAll(/<a\b[^>]*>([^<]+)<\/a>/g)].map((match) => match[1]);
+      expect(labels).toEqual(expected);
+    }
+  });
+
   it("認証確認が終わるまではログイン系のリンクを出さない（静的描画の前提）", () => {
     // このテストは fetch をモックせず静的描画に依存している。その前提は
     // 「isAuthChecked が false の間はログイン中/未ログインどちらのUIも

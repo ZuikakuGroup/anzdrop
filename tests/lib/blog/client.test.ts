@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, getPosts, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/client";
+import { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, getPosts, isBlogSeedDataEnabled, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/client";
+import { getLocalSeedPosts, LOCAL_SEED_POSTS } from "@/lib/blog/seed";
+import { PAGE_SIZE } from "@/lib/blog/pagination";
 import { isAllowedExternalUrl } from "@/lib/blog/validation";
 
 vi.mock("server-only", () => ({}));
@@ -108,5 +110,20 @@ describe("microCMS client", () => {
 
     expect(error).toBeInstanceOf(MicrocmsApiError);
     expect(error.status).toBe(404);
+  });
+
+  it("enables local seed data only when the development-only flag is set", () => {
+    expect(isBlogSeedDataEnabled("true", "development")).toBe(true);
+    expect(isBlogSeedDataEnabled("true", "production")).toBe(false);
+    expect(isBlogSeedDataEnabled(undefined, "development")).toBe(false);
+  });
+
+  it("provides more than one page of local posts and respects pagination", () => {
+    const secondPage = getLocalSeedPosts({ limit: PAGE_SIZE, offset: PAGE_SIZE });
+
+    expect(LOCAL_SEED_POSTS.length).toBeGreaterThan(PAGE_SIZE);
+    expect(secondPage.totalCount).toBe(LOCAL_SEED_POSTS.length);
+    expect(secondPage.contents).toHaveLength(3);
+    expect(secondPage.contents[0]?.id).toBe(`local-seed-post-${PAGE_SIZE + 1}`);
   });
 });

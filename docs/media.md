@@ -26,3 +26,5 @@ wrangler secret put MICROCMS_WEBHOOK_SECRET
 Content API key は GET 権限だけを付与する。microCMS では4 API それぞれに `POST https://<domain>/api/revalidate/microcms` の Webhook を設定し、同一の Webhook secret を登録する。署名がない、または不正な通知は受理しない。
 
 ブログは新しい永続キャッシュを使わず、各リクエストで microCMS の公開内容を取得する。`publishedAt[exists]` で公開済み記事だけを取得するため、APIキーに下書き取得権限があっても下書きはサイトに表示されない。そのため Webhook は署名付きの変更通知を受理するだけで、キャッシュの再検証は行わない。共有キャッシュを将来導入する場合は、D1/R2/DO への永続データ追加となるため、事前に設計と許可を得る。
+
+一覧は1ページ12件で、`/blog?page=N` によるページネーションを提供する。前後のページへ移動するボタンに加え、ページ番号欄へ直接入力してEnterで移動できる。
