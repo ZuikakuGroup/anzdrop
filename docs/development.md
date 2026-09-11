@@ -22,6 +22,8 @@ npm install
 
 ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは`NODE_ENV=development`かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・Preview・外部Hostでは有効にならない。確認後は設定を外す。
 
+ブログのページネーションをmicroCMSへ書き込まずに確認する場合は、`.env.local`に`BLOG_USE_SEED_DATA=true`を設定する。ローカル開発時だけ15件の確認用記事へ切り替わり、`/blog`の2ページ目、記事詳細、関連記事、カテゴリ・タグ・著者ページを確認できる。本番・Previewでは同じ値が設定されても有効にならない。確認後はこの設定を外して開発サーバーを再起動する。
+
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 
 ### D1・R2のローカル永続化

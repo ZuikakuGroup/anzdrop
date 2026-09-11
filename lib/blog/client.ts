@@ -1,6 +1,7 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { z } from "zod";
+import { getAllLocalSeedPosts, getLocalSeedPosts, LOCAL_SEED_AUTHOR, LOCAL_SEED_CATEGORY, LOCAL_SEED_POSTS, LOCAL_SEED_TAG } from "./seed";
 import type { BlogAuthor, BlogCategory, BlogPage, BlogPost, BlogTag } from "./types";
 import { isAllowedExternalUrl, isMicrocmsImageUrl } from "./validation";
 
@@ -18,6 +19,7 @@ const publishedStatusSchema = z.object({ publishedAt: z.string().datetime().null
 const listSchema = <T extends z.ZodType>(item: T) => z.object({ contents: z.array(item), totalCount: z.number().int().nonnegative() });
 
 type Query = Record<string, string | number | undefined>;
+type BlogEnv = CloudflareEnv & { MICROCMS_API_KEY?: string };
 
 function publishedPostQuery(query: Query): Query {
   const filters = query.filters;
@@ -35,9 +37,17 @@ export function isMicrocmsNotFoundError(error: unknown): boolean {
   return error instanceof MicrocmsApiError && error.status === 404;
 }
 
+export function isBlogSeedDataEnabled(seedDataValue = process.env.BLOG_USE_SEED_DATA, nodeEnv = process.env.NODE_ENV): boolean {
+  return nodeEnv === "development" && seedDataValue === "true";
+}
+
+function shouldUseBlogSeedData(): boolean {
+  return isBlogSeedDataEnabled();
+}
+
 async function get<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {}): Promise<T> {
   const { env: cloudflareEnv } = getCloudflareContext();
-  const env = cloudflareEnv as CloudflareEnv & { MICROCMS_API_KEY?: string };
+  const env = cloudflareEnv as BlogEnv;
   if (!env.MICROCMS_SERVICE_DOMAIN || !env.MICROCMS_API_KEY) throw new Error("microCMS is not configured");
   const url = new URL(`/api/v1/${endpoint}`, `https://${env.MICROCMS_SERVICE_DOMAIN}`);
   for (const [key, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(key, String(value));
@@ -60,19 +70,24 @@ async function getAll<T>(endpoint: string, schema: z.ZodType<T>, query: Query = 
   }
 }
 
-export const getPosts = (query: Query = {}) => get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { ...publishedPostQuery(query), orders: "-publishedAt", depth: 2 });
-export const getAllPosts = (query: Query = {}) => getAll<BlogPost>("blog-posts", postSchema, { ...publishedPostQuery(query), orders: "-publishedAt,id", depth: 2 });
+export const getPosts = (query: Query = {}) => shouldUseBlogSeedData() ? Promise.resolve(getLocalSeedPosts(query)) : get<BlogPage<BlogPost>>("blog-posts", listSchema(postSchema), { ...publishedPostQuery(query), orders: "-publishedAt", depth: 2 });
+export const getAllPosts = (query: Query = {}) => shouldUseBlogSeedData() ? Promise.resolve(getAllLocalSeedPosts(query)) : getAll<BlogPost>("blog-posts", postSchema, { ...publishedPostQuery(query), orders: "-publishedAt,id", depth: 2 });
 export const getPost = async (id: string): Promise<BlogPost> => {
+  if (shouldUseBlogSeedData()) {
+    const post = LOCAL_SEED_POSTS.find((candidate) => candidate.id === id);
+    if (!post) throw new MicrocmsApiError(404);
+    return post;
+  }
   const post = await get(`blog-posts/${encodeURIComponent(id)}`, publishedStatusSchema, { depth: 2 });
   if (!post.publishedAt) throw new MicrocmsApiError(404);
   return postSchema.parse(post);
 };
-export const getCategory = async (id: string) => get<BlogCategory>(`blog-categories/${encodeURIComponent(id)}`, categorySchema);
-export const getTag = async (id: string) => get<BlogTag>(`blog-tags/${encodeURIComponent(id)}`, tagSchema);
-export const getAuthor = async (id: string) => get<BlogAuthor>(`blog-authors/${encodeURIComponent(id)}`, authorSchema);
-export const getCategories = () => get<BlogPage<BlogCategory>>("blog-categories", listSchema(categorySchema));
-export const getTags = () => get<BlogPage<BlogTag>>("blog-tags", listSchema(tagSchema));
-export const getAuthors = () => get<BlogPage<BlogAuthor>>("blog-authors", listSchema(authorSchema));
-export const getAllCategories = () => getAll<BlogCategory>("blog-categories", categorySchema, { orders: "id" });
-export const getAllTags = () => getAll<BlogTag>("blog-tags", tagSchema, { orders: "id" });
-export const getAllAuthors = () => getAll<BlogAuthor>("blog-authors", authorSchema, { orders: "id" });
+export const getCategory = async (id: string) => { if (shouldUseBlogSeedData()) { if (id === LOCAL_SEED_CATEGORY.id) return LOCAL_SEED_CATEGORY; throw new MicrocmsApiError(404); } return get<BlogCategory>(`blog-categories/${encodeURIComponent(id)}`, categorySchema); };
+export const getTag = async (id: string) => { if (shouldUseBlogSeedData()) { if (id === LOCAL_SEED_TAG.id) return LOCAL_SEED_TAG; throw new MicrocmsApiError(404); } return get<BlogTag>(`blog-tags/${encodeURIComponent(id)}`, tagSchema); };
+export const getAuthor = async (id: string) => { if (shouldUseBlogSeedData()) { if (id === LOCAL_SEED_AUTHOR.id) return LOCAL_SEED_AUTHOR; throw new MicrocmsApiError(404); } return get<BlogAuthor>(`blog-authors/${encodeURIComponent(id)}`, authorSchema); };
+export const getCategories = () => shouldUseBlogSeedData() ? Promise.resolve({ contents: [LOCAL_SEED_CATEGORY], totalCount: 1 }) : get<BlogPage<BlogCategory>>("blog-categories", listSchema(categorySchema));
+export const getTags = () => shouldUseBlogSeedData() ? Promise.resolve({ contents: [LOCAL_SEED_TAG], totalCount: 1 }) : get<BlogPage<BlogTag>>("blog-tags", listSchema(tagSchema));
+export const getAuthors = () => shouldUseBlogSeedData() ? Promise.resolve({ contents: [LOCAL_SEED_AUTHOR], totalCount: 1 }) : get<BlogPage<BlogAuthor>>("blog-authors", listSchema(authorSchema));
+export const getAllCategories = () => shouldUseBlogSeedData() ? Promise.resolve([LOCAL_SEED_CATEGORY]) : getAll<BlogCategory>("blog-categories", categorySchema, { orders: "id" });
+export const getAllTags = () => shouldUseBlogSeedData() ? Promise.resolve([LOCAL_SEED_TAG]) : getAll<BlogTag>("blog-tags", tagSchema, { orders: "id" });
+export const getAllAuthors = () => shouldUseBlogSeedData() ? Promise.resolve([LOCAL_SEED_AUTHOR]) : getAll<BlogAuthor>("blog-authors", authorSchema, { orders: "id" });

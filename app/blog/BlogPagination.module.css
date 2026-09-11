@@ -1,0 +1,10 @@
+.pageInput {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.pageInput::-webkit-inner-spin-button,
+.pageInput::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
