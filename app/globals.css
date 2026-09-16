@@ -8,12 +8,28 @@
      避け、初回表示と本文の可読化を速くする。 */
   --font-sans-system: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
     "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+  --color-brand-action: #c2410c;
+  --color-brand-text: #a53f17;
+  --color-admin-warning-surface: #fef3c7;
+  --color-admin-warning-text: #78350f;
+  --color-admin-warning-border: #b45309;
+  --color-admin-danger-surface: #fee2e2;
+  --color-admin-danger-text: #991b1b;
+  --color-admin-danger-border: #b91c1c;
 }
 
 @theme inline {
   --color-paper: var(--color-paper);
   --color-ink: var(--color-ink);
   --color-brand: var(--color-brand);
+  --color-brand-action: var(--color-brand-action);
+  --color-brand-text: var(--color-brand-text);
+  --color-admin-warning-surface: var(--color-admin-warning-surface);
+  --color-admin-warning-text: var(--color-admin-warning-text);
+  --color-admin-warning-border: var(--color-admin-warning-border);
+  --color-admin-danger-surface: var(--color-admin-danger-surface);
+  --color-admin-danger-text: var(--color-admin-danger-text);
+  --color-admin-danger-border: var(--color-admin-danger-border);
   --font-sans: var(--font-sans-system);
 }
 
