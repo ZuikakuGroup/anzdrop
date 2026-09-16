@@ -92,6 +92,8 @@ export default function SiteHeader() {
           <div ref={menuRef} className="relative">
             <button
               onClick={() => setIsMenuOpen((open) => !open)}
+              aria-expanded={isMenuOpen}
+              aria-controls={isMenuOpen ? "desktop-account-menu" : undefined}
               className="flex items-center gap-1 rounded px-2 py-1.5 font-mono text-xs text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
             >
               <ChevronIcon
@@ -103,7 +105,10 @@ export default function SiteHeader() {
             </button>
 
             {isMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-40 rounded border border-ink/10 bg-paper py-1 shadow-lg">
+              <div
+                id="desktop-account-menu"
+                className="absolute right-0 top-full mt-2 w-40 rounded border border-ink/10 bg-paper py-1 shadow-lg"
+              >
                 <a
                   href="/mypage"
                   className="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink"

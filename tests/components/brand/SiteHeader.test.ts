@@ -72,4 +72,11 @@ describe("SiteHeader のナビゲーション", () => {
     expect(html).not.toContain('href="/mypage/signup"');
     expect(html).not.toContain("ログアウト");
   });
+
+  it("メニューボタンは開閉状態と対象を支援技術へ伝える", () => {
+    const html = renderHeader();
+
+    expect(html).toContain('aria-controls="mobile-menu-panel"');
+    expect(html).toContain('aria-expanded="false"');
+  });
 });
