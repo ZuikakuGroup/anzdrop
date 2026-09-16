@@ -1,4 +1,4 @@
-import type { DeviceClass } from "@/lib/analytics/schema";
+import type { DeviceClass } from "@/lib/analytics/constants";
 
 // 要件書30・35章。過度なフィンガープリンティングをせず、大まかな
 // desktop/mobile/tablet分類とブラウザファミリー名だけを取得する。

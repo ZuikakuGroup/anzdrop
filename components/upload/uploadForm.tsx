@@ -1,15 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import Script from "next/script";
-import {
-  generateKey,
-  exportKey,
-  encodeBase64Url,
-  iterateEncryptedChunks,
-  getCiphertextSizeFromPlaintextSize,
-} from "@/lib/crypto";
-import { bufferAhead } from "@/lib/asyncBuffer";
 import {
   getMaxFileSizeBytes,
   getUploadConcurrencyForPlan,
@@ -18,8 +11,6 @@ import {
   type Plan,
 } from "@/lib/plan";
 import type { Retention } from "@/lib/retention";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
 import DropMark from "@/components/brand/DropMark";
 import Spinner from "@/components/brand/Spinner";
 import {
@@ -32,21 +23,44 @@ import {
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
-import QrCodeModal from "@/components/brand/QrCodeModal";
-import type { MeResponse } from "@/app/api/account/me/schema";
-import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
 import { track } from "@/lib/analytics/client";
 import { getSizeBucket } from "@/lib/analytics/sizeBucket";
 import { classifyUploadError } from "@/lib/analytics/errorCodes";
-import {
-  type PendingFile,
-  collectDataTransferFiles,
-} from "@/lib/upload/dragDropFiles";
-import { encryptFileName, wrapKeyWithPassword } from "@/lib/upload/encrypt";
+import type { PendingFile } from "@/lib/upload/dragDropFiles";
 import {
   checkSharePasswordBeforeUpload,
   MIN_SHARE_PASSWORD_LENGTH,
 } from "@/lib/passwordPolicy";
+import { getCurrentAccount } from "@/lib/account/me-client";
+
+// 共有リンクの発行後、利用者がQRボタンを押すときだけ必要になる。初回表示で
+// qrcodeライブラリをダウンロード・評価しないようクライアント側で遅延読込する。
+const QrCodeModal = dynamic(() => import("@/components/brand/QrCodeModal"), {
+  ssr: false,
+});
+
+let cryptoModulePromise: Promise<typeof import("@/lib/crypto")> | undefined;
+let uploadModulesPromise:
+  | Promise<[
+      typeof import("@/lib/asyncBuffer"),
+      typeof import("@/lib/upload/encrypt"),
+      typeof import("@/lib/upload/uploadFile"),
+    ]>
+  | undefined;
+
+function loadCryptoModule(): Promise<typeof import("@/lib/crypto")> {
+  cryptoModulePromise ??= import("@/lib/crypto");
+  return cryptoModulePromise;
+}
+
+function loadUploadModules(): NonNullable<typeof uploadModulesPromise> {
+  uploadModulesPromise ??= Promise.all([
+    import("@/lib/asyncBuffer"),
+    import("@/lib/upload/encrypt"),
+    import("@/lib/upload/uploadFile"),
+  ]);
+  return uploadModulesPromise;
+}
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 
@@ -79,7 +93,12 @@ type QueuedFile = {
   completed: boolean;
 };
 
-export default function UploadForm() {
+type UploadFormProps = {
+  header: ReactNode;
+  footer: ReactNode;
+};
+
+export default function UploadForm({ header, footer }: UploadFormProps) {
   const fileInputId = useId();
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [shareUrl, setShareUrl] = useState("");
@@ -99,11 +118,14 @@ export default function UploadForm() {
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [canShareNatively, setCanShareNatively] = useState(false);
   const dragCounterRef = useRef(0);
+  const [shouldLoadTurnstile, setShouldLoadTurnstile] = useState(false);
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
-    useTurnstile();
+    useTurnstile(shouldLoadTurnstile);
 
   // 要件書10.1章。トップページ(=アップロード画面)への訪問を1回だけ計測する。
   useEffect(() => {
+    // pagehide時の即時送信も登録するため、ここでは遅延させない。短時間で
+    // 離脱した訪問を取りこぼすより、軽量な初期化を優先する。
     track("landing_view");
   }, []);
 
@@ -117,8 +139,7 @@ export default function UploadForm() {
   // 未ログインなら常にfree(既存の匿名アップロードの挙動を維持)。ログイン
   // していれば有料プランの上限緩和・保存期間延長を反映する。
   useEffect(() => {
-    fetch("/api/account/me")
-      .then((response) => response.json() as Promise<MeResponse>)
+    getCurrentAccount()
       .then((data) => {
         if (data.success) {
           setPlan(data.plan);
@@ -145,7 +166,9 @@ export default function UploadForm() {
 
   const getKey = (): Promise<CryptoKey> => {
     if (!keyPromiseRef.current) {
-      keyPromiseRef.current = generateKey();
+      keyPromiseRef.current = loadCryptoModule().then(({ generateKey }) =>
+        generateKey()
+      );
     }
     return keyPromiseRef.current;
   };
@@ -164,11 +187,19 @@ export default function UploadForm() {
     pendingFile: PendingFile
   ): AsyncGenerator<Uint8Array> => {
     async function* encryptedChunks(): AsyncGenerator<Uint8Array> {
-      const key = await getKey();
+      const [key, { iterateEncryptedChunks }] = await Promise.all([
+        getKey(),
+        loadCryptoModule(),
+      ]);
       yield* iterateEncryptedChunks(pendingFile.file, key);
     }
 
-    return bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS);
+    async function* bufferedEncryptedChunks(): AsyncGenerator<Uint8Array> {
+      const [{ bufferAhead }] = await loadUploadModules();
+      yield* bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS);
+    }
+
+    return bufferedEncryptedChunks();
   };
 
   const addFiles = (newFiles: PendingFile[]) => {
@@ -203,8 +234,9 @@ export default function UploadForm() {
     for (const pendingFile of newFiles) {
       // ファイル名の暗号化(単一チャンク・数十バイト)だけは先に始めておく。
       // ファイル本体の暗号化は upload() が処理する直前まで始めない(issue #60)。
-      const encryptedFileName = getKey().then((key) =>
-        encryptFileName(pendingFile.path, key)
+      const encryptedFileName = Promise.all([getKey(), loadUploadModules()]).then(
+        ([key, [, { encryptFileName }]]) =>
+          encryptFileName(pendingFile.path, key)
       );
       // ここでの例外は実際のアップロード時(upload内でのawait)に処理するので、
       // unhandled rejectionの警告だけを避ける。
@@ -258,9 +290,23 @@ export default function UploadForm() {
     dragCounterRef.current = 0;
     setIsDragging(false);
 
-    collectDataTransferFiles(event.dataTransfer)
+    const files = Array.from(event.dataTransfer.files);
+    const entries = Array.from(event.dataTransfer.items)
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter((entry): entry is FileSystemEntry => !!entry);
+
+    void import("@/lib/upload/dragDropFiles")
+      .then(({ collectDataTransferFiles }) =>
+        collectDataTransferFiles(files, entries)
+      )
       .then(addFiles)
       .catch(() => setError("ファイルの読み込みに失敗しました。"));
+  };
+
+  const prepareTurnstile = () => {
+    if (TURNSTILE_SITE_KEY && isTurnstileRequiredForPlan(plan)) {
+      setShouldLoadTurnstile(true);
+    }
   };
 
   const upload = async () => {
@@ -294,16 +340,20 @@ export default function UploadForm() {
     setShowAdvanced(false);
 
     try {
-      const key = await getKey();
+      const [key, cryptoModule, [, uploadEncrypt, uploadFile]] = await Promise.all([
+        getKey(),
+        loadCryptoModule(),
+        loadUploadModules(),
+      ]);
       const isNewShare = !shareIdRef.current;
 
       const turnstileToken =
         isNewShare && isTurnstileRequiredForPlan(plan)
-          ? await getTurnstileToken()
+          ? (prepareTurnstile(), await getTurnstileToken())
           : undefined;
       const passwordWrap =
         isNewShare && usePassword
-          ? await wrapKeyWithPassword(key, password)
+          ? await uploadEncrypt.wrapKeyWithPassword(key, password)
           : null;
 
       // 進捗の分母は「実際にネットワークへ送出される暗号化ストリームの
@@ -313,7 +363,7 @@ export default function UploadForm() {
       // 先行し、小さいファイルでは完了前に100%に達してしまう。
       const totalBytes = pending.reduce(
         (sum, item) =>
-          sum + getCiphertextSizeFromPlaintextSize(item.pendingFile.file.size),
+          sum + cryptoModule.getCiphertextSizeFromPlaintextSize(item.pendingFile.file.size),
         0
       );
       let uploadedBytes = 0;
@@ -328,7 +378,7 @@ export default function UploadForm() {
         let analyticsTransferId: string | undefined;
 
         try {
-          const result = await uploadEncryptedFile({
+          const result = await uploadFile.uploadEncryptedFile({
             path,
             encryptedFileName,
             fileSize: item.pendingFile.file.size,
@@ -403,7 +453,9 @@ export default function UploadForm() {
         // パスワード保護時は生の鍵をURLに含めない(パスワードなしでは復号不可能にするため)。
         setShareUrl(`${window.location.origin}/d/${shareIdRef.current}`);
       } else {
-        const keyFragment = encodeBase64Url(await exportKey(key));
+        const keyFragment = cryptoModule.encodeBase64Url(
+          await cryptoModule.exportKey(key)
+        );
 
         setShareUrl(
           `${window.location.origin}/d/${shareIdRef.current}#${keyFragment}`
@@ -488,7 +540,7 @@ export default function UploadForm() {
         </div>
       )}
 
-      <SiteHeader />
+      {header}
 
       {/* ヘッダー(h-16)とメインだけでちょうど1画面分の高さになるようにして、
           フッターは常にファーストビューの外(スクロールしないと見えない位置)へ
@@ -750,6 +802,9 @@ export default function UploadForm() {
 
             <button
               onClick={upload}
+              onPointerEnter={prepareTurnstile}
+              onPointerDown={prepareTurnstile}
+              onFocus={prepareTurnstile}
               disabled={isUploading || !!shareUrl}
               className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
@@ -760,9 +815,9 @@ export default function UploadForm() {
         </div>
       </main>
 
-      <SiteFooter />
+      {footer}
 
-      {TURNSTILE_SITE_KEY && (
+      {shouldLoadTurnstile && TURNSTILE_SITE_KEY && (
         <Script
           src="https://challenges.cloudflare.com/turnstile/v0/api.js"
           strategy="afterInteractive"

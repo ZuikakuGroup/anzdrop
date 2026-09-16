@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import BrandHeader from "./BrandHeader";
 import { ChevronIcon, MenuToggleIcon } from "./ShareIcons";
-import type { MeResponse } from "@/app/api/account/me/schema";
+import { getCurrentAccount } from "@/lib/account/me-client";
 
 const NAV_LINKS = [
   { href: "/about", label: "Anzdropとは" },
@@ -24,8 +24,7 @@ export default function SiteHeader() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch("/api/account/me")
-      .then((response) => response.json() as Promise<MeResponse>)
+    getCurrentAccount()
       .then((data) => {
         if (data.success) {
           setAccountId(data.accountId);

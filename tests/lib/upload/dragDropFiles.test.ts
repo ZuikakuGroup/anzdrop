@@ -131,44 +131,20 @@ describe("collectEntry", () => {
 });
 
 describe("collectDataTransferFiles", () => {
-  it("expands entries (including nested directories) via webkitGetAsEntry", async () => {
+  it("expands captured entries (including nested directories)", async () => {
     const file = new File(["a"], "a.txt");
     const entry = fakeFileEntry(file, "/a.txt");
-    const dataTransfer = {
-      items: [{ webkitGetAsEntry: () => entry }],
-      files: [],
-    } as unknown as DataTransfer;
 
-    const result = await collectDataTransferFiles(dataTransfer);
+    const result = await collectDataTransferFiles([], [entry]);
 
     expect(result).toEqual([{ file, path: "a.txt" }]);
   });
 
-  it("filters out items whose webkitGetAsEntry returns null/undefined", async () => {
-    const file = new File(["a"], "a.txt");
-    const entry = fakeFileEntry(file, "/a.txt");
-    const dataTransfer = {
-      items: [
-        { webkitGetAsEntry: () => entry },
-        { webkitGetAsEntry: () => null },
-      ],
-      files: [],
-    } as unknown as DataTransfer;
-
-    const result = await collectDataTransferFiles(dataTransfer);
-
-    expect(result).toEqual([{ file, path: "a.txt" }]);
-  });
-
-  it("falls back to a flat file list when no entries are available (no webkitGetAsEntry support)", async () => {
+  it("falls back to captured flat files when no entries are available", async () => {
     const fileA = new File(["a"], "a.txt");
     const fileB = new File(["b"], "b.txt");
-    const dataTransfer = {
-      items: [],
-      files: [fileA, fileB],
-    } as unknown as DataTransfer;
 
-    const result = await collectDataTransferFiles(dataTransfer);
+    const result = await collectDataTransferFiles([fileA, fileB], []);
 
     expect(result).toEqual([
       { file: fileA, path: "a.txt" },

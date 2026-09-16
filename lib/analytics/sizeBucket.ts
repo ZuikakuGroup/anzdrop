@@ -1,4 +1,4 @@
-import { SIZE_BUCKETS, type SizeBucket } from "@/lib/analytics/schema";
+import { SIZE_BUCKETS, type SizeBucket } from "@/lib/analytics/constants";
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;

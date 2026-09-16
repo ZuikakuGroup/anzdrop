@@ -6,7 +6,7 @@ import {
   RATE_LIMITED_MESSAGE,
   SUSPENDED_SHARE_MESSAGE,
 } from "@/lib/download/errors";
-import type { DownloadErrorCode, UploadErrorCode } from "@/lib/analytics/schema";
+import type { DownloadErrorCode, UploadErrorCode } from "@/lib/analytics/constants";
 
 // 要件書31章。自由形式のエラーメッセージはそのまま送らず、定義済みコードへ
 // 丸める。既存のエラー型(lib/download/errors.ts)が区別している範囲でしか

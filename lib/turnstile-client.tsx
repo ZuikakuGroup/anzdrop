@@ -46,7 +46,9 @@ declare global {
 // 必要と判断した場合のみウィジェットを表示する(正規ユーザーには通常何も見えない)。
 // チャレンジ表示が必要になった場合は、before/after-interactive-callbackを使って
 // ページ内埋め込みではなくモーダルオーバーレイとして見せる。
-export function useTurnstile(): { getToken: () => Promise<string>; widget: ReactNode } {
+export function useTurnstile(
+  enabled = true
+): { getToken: () => Promise<string>; widget: ReactNode } {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const resolveRef = useRef<((token: string) => void) | null>(null);
@@ -106,13 +108,10 @@ export function useTurnstile(): { getToken: () => Promise<string>; widget: React
     return widgetId;
   };
 
-  // ウィジェットのrender()(Cloudflare側のiframe初期化を伴う)を、送信ボタン
-  // クリックまで遅延させず、マウント後(turnstile.jsの読み込み待ちを挟みつつ)
-  // 先行して行っておく。こうすることで送信時にgetToken()から呼ばれる
-  // ensureWidget()は既にレンダリング済みのwidgetIdを即座に返すだけになり、
-  // execute()の呼び出しだけが送信時の待ち時間として残る。
+  // 外部スクリプトとiframeは初回表示では読まない。アップロードボタンへの
+  // 操作意図を検出してから先行初期化し、通常のファーストビューをブロックしない。
   useEffect(() => {
-    if (!TURNSTILE_SITE_KEY || !isMounted) {
+    if (!enabled || !TURNSTILE_SITE_KEY || !isMounted) {
       return;
     }
 
@@ -140,7 +139,7 @@ export function useTurnstile(): { getToken: () => Promise<string>; widget: React
         clearTimeout(timeoutId);
       }
     };
-  }, [isMounted]);
+  }, [enabled, isMounted]);
 
   // モーダル表示中は背景のスクロールを止める(オーバーレイはクリックを
   // 吸収するが、タッチ操作によるスクロールまでは防げないため)。
@@ -157,27 +156,33 @@ export function useTurnstile(): { getToken: () => Promise<string>; widget: React
     };
   }, [isInteractive]);
 
-  const getToken = (): Promise<string> => {
+  const getToken = async (): Promise<string> => {
+    if (!TURNSTILE_SITE_KEY) {
+      throw new Error("Bot対策が設定されていません。");
+    }
+
+    // タップだけで送信した場合は、Script要素の追加・ダウンロードが始まる前に
+    // getToken()へ到達しうる。最大10秒待ってから明確なエラーにする。
+    let widgetId: string | null = null;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      widgetId = ensureWidget();
+      if (widgetId && window.turnstile) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    if (!widgetId || !window.turnstile) {
+      throw new Error(
+        "Bot対策の読み込みに失敗しました。ページを再読み込みしてください。"
+      );
+    }
+
+    const turnstile = window.turnstile;
     return new Promise((resolve, reject) => {
-      if (!TURNSTILE_SITE_KEY) {
-        reject(new Error("Bot対策が設定されていません。"));
-        return;
-      }
-
-      const widgetId = ensureWidget();
-
-      if (!widgetId || !window.turnstile) {
-        reject(
-          new Error(
-            "Bot対策の読み込みに失敗しました。ページを再読み込みしてください。"
-          )
-        );
-        return;
-      }
-
       resolveRef.current = resolve;
       rejectRef.current = reject;
-      window.turnstile.execute(widgetId);
+      turnstile.execute(widgetId);
     });
   };
 
