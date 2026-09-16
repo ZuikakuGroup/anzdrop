@@ -5,7 +5,7 @@ import {
   findForbiddenPropertyKeys,
   MAX_EVENTS_PER_BATCH,
   type AnalyticsEventName,
-} from "@/lib/analytics/schema";
+} from "@/lib/analytics/constants";
 
 // 要件書19章「計測処理によるUXへの影響」。このモジュールはどんな内部エラーも
 // 呼び出し元(アップロード/ダウンロード処理)へ伝播させない。失敗しても

@@ -1,93 +1,33 @@
 import { z } from "zod";
+import {
+  DEVICE_CLASSES,
+  DOWNLOAD_ERROR_CODES,
+  MAX_EVENTS_PER_BATCH,
+  SIZE_BUCKETS,
+  UPLOAD_ERROR_CODES,
+} from "./constants";
+
+export {
+  ANALYTICS_EVENT_NAMES,
+  DEVICE_CLASSES,
+  DOWNLOAD_ERROR_CODES,
+  FORBIDDEN_PROPERTY_KEYS,
+  MAX_EVENTS_PER_BATCH,
+  SIZE_BUCKETS,
+  UPLOAD_ERROR_CODES,
+  findForbiddenPropertyKeys,
+} from "./constants";
+export type {
+  AnalyticsEventName,
+  DeviceClass,
+  DownloadErrorCode,
+  SizeBucket,
+  UploadErrorCode,
+} from "./constants";
 
 // 計測基盤要件定義書 v1.0 の Phase 1 + Phase 2 スコープで定義された
 // イベント名のみを許可する(37章・38章)。ここに無い event_name は
 // リクエストごと reject する(要件書18章)。
-export const ANALYTICS_EVENT_NAMES = [
-  "landing_view",
-  "file_select",
-  "upload_start",
-  "upload_success",
-  "upload_error",
-  "share_link_copy",
-  "share_native",
-  "download_start",
-  "download_success",
-  "download_error",
-  "recipient_send_cta_view",
-  "recipient_send_cta_click",
-] as const;
-
-export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
-
-// 要件書31章の定義済みエラーコード。自由形式メッセージは送信しない。
-export const UPLOAD_ERROR_CODES = [
-  "UPLOAD_NETWORK_ERROR",
-  "UPLOAD_STORAGE_ERROR",
-  "UPLOAD_TIMEOUT",
-  "UPLOAD_ENCRYPTION_ERROR",
-  "UPLOAD_CANCELLED",
-  "UPLOAD_UNKNOWN",
-] as const;
-export type UploadErrorCode = (typeof UPLOAD_ERROR_CODES)[number];
-
-export const DOWNLOAD_ERROR_CODES = [
-  "DOWNLOAD_NETWORK_ERROR",
-  "DOWNLOAD_NOT_FOUND",
-  "DOWNLOAD_EXPIRED",
-  "DOWNLOAD_DECRYPTION_ERROR",
-  "DOWNLOAD_CANCELLED",
-  "DOWNLOAD_UNKNOWN",
-] as const;
-export type DownloadErrorCode = (typeof DOWNLOAD_ERROR_CODES)[number];
-
-// 要件書11章。正確なバイト数ではなくbucket化された値のみ送信する。
-export const SIZE_BUCKETS = [
-  "<10MB",
-  "10-100MB",
-  "100MB-500MB",
-  "500MB-1GB",
-  "1GB-5GB",
-  "5GB-10GB",
-  "10GB+",
-] as const;
-export type SizeBucket = (typeof SIZE_BUCKETS)[number];
-
-export const DEVICE_CLASSES = ["desktop", "mobile", "tablet", "unknown"] as const;
-export type DeviceClass = (typeof DEVICE_CLASSES)[number];
-
-export const MAX_EVENTS_PER_BATCH = 20;
-
-// 要件書33章「Privacy Guard」。各イベントのproperty allowlist(下記の
-// `.strict()`スキーマ)自体が未知キーを弾くため二重の防御になるが、
-// 「将来誰かがこのファイルにこの名前のキーをうっかり追加してしまう」事故を
-// 早期に検知できるよう、キー名そのものを名指しで禁止するチェックを独立させる。
-export const FORBIDDEN_PROPERTY_KEYS = [
-  "filename",
-  "fileName",
-  "key",
-  "encryptionKey",
-  "decryptionKey",
-  "url",
-  "fullUrl",
-  "hash",
-  "fragment",
-  "email",
-  "ip",
-  "ipAddress",
-] as const;
-
-export function findForbiddenPropertyKeys(properties: unknown): string[] {
-  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
-    return [];
-  }
-
-  const forbidden: readonly string[] = FORBIDDEN_PROPERTY_KEYS;
-
-  return Object.keys(properties as Record<string, unknown>).filter((key) =>
-    forbidden.includes(key)
-  );
-}
 
 // D1で時刻を文字列比較するため、曖昧なDate.parse()ではなく、UTCの厳密な
 // ISO 8601表記だけを受け付ける。

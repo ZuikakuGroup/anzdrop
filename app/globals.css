@@ -4,13 +4,17 @@
   --color-paper: #ffffff;
   --color-ink: #0a0a0a;
   --color-brand: #f15a22;
+  /* 日本語は端末搭載フォントを優先する。大きなWebフォントのダウンロードを
+     避け、初回表示と本文の可読化を速くする。 */
+  --font-sans-system: -apple-system, BlinkMacSystemFont, "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
 }
 
 @theme inline {
   --color-paper: var(--color-paper);
   --color-ink: var(--color-ink);
   --color-brand: var(--color-brand);
-  --font-sans: var(--font-noto-sans-jp);
+  --font-sans: var(--font-sans-system);
 }
 
 html {
@@ -91,4 +95,10 @@ body {
 .anz-scroll::-webkit-scrollbar-thumb {
   background-color: color-mix(in srgb, var(--color-ink) 30%, transparent);
   border-radius: 9999px;
+}
+
+/* ファーストビュー外のフッターは、近づくまでレイアウト・描画を後回しにする。 */
+.anz-deferred {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 22rem;
 }
