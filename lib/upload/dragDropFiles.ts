@@ -39,16 +39,13 @@ export async function collectEntry(
 }
 
 // ドラッグ&ドロップされたフォルダを再帰的に展開し、相対パス付きのファイル一覧にする。
-// webkitGetAsEntryが使えない環境ではフラットなファイル一覧にフォールバックする。
+// webkitGetAsEntryが使えない環境では、ドロップハンドラで取得したフラットなファイル一覧にフォールバックする。
 export async function collectDataTransferFiles(
-  dataTransfer: DataTransfer
+  files: File[],
+  entries: FileSystemEntry[]
 ): Promise<PendingFile[]> {
-  const entries = Array.from(dataTransfer.items)
-    .map((item) => item.webkitGetAsEntry?.())
-    .filter((entry): entry is FileSystemEntry => !!entry);
-
   if (entries.length === 0) {
-    return Array.from(dataTransfer.files).map((file) => ({
+    return files.map((file) => ({
       file,
       path: file.name,
     }));

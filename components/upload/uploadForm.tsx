@@ -290,9 +290,14 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     dragCounterRef.current = 0;
     setIsDragging(false);
 
+    const files = Array.from(event.dataTransfer.files);
+    const entries = Array.from(event.dataTransfer.items)
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter((entry): entry is FileSystemEntry => !!entry);
+
     void import("@/lib/upload/dragDropFiles")
       .then(({ collectDataTransferFiles }) =>
-        collectDataTransferFiles(event.dataTransfer)
+        collectDataTransferFiles(files, entries)
       )
       .then(addFiles)
       .catch(() => setError("ファイルの読み込みに失敗しました。"));
