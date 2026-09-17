@@ -75,6 +75,16 @@ npx tsc --noEmit
 
 GitHub Actions(`.github/workflows/deploy.yml`)でも `main` へのpush時に同じチェックを実行しており、失敗するとデプロイは行われない。
 
+## トップページの合成計測
+
+トップページのTTFB、LCP、CLS、初期転送量を確認するには、Chromeを使える環境で次を実行する。結果は標準出力にだけ表示され、利用者の計測データやレポートファイルは保存しない。
+
+```bash
+SITE_URL=https://anzdrop.com npm run measure:home
+```
+
+ローカルを計測する場合は、別のターミナルで `npm run dev` を起動してから `npm run measure:home` を実行する。
+
 ## 動作確認のコツ
 
 - ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。

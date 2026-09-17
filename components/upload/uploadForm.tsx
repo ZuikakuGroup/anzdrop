@@ -6,7 +6,6 @@ import Script from "next/script";
 import {
   getMaxFileSizeBytes,
   getUploadConcurrencyForPlan,
-  isRetentionAllowedForPlan,
   isTurnstileRequiredForPlan,
   type Plan,
 } from "@/lib/plan";
@@ -16,20 +15,17 @@ import Spinner from "@/components/brand/Spinner";
 import {
   XIcon,
   LineIcon,
-  ChevronIcon,
   QrCodeIcon,
   ShareIcon,
 } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
-import PasswordInput from "@/components/brand/PasswordInput";
 import { track } from "@/lib/analytics/client";
 import { getSizeBucket } from "@/lib/analytics/sizeBucket";
 import { classifyUploadError } from "@/lib/analytics/errorCodes";
 import type { PendingFile } from "@/lib/upload/dragDropFiles";
 import {
   checkSharePasswordBeforeUpload,
-  MIN_SHARE_PASSWORD_LENGTH,
 } from "@/lib/passwordPolicy";
 import { getCurrentAccount } from "@/lib/account/me-client";
 
@@ -38,6 +34,27 @@ import { getCurrentAccount } from "@/lib/account/me-client";
 const QrCodeModal = dynamic(() => import("@/components/brand/QrCodeModal"), {
   ssr: false,
 });
+
+type AdvancedSettingsModule = typeof import("@/components/upload/AdvancedSettings");
+
+let advancedSettingsPromise: Promise<AdvancedSettingsModule> | undefined;
+
+function loadAdvancedSettings() {
+  if (!advancedSettingsPromise) {
+    const pendingImport = import("@/components/upload/AdvancedSettings");
+    advancedSettingsPromise = pendingImport;
+    void pendingImport.catch(() => {
+      if (advancedSettingsPromise === pendingImport) {
+        advancedSettingsPromise = undefined;
+      }
+    });
+  }
+  return advancedSettingsPromise;
+}
+
+function preloadAdvancedSettings() {
+  void loadAdvancedSettings().catch(() => {});
+}
 
 let cryptoModulePromise: Promise<typeof import("@/lib/crypto")> | undefined;
 let uploadModulesPromise:
@@ -63,20 +80,6 @@ function loadUploadModules(): NonNullable<typeof uploadModulesPromise> {
 }
 
 const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
-
-// パスワード欄の注記(長さ要件)を aria-describedby で入力欄に紐付けるためのid。
-const SHARE_PASSWORD_HINT_ID = "share-password-hint";
-
-// "15d"はStandard/Premium限定、"30d"はPremium限定。実際に選択肢として出すか
-// どうかはisRetentionAllowedForPlanで絞る。
-const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
-  { value: "once", label: "1回" },
-  { value: "1d", label: "1日" },
-  { value: "3d", label: "3日" },
-  { value: "7d", label: "7日" },
-  { value: "15d", label: "15日" },
-  { value: "30d", label: "30日" },
-];
 
 // アップロード中、暗号化1チャンクあたり最大この件数まで、送信側の消費を待たずに
 // 先読みしておく(8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロード
@@ -114,6 +117,9 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
   const [hasCreatedShare, setHasCreatedShare] = useState(false);
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [AdvancedSettings, setAdvancedSettings] = useState<
+    AdvancedSettingsModule["default"] | null
+  >(null);
   const [plan, setPlan] = useState<Plan>("free");
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [canShareNatively, setCanShareNatively] = useState(false);
@@ -147,6 +153,25 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!showAdvanced || AdvancedSettings) {
+      return;
+    }
+
+    let cancelled = false;
+    loadAdvancedSettings()
+      .then((module) => {
+        if (!cancelled) {
+          setAdvancedSettings(() => module.default);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showAdvanced, AdvancedSettings]);
 
   const maxFileSizeBytes = getMaxFileSizeBytes(plan);
 
@@ -698,102 +723,39 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
             >
               <button
                 type="button"
-                onClick={() => setShowAdvanced((prev) => !prev)}
+                onClick={() => {
+                  preloadAdvancedSettings();
+                  setShowAdvanced((prev) => !prev);
+                }}
+                onPointerEnter={preloadAdvancedSettings}
+                onFocus={preloadAdvancedSettings}
+                aria-expanded={showAdvanced}
+                aria-controls="upload-advanced-settings"
                 className="flex items-center gap-1 text-xs font-bold text-ink/50 hover:text-ink"
               >
                 詳細設定
-                <ChevronIcon
-                  className={`h-3 w-3 transition-transform duration-300 ${
-                    showAdvanced ? "rotate-180" : ""
-                  }`}
-                />
+                <span aria-hidden="true">{showAdvanced ? "⌃" : "⌄"}</span>
               </button>
 
               <div
+                id="upload-advanced-settings"
                 className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
                   showAdvanced ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                 }`}
               >
                 <div className="overflow-hidden" inert={!showAdvanced}>
-                  <div className="mt-3 space-y-3">
-                    <div>
-                      <span className="text-xs font-bold text-ink/50">
-                        保存期間
-                      </span>
-                      <div className="mt-1.5 flex gap-2">
-                        {RETENTION_OPTIONS.filter((option) =>
-                          isRetentionAllowedForPlan(option.value, plan)
-                        ).map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => setRetention(option.value)}
-                            className={`flex-1 rounded border-2 py-2 text-xs font-bold transition-colors ${
-                              retention === option.value
-                                ? "border-brand bg-brand text-paper"
-                                : "border-ink/20 text-ink/60 hover:border-ink/40"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="flex items-center gap-2 text-xs font-bold text-ink/50">
-                        <input
-                          type="checkbox"
-                          checked={usePassword}
-                          disabled={hasCreatedShare}
-                          onChange={(event) =>
-                            setUsePassword(event.target.checked)
-                          }
-                          className="h-4 w-4 accent-brand"
-                        />
-                        パスワードを設定する
-                      </label>
-                      {hasCreatedShare && (
-                        <p className="mt-1.5 text-xs text-ink/50">
-                          共有作成後はパスワード設定を変更できません。
-                        </p>
-                      )}
-                      <div
-                        className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
-                          usePassword ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                        }`}
-                      >
-                        <div
-                          className="overflow-hidden"
-                          inert={!usePassword}
-                        >
-                          <PasswordInput
-                            value={password}
-                            onChange={setPassword}
-                            placeholder="パスワード"
-                            autoComplete="new-password"
-                            disabled={hasCreatedShare}
-                            describedBy={
-                              hasCreatedShare
-                                ? undefined
-                                : SHARE_PASSWORD_HINT_ID
-                            }
-                            className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand disabled:opacity-50 sm:text-sm"
-                          />
-                          {/* 共有作成後はパスワードを変更できないので、長さ要件の
-                              案内は出さない(上の「変更できません」だけ残す)。 */}
-                          {!hasCreatedShare && (
-                            <p
-                              id={SHARE_PASSWORD_HINT_ID}
-                              className="mt-1 text-xs text-ink/40"
-                            >
-                              {`${MIN_SHARE_PASSWORD_LENGTH}文字以上。推測されにくいパスワードにしてください。`}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  {showAdvanced && AdvancedSettings && (
+                    <AdvancedSettings
+                      plan={plan}
+                      retention={retention}
+                      onRetentionChange={setRetention}
+                      usePassword={usePassword}
+                      onUsePasswordChange={setUsePassword}
+                      password={password}
+                      onPasswordChange={setPassword}
+                      hasCreatedShare={hasCreatedShare}
+                    />
+                  )}
                 </div>
               </div>
             </div>
