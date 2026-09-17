@@ -20,11 +20,9 @@ try {
     "--quiet",
   ]);
 
-  const report = JSON.parse(await readFile(reportPath, "utf8")) as {
-    audits: Record<string, { numericValue?: number }>;
-  };
-  const metric = (id: string) => report.audits[id]?.numericValue;
-  const milliseconds = (id: string) => {
+  const report = JSON.parse(await readFile(reportPath, "utf8"));
+  const metric = (id) => report.audits[id]?.numericValue;
+  const milliseconds = (id) => {
     const value = metric(id);
     return value === undefined ? "n/a" : `${Math.round(value)}ms`;
   };

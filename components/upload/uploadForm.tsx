@@ -35,19 +35,26 @@ const QrCodeModal = dynamic(() => import("@/components/brand/QrCodeModal"), {
   ssr: false,
 });
 
-let advancedSettingsPromise:
-  | Promise<typeof import("@/components/upload/AdvancedSettings")>
-  | undefined;
+type AdvancedSettingsModule = typeof import("@/components/upload/AdvancedSettings");
+
+let advancedSettingsPromise: Promise<AdvancedSettingsModule> | undefined;
 
 function loadAdvancedSettings() {
-  advancedSettingsPromise ??= import("@/components/upload/AdvancedSettings");
+  if (!advancedSettingsPromise) {
+    const pendingImport = import("@/components/upload/AdvancedSettings");
+    advancedSettingsPromise = pendingImport;
+    void pendingImport.catch(() => {
+      if (advancedSettingsPromise === pendingImport) {
+        advancedSettingsPromise = undefined;
+      }
+    });
+  }
   return advancedSettingsPromise;
 }
 
-const AdvancedSettings = dynamic(
-  () => loadAdvancedSettings().then((module) => module.default),
-  { ssr: false }
-);
+function preloadAdvancedSettings() {
+  void loadAdvancedSettings().catch(() => {});
+}
 
 let cryptoModulePromise: Promise<typeof import("@/lib/crypto")> | undefined;
 let uploadModulesPromise:
@@ -110,6 +117,9 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
   const [hasCreatedShare, setHasCreatedShare] = useState(false);
   const [password, setPassword] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [AdvancedSettings, setAdvancedSettings] = useState<
+    AdvancedSettingsModule["default"] | null
+  >(null);
   const [plan, setPlan] = useState<Plan>("free");
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [canShareNatively, setCanShareNatively] = useState(false);
@@ -143,6 +153,25 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!showAdvanced || AdvancedSettings) {
+      return;
+    }
+
+    let cancelled = false;
+    loadAdvancedSettings()
+      .then((module) => {
+        if (!cancelled) {
+          setAdvancedSettings(() => module.default);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showAdvanced, AdvancedSettings]);
 
   const maxFileSizeBytes = getMaxFileSizeBytes(plan);
 
@@ -695,11 +724,11 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
               <button
                 type="button"
                 onClick={() => {
-                  void loadAdvancedSettings();
+                  preloadAdvancedSettings();
                   setShowAdvanced((prev) => !prev);
                 }}
-                onPointerEnter={() => void loadAdvancedSettings()}
-                onFocus={() => void loadAdvancedSettings()}
+                onPointerEnter={preloadAdvancedSettings}
+                onFocus={preloadAdvancedSettings}
                 aria-expanded={showAdvanced}
                 aria-controls="upload-advanced-settings"
                 className="flex items-center gap-1 text-xs font-bold text-ink/50 hover:text-ink"
@@ -715,7 +744,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                 }`}
               >
                 <div className="overflow-hidden" inert={!showAdvanced}>
-                  {showAdvanced && (
+                  {showAdvanced && AdvancedSettings && (
                     <AdvancedSettings
                       plan={plan}
                       retention={retention}
