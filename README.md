@@ -45,6 +45,7 @@ npm run dev
 | `npm run dev` | 開発サーバー起動(Turbopackの既知の不具合を避けるためwebpackモード) |
 | `npm run build` | Next.jsの本番ビルド |
 | `npm run lint` | ESLint |
+| `npm run measure:home` | Lighthouseによるトップページの合成計測。`SITE_URL`で対象を指定可能 |
 | `npm test` | Vitestによるユニットテスト実行 |
 | `npm run test:coverage` | カバレッジ付きテスト実行 |
 | `npm run preview` | Cloudflare Workers向けビルド後、ローカルでプレビュー |
