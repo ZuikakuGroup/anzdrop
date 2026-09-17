@@ -136,7 +136,11 @@ Cloudflare Workersにはスクリプトサイズの上限があり、**無料プ
 
 ```bash
 npm run preview  # ローカルでCloudflare Workers向けビルド後、wranglerのローカルプレビューを起動
-npm run deploy   # ビルドしてCloudflare Workersへ直接デプロイ
+npm run deploy        # 既存アプリWorkerをデプロイ
+npm run deploy:home   # トップページWorkerをデプロイ
+npm run deploy:router # 公開ルートを受けるRouter Workerを最後にデプロイ
 ```
+
+上記の順番で実行する。Router Workerを最後に更新することで、トップページWorkerのデプロイに失敗しても、公開ルートは既存アプリWorkerを向いたままになる。
 
 手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。

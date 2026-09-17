@@ -17,4 +17,12 @@ describe("package scripts", () => {
 
     expect(packageJson.scripts?.dev).toBe("next dev --webpack --hostname 127.0.0.1");
   });
+
+  it("runs the home-page measurement as plain JavaScript", async () => {
+    const packageJson = await readPackageJson();
+
+    expect(packageJson.scripts?.["measure:home"]).toBe(
+      "node scripts/measure-home.mjs"
+    );
+  });
 });

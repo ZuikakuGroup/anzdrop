@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "check:router": "tsc --project workers/router/tsconfig.json --noEmit",
+    "measure:home": "node scripts/measure-home.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
