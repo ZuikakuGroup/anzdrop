@@ -1,0 +1,7 @@
+{
+  "name": "anzdrop-home",
+  "private": true,
+  "scripts": {
+    "build": "next build"
+  }
+}

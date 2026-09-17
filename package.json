@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:router": "tsc --project workers/router/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "preview": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production"
+    "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production",
+    "deploy:home": "cd apps/home && ../../node_modules/.bin/opennextjs-cloudflare build --config wrangler.jsonc && node ../../scripts/strip-vercel-og.mts && ../../node_modules/.bin/opennextjs-cloudflare deploy --config wrangler.jsonc --var DEPLOYMENT_ENV:production",
+    "deploy:router": "wrangler deploy --config wrangler.router.jsonc"
   },
   "dependencies": {
     "@cloudflare/workers-types": "^5.20260911.1",

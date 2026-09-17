@@ -8,9 +8,11 @@
 2. `npm run lint`
 3. `npx tsc --noEmit`
 4. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
-5. **デプロイ**: `npm run deploy`(内部で `opennextjs-cloudflare build && opennextjs-cloudflare deploy`)
+5. **既存アプリWorkerのデプロイ**: `npm run deploy`
+6. **トップページWorkerのデプロイ**: `npm run deploy:home`
+7. **ルーターWorkerのデプロイ**: `npm run deploy:router`
 
-いずれかのステップが失敗すると後続は実行されない(特にlint/型チェックの失敗時はマイグレーション適用・デプロイまで到達しない)。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+いずれかのステップが失敗すると後続は実行されない。ルーターは最後に更新するため、トップページWorkerのビルドやデプロイに失敗しても公開トラフィックは既存Workerのまま維持される。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
 
 ### 必要なGitHub Secrets
 
@@ -60,6 +62,14 @@
 - **Rate Limiting バインディング**: `ratelimits` に5つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81005`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
+
+### トップページ専用Worker
+
+トップページは [`apps/home`](../apps/home) を独立したNext.jsアプリとしてビルドし、`anzdrop-home` Workerへデプロイする。ここにはトップページのSSR、CSP Proxy、アップロードのクライアントUIだけを含める。D1、R2、決済、認証API、管理画面のサーバーコードは既存の`anzdrop` Workerに残す。
+
+外部からのリクエストは [`wrangler.router.jsonc`](../wrangler.router.jsonc) の`anzdrop-router`が受ける。`/`と`/_home-next/*`だけを`anzdrop-home`へ、その他すべてを`anzdrop`へService Bindingでそのまま転送する。Service Bindingは公開HTTPへ出ず、リクエスト本文とレスポンスストリームをバッファリングしない。Cookie・同一オリジンの`/api/*`・nonce CSPも維持される。
+
+`anzdrop.com/*` のWorkers RouteはルーターWorkerだけが持つ。現在のカスタムドメインの前段にRouteを置くため、ロールバック時はルーターWorkerを直前のバージョンへ戻すか、Routeを外して既存のカスタムドメインへ戻す。RouteにはCloudflareでプロキシされたDNSレコードが必要である。
 
 ## WAF のレート制限ルール
 
