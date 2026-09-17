@@ -9,7 +9,11 @@ function buildFakeBundle(options?: {
   ogBody?: string;
   initWrapperBody?: string;
   omitInitWrapper?: boolean;
+  monorepoMarker?: boolean;
 }): string {
+  const modulePath = options?.monorepoMarker
+    ? "../../node_modules/next/dist/compiled/@vercel/og/index.edge.js"
+    : "node_modules/next/dist/compiled/@vercel/og/index.edge.js";
   const ogBody =
     options?.ogBody ??
     `function parseAlpha(alpha) {
@@ -25,7 +29,7 @@ var ImageResponse;
   const initWrapper = options?.omitInitWrapper
     ? ""
     : `var init_index_edge = __esm({
-  "node_modules/next/dist/compiled/@vercel/og/index.edge.js"() {
+  "${modulePath}"() {
 ${initWrapperBody}  }
 });
 `;
@@ -33,7 +37,7 @@ ${initWrapperBody}  }
   return `// node-builtins:node:worker_threads
 import * as mod from "node:worker_threads";
 
-// node_modules/next/dist/compiled/@vercel/og/index.edge.js
+// ${modulePath}
 var index_edge_exports = {};
 __export(index_edge_exports, {
   ImageResponse: () => ImageResponse
@@ -55,6 +59,13 @@ describe("stripVercelOg", () => {
     expect(stripped).not.toContain("@vercel/og/yoga.wasm");
     expect(stripped).not.toContain("parseAlpha");
     expect(stripped).not.toContain("class extends Response");
+  });
+
+  it("モノレポ配下のNextアプリが出力するモジュール境界にも対応する", () => {
+    const stripped = stripVercelOg(buildFakeBundle({ monorepoMarker: true }));
+
+    expect(stripped).not.toContain("@vercel/og/resvg.wasm");
+    expect(stripped).not.toContain("parseAlpha");
   });
 
   it("呼び出し側が参照する識別子を残す", () => {

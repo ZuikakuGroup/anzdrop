@@ -31,8 +31,13 @@ import { pathToFileURL } from "node:url";
 const MIDDLEWARE_BUNDLE = ".open-next/middleware/handler.mjs";
 
 // esbuild がバンドル内の各モジュールの先頭に出力するコメント。
-const MODULE_MARKER =
-  "// node_modules/next/dist/compiled/@vercel/og/index.edge.js\n";
+const MODULE_MARKERS = [
+  "// node_modules/next/dist/compiled/@vercel/og/index.edge.js\n",
+  // apps/home のようなモノレポ配下のNextアプリでは、esbuildがこの相対パスを
+  // 1段深く出力する。モジュール本体の構造は同じなので両方を受け入れる。
+  "// ../../node_modules/next/dist/compiled/@vercel/og/index.edge.js\n",
+];
+const MODULE_MARKER = MODULE_MARKERS[0];
 // モジュール本体を遅延初期化する esbuild の __esm ラッパー。モジュールの
 // 出力はこのラッパーで終わる。
 const INIT_MARKER = "var init_index_edge = __esm({\n";
@@ -75,7 +80,8 @@ export function stripVercelOg(code: string): string {
     );
   }
 
-  const start = code.indexOf(MODULE_MARKER);
+  const matchingMarker = MODULE_MARKERS.find((marker) => code.includes(marker));
+  const start = matchingMarker ? code.indexOf(matchingMarker) : -1;
   if (start === -1) {
     throw new Error(
       `@vercel/og のモジュール境界 (${MODULE_MARKER.trim()}) が見つかりませんでした。` +
@@ -83,7 +89,10 @@ export function stripVercelOg(code: string): string {
         " このスクリプトと package.json からの呼び出しは不要です。"
     );
   }
-  if (code.indexOf(MODULE_MARKER, start + MODULE_MARKER.length) !== -1) {
+  if (
+    matchingMarker &&
+    code.indexOf(matchingMarker, start + matchingMarker.length) !== -1
+  ) {
     throw new Error(
       "@vercel/og のモジュール境界が複数見つかりました。バンドル構造が想定と異なります。"
     );

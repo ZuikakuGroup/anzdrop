@@ -2,17 +2,20 @@
 
 ## 全体構成
 
-Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) でCloudflare Workers上にデプロイして動かしています。フロントエンド(React)とAPI Routes(`app/api/**/route.ts`)が同じWorker上で動作し、状態は以下のCloudflareリソースに保存されます。
+Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) でCloudflare Workers上にデプロイして動かしています。トップページだけは初期応答のばらつきを抑えるため別Workerへ分離し、API Routes(`app/api/**/route.ts`)とそれ以外の画面は既存Workerで動作します。状態は以下のCloudflareリソースに保存されます。
 
 ```
 ブラウザ (E2EE暗号化/復号はすべてここで行う)
    │
    ▼
-Cloudflare Workers (Next.js / @opennextjs/cloudflare)
-   ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
-   ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
-   ├─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
-   └─ Cron Trigger (毎日UTC 00:10) … 計測基盤の日次集計・生イベントの保持期限切れ削除([`analytics.md`](./analytics.md)参照)
+Cloudflare Workers
+   ├─ anzdrop-router … `/` と `/_home-next/*` をトップページWorkerへ、それ以外を既存Workerへ転送
+   ├─ anzdrop-home … トップページのSSR・nonce CSP・アップロードUI（永続ストレージなし）
+   └─ anzdrop … Next.js API・各画面・D1/R2・Cron Trigger
+       ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
+       ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
+       ├─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
+       └─ Cron Trigger (毎日UTC 00:10) … 計測基盤の日次集計・生イベントの保持期限切れ削除([`analytics.md`](./analytics.md)参照)
 ```
 
 エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。

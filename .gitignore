@@ -13,11 +13,16 @@ coverage/
 
 # next.js
 .next/
+**/.next/
 out/
 next-env.d.ts
 
 # open-next build artifacts
 .open-next/
+**/.open-next/
+
+# Generated Wrangler types
+workers/router/worker-configuration.d.ts
 
 # wrangler local state
 .wrangler/
