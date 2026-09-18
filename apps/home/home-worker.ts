@@ -1,7 +1,14 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- `.open-next/worker.js` はビルド時に生成される。
 // @ts-ignore `.open-next/worker.js` is generated at build time
 import { default as handler } from "./.open-next/worker.js";
-import { normalizeHomeAssetUrl } from "./home-asset-routing";
+import {
+  isHomeStaticAssetUrl,
+  normalizeHomeAssetUrl,
+} from "./home-asset-routing";
+
+type HomeWorkerEnv = CloudflareEnv & {
+  ASSETS: Fetcher;
+};
 
 function normalizeHomeAssetRequest(request: Request): Request {
   const normalizedUrl = normalizeHomeAssetUrl(request.url);
@@ -15,7 +22,15 @@ function normalizeHomeAssetRequest(request: Request): Request {
 }
 
 export default {
-  fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
-    return handler.fetch(normalizeHomeAssetRequest(request), env, ctx);
+  fetch(request: Request, env: HomeWorkerEnv, ctx: ExecutionContext) {
+    const normalizedRequest = normalizeHomeAssetRequest(request);
+
+    // Cloudflareのassets照合は受信URLに対して行われるため、assetPrefixを外した
+    // 静的アセットはBindingから明示的に取得する。画像最適化などはOpenNextに任せる。
+    if (isHomeStaticAssetUrl(request.url)) {
+      return env.ASSETS.fetch(normalizedRequest);
+    }
+
+    return handler.fetch(normalizedRequest, env, ctx);
   },
-} satisfies ExportedHandler<CloudflareEnv>;
+} satisfies ExportedHandler<HomeWorkerEnv>;
