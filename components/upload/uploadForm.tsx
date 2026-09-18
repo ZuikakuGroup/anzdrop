@@ -17,6 +17,7 @@ import {
   LineIcon,
   QrCodeIcon,
   ShareIcon,
+  ChevronIcon,
 } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
@@ -734,7 +735,11 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                 className="flex items-center gap-1 text-xs font-bold text-ink/50 hover:text-ink"
               >
                 詳細設定
-                <span aria-hidden="true">{showAdvanced ? "⌃" : "⌄"}</span>
+                <ChevronIcon
+                  className={`h-3 w-3 shrink-0 transition-transform duration-300 ${
+                    showAdvanced ? "rotate-180" : ""
+                  }`}
+                />
               </button>
 
               <div
@@ -744,7 +749,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                 }`}
               >
                 <div className="overflow-hidden" inert={!showAdvanced}>
-                  {showAdvanced && AdvancedSettings && (
+                  {AdvancedSettings && (
                     <AdvancedSettings
                       plan={plan}
                       retention={retention}
