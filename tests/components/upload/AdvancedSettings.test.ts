@@ -36,7 +36,8 @@ describe("AdvancedSettings", () => {
 
     expect(disabledMarkup).toContain('inert=""');
     expect(enabledMarkup).not.toContain('inert=""');
-    expect(enabledMarkup).toContain('aria-describedby="share-password-hint"');
+    expect(enabledMarkup).not.toContain("share-password-hint");
+    expect(enabledMarkup).not.toContain("推測されにくいパスワード");
   });
 
   it("共有作成後はパスワード設定を変更できないことを示す", () => {
@@ -44,6 +45,6 @@ describe("AdvancedSettings", () => {
 
     expect(markup).toContain("共有作成後はパスワード設定を変更できません。");
     expect(markup).toMatch(/<input[^>]*type="checkbox"[^>]*disabled=""/);
-    expect(markup).not.toContain('aria-describedby="share-password-hint"');
+    expect(markup).not.toContain("share-password-hint");
   });
 });

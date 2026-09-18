@@ -43,6 +43,8 @@ describe("UploadForm の詳細設定", () => {
     );
     expect(button).toBeDefined();
     expect(button?.getAttribute("aria-expanded")).toBe("false");
+    expect(button?.querySelector("svg")).not.toBeNull();
+    expect(button?.textContent).not.toContain("⌄");
     expect(container.textContent).not.toContain("保存期間");
 
     await act(async () => button!.click());
@@ -53,5 +55,13 @@ describe("UploadForm の詳細設定", () => {
 
     expect(button?.getAttribute("aria-expanded")).toBe("true");
     expect(container.textContent).toContain("パスワードを設定する");
+
+    await act(async () => button!.click());
+
+    const settings = container.querySelector("#upload-advanced-settings");
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+    expect(settings?.className).toContain("grid-rows-[0fr]");
+    // 閉じるアニメーションの完了前に子要素を外さない。
+    expect(settings?.textContent).toContain("パスワードを設定する");
   });
 });

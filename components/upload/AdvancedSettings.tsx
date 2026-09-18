@@ -3,9 +3,6 @@
 import PasswordInput from "@/components/brand/PasswordInput";
 import { isRetentionAllowedForPlan, type Plan } from "@/lib/plan";
 import type { Retention } from "@/lib/retention";
-import { MIN_SHARE_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
-
-const SHARE_PASSWORD_HINT_ID = "share-password-hint";
 
 const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "once", label: "1回" },
@@ -84,25 +81,16 @@ export default function AdvancedSettings({
           }`}
         >
           <div className="overflow-hidden" inert={!usePassword}>
-            <PasswordInput
-              value={password}
-              onChange={onPasswordChange}
-              placeholder="パスワード"
-              autoComplete="new-password"
-              disabled={hasCreatedShare}
-              describedBy={
-                hasCreatedShare ? undefined : SHARE_PASSWORD_HINT_ID
-              }
-              className="mt-1.5 w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand disabled:opacity-50 sm:text-sm"
-            />
-            {!hasCreatedShare && (
-              <p
-                id={SHARE_PASSWORD_HINT_ID}
-                className="mt-1 text-xs text-ink/40"
-              >
-                {`${MIN_SHARE_PASSWORD_LENGTH}文字以上。推測されにくいパスワードにしてください。`}
-              </p>
-            )}
+            <div className="mt-1.5">
+              <PasswordInput
+                value={password}
+                onChange={onPasswordChange}
+                placeholder="パスワード"
+                autoComplete="new-password"
+                disabled={hasCreatedShare}
+                className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand disabled:opacity-50 sm:text-sm"
+              />
+            </div>
           </div>
         </div>
       </div>
