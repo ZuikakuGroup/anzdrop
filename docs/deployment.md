@@ -71,6 +71,8 @@
 
 `anzdrop.com/*` のWorkers RouteはルーターWorkerだけが持つ。現在のカスタムドメインの前段にRouteを置くため、ロールバック時はルーターWorkerを直前のバージョンへ戻すか、Routeを外して既存のカスタムドメインへ戻す。RouteにはCloudflareでプロキシされたDNSレコードが必要である。
 
+`anzdrop-home` は `ASSETS` Bindingを通して静的アセットを取得する。`/_home-next/_next/static/*` をWorkerで `/_next/static/*` に正規化してBindingから取得するため、静的アセットだけを先にWorkerへ渡す設定にしている。
+
 ## WAF のレート制限ルール
 
 [`architecture.md`](./architecture.md#レート制限) の外側の層。Workers 側のバインディングが「共有・セッション単位」で数えるのに対し、こちらは**送信元 IP 単位**で数える。Anzdrop のコードは IP を一切扱わないため、IP を見た判定はすべてここに寄せている。

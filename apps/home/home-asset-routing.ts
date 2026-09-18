@@ -1,4 +1,9 @@
 const HOME_ASSET_PREFIX = "/_home-next/";
+const HOME_STATIC_ASSET_PREFIX = "/_home-next/_next/static/";
+
+export function isHomeStaticAssetUrl(requestUrl: string): boolean {
+  return new URL(requestUrl).pathname.startsWith(HOME_STATIC_ASSET_PREFIX);
+}
 
 export function normalizeHomeAssetUrl(requestUrl: string): string {
   const url = new URL(requestUrl);
