@@ -1,1 +1,7 @@
 @import "../../../app/globals.css";
+
+/* トップページはリポジトリ直下の共有コンポーネントを読むため、Tailwindの
+   自動検出範囲へ明示的に加える。これがないと専用アプリの外にあるclassNameが
+   production CSSから除外される。 */
+@source "../../../components/brand";
+@source "../../../components/upload";
