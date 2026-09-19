@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "anzdrop-router",
   "main": "./workers/router/index.ts",
+  // 公開入口は routes で定義した anzdrop.com のみとする。
+  "workers_dev": false,
   "compatibility_date": "2026-09-17",
   "services": [
     { "binding": "HOME", "service": "anzdrop-home" },
