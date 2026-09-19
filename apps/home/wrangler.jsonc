@@ -2,6 +2,9 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "anzdrop-home",
   "main": "./home-worker.ts",
+  // この Worker は anzdrop-router から Service Binding で呼び出す内部サービス。
+  // 公開 workers.dev URL は不要で、ゾーン側の防御も迂回させない。
+  "workers_dev": false,
   "compatibility_date": "2026-09-17",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
