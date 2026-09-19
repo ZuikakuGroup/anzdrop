@@ -61,7 +61,7 @@ async function postStart(body: unknown, headers: Record<string, string> = {}) {
   return POST(
     new Request("http://localhost/api/upload/start", {
       method: "POST",
-      headers,
+      headers: { Origin: "http://localhost", ...headers },
       body: JSON.stringify(body),
     })
   );
@@ -82,6 +82,24 @@ async function getShare(shareId: string) {
 }
 
 describe("POST /api/upload/start", () => {
+  it("rejects a logged-in upload request from another origin before creating a share", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postStart(
+      {
+        encryptedFileName: "file.enc",
+        fileSize: 1024,
+        retention: "7d",
+      },
+      { Origin: "https://evil.example", cookie }
+    );
+
+    expect(response.status).toBe(403);
+    const { results: shares } = await env.DB.prepare(`SELECT id FROM shares`).all();
+    expect(shares).toHaveLength(0);
+  });
+
   it("returns 400 when encryptedFileName is missing", async () => {
     const response = await postStart({
       fileSize: 1024,

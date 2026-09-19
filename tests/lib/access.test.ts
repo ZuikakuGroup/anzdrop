@@ -137,12 +137,13 @@ describe("verifyAccessJwt", () => {
 });
 
 describe("verifySameOrigin", () => {
-  it("allows a request with no Origin header (e.g. non-browser clients)", () => {
+  it("allows a request with no Origin header only when explicitly requested", () => {
     const request = new Request("https://example.com/api/admin/reports/1/resolve", {
       method: "POST",
     });
 
     expect(verifySameOrigin(request)).toBe(true);
+    expect(verifySameOrigin(request, { allowMissing: false })).toBe(false);
   });
 
   it("allows a request whose Origin header matches the request's own origin", () => {

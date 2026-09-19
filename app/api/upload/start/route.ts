@@ -8,6 +8,7 @@ import {
 import { verifyShareOwnership } from "@/lib/share-auth";
 import { generateShareId } from "@/lib/id";
 import { verifySession } from "@/lib/account/session";
+import { verifySameOrigin } from "@/lib/access";
 import {
   getAccountPlanInfo,
   getMaxFileSizeBytes,
@@ -38,6 +39,14 @@ export const POST = withApiHandler(
 
     // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
     const session = await verifySession(request, env);
+
+    if (session && !verifySameOrigin(request, { allowMissing: false })) {
+      return Response.json(
+        { success: false, error: "不正なオリジンからのリクエストです" },
+        { status: 403 }
+      );
+    }
+
     const { plan } = await getAccountPlanInfo(
       session?.accountId ?? null,
       env

@@ -11,6 +11,8 @@ import {
 import {
   createTestEnv,
   clearAllTables,
+  insertTestAccount,
+  sessionCookieHeader,
   stubTurnstileSuccess,
   readJson,
   type TestEnv,
@@ -131,18 +133,49 @@ async function uploadPart(
   );
 }
 
-async function postComplete(body: unknown) {
+async function postComplete(
+  body: unknown,
+  headers: Record<string, string> = {}
+) {
   const { POST } = await import("@/app/api/upload/complete/route");
 
   return POST(
     new Request("http://localhost/api/upload/complete", {
       method: "POST",
+      headers: { Origin: "http://localhost", ...headers },
       body: JSON.stringify(body),
     })
   );
 }
 
 describe("POST /api/upload/complete", () => {
+  it("rejects a logged-in completion request from another origin before changing upload state", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+    const { uploadSessionId, shareId, uploadToken } = await startUpload();
+    const key = await generateKey();
+    const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+    await uploadPart(uploadSessionId, uploadToken, 1, packed.slice());
+
+    const response = await postComplete(
+      { uploadSessionId, uploadToken },
+      { Origin: "https://evil.example", cookie }
+    );
+
+    expect(response.status).toBe(403);
+    const upload = await env.DB.prepare(`SELECT id FROM uploads WHERE id = ?`)
+      .bind(uploadSessionId)
+      .first();
+    const { results: files } = await env.DB.prepare(
+      `SELECT id FROM files WHERE share_id = ?`
+    )
+      .bind(shareId)
+      .all();
+
+    expect(upload).toBeTruthy();
+    expect(files).toHaveLength(0);
+  });
+
   it("returns 400 when uploadSessionId is missing", async () => {
     const response = await postComplete({});
 

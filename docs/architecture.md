@@ -157,6 +157,7 @@ Turnstile を含む濫用対策全体の位置づけは、アップロードが�
 [`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。旧 `middleware.ts`)が、静的アセットを除く全レスポンスに以下を付与します。
 
 - **Content-Security-Policy**: nonce ベースの厳格な CSP。`script-src` は `'self' 'nonce-<リクエストごと>' 'strict-dynamic'` を基本とし、`'unsafe-inline'` を許可しません。ダウンロード画面が URL フラグメントの E2E 復号鍵をメモリに保持するため、この origin 上の XSS を多層防御で抑えることが目的です(`'strict-dynamic'` により、nonce 付きスクリプトが読み込む Turnstile / Stripe.js の子スクリプトは追加のホスト許可なしで動きます)。
+- **CSRF**: Cookie認証で決済・契約・アップロードを変更するPOST APIは、`SameSite=Strict` Cookieに加えて`Origin`がリクエスト自身のoriginと一致することを必須にする。サブドメイン分離時は、許可するoriginを明示的に設計してから変更する。
 - **frame-ancestors 'none' / X-Frame-Options: DENY**: クリックジャッキング対策。
 - **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
 - **Referrer-Policy: no-referrer** / **Strict-Transport-Security** (`DEPLOYMENT_ENV=production` のみ) / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
