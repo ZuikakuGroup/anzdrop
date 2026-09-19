@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifyOpenNodeSignature } from "@/lib/opennode";
 import { extendPaidPeriod, getAccountPlanInfo, PLAN_RANK, type Plan } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
+import { readBodyWithinLimit } from "@/lib/api/body";
 
 type BtcPaymentRecord = {
   account_id: string;
@@ -14,7 +15,14 @@ export const POST = withApiHandler(
     const { env } = getCloudflareContext();
 
     // OpenNodeのWebhookはform-urlencodedで届く(JSONではない)。
-    const form = await request.formData();
+    const rawBody = await readBodyWithinLimit(request, 64 * 1024);
+    if (!rawBody) {
+      return Response.json(
+        { success: false, error: "リクエストサイズが上限を超えています" },
+        { status: 413 }
+      );
+    }
+    const form = new URLSearchParams(new TextDecoder().decode(rawBody));
     const chargeId = form.get("id");
     const status = form.get("status");
     const hashedOrder = form.get("hashed_order");
