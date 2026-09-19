@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
+import { verifySameOrigin } from "@/lib/access";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { downgradeExpiredCardPlan, getAccountPlanInfo } from "@/lib/plan";
@@ -40,6 +41,13 @@ export const POST = withApiHandler(
       return Response.json(
         { success: false, error: "ログインが必要です" },
         { status: 401 }
+      );
+    }
+
+    if (!verifySameOrigin(request, { allowMissing: false })) {
+      return Response.json(
+        { success: false, error: "不正なオリジンからのリクエストです" },
+        { status: 403 }
       );
     }
 

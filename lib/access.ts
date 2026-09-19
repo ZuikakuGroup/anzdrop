@@ -98,16 +98,17 @@ export async function verifyAccessJwt(
   }
 }
 
-// 管理画面のPOST/DELETEエンドポイントは、preflightなしで送れる単純リクエストに
-// よるCSRFに対する多層防御として、Originヘッダーがこのオリジン自身と一致する
-// ことを確認する。主たる認証はCloudflare Access(verifyAccessJwt)であり、これは
-// あくまで補助(Originヘッダーを送らないツール等からの正当な呼び出しを妨げない
-// よう、ヘッダー自体が無い場合は許可する)。
-export function verifySameOrigin(request: Request): boolean {
+// Cookieを伴う状態変更APIのCSRF対策。ブラウザはPOST等のクロスオリジン操作に
+// Originを送るため、欠落も含めて拒否する。管理APIはCloudflare Accessを主認証と
+// するため、既存の非ブラウザ運用を維持する必要がある箇所だけallowMissingを使う。
+export function verifySameOrigin(
+  request: Request,
+  { allowMissing = true }: { allowMissing?: boolean } = {}
+): boolean {
   const origin = request.headers.get("Origin");
 
   if (!origin) {
-    return true;
+    return allowMissing;
   }
 
   return origin === new URL(request.url).origin;

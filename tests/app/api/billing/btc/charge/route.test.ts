@@ -57,6 +57,7 @@ async function postCharge(cookie?: string, body: unknown = { plan: "premium" }) 
     new Request("http://localhost/api/billing/btc/charge", {
       method: "POST",
       headers: {
+        Origin: "http://localhost",
         ...(cookie ? { cookie } : {}),
         "Content-Type": "application/json",
       },

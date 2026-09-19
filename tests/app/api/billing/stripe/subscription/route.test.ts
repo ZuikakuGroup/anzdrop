@@ -91,6 +91,7 @@ async function postSubscription(
     new Request("http://localhost/api/billing/stripe/subscription", {
       method: "POST",
       headers: {
+        Origin: "http://localhost",
         ...(cookie ? { cookie } : {}),
         "Content-Type": "application/json",
       },

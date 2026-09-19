@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { verifySession } from "@/lib/account/session";
+import { verifySameOrigin } from "@/lib/access";
 import { getAccountPlanInfo, getMaxFileSizeBytes } from "@/lib/plan";
 import { getPlaintextSizeFromCiphertextSize } from "@/lib/crypto";
 import { withApiHandler } from "@/lib/api/handler";
@@ -32,6 +33,15 @@ export const POST = withApiHandler(
   "POST /api/upload/complete",
   async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
+
+    const session = await verifySession(request, env);
+
+    if (session && !verifySameOrigin(request, { allowMissing: false })) {
+      return Response.json(
+        { success: false, error: "不正なオリジンからのリクエストです" },
+        { status: 403 }
+      );
+    }
 
     const parsed = await parseJsonBody(request, UploadCompleteRequestSchema);
 
@@ -143,7 +153,6 @@ export const POST = withApiHandler(
     // 実サイズが確定するここで、R2が報告する実際のオブジェクトサイズ(暗号化後)
     // から平文サイズを逆算し、それを正として上限を再検証する。
     // 未ログインの場合は常にfreeプラン扱い(既存の匿名アップロードの挙動を維持)。
-    const session = await verifySession(request, env);
     const { plan } = await getAccountPlanInfo(
       session?.accountId ?? null,
       env

@@ -85,6 +85,7 @@ async function postCancellation(cookie?: string, body: unknown = { cancelAtPerio
     new Request("http://localhost/api/billing/stripe/cancellation", {
       method: "POST",
       headers: {
+        Origin: "http://localhost",
         ...(cookie ? { cookie } : {}),
         "Content-Type": "application/json",
       },

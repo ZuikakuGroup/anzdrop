@@ -73,13 +73,16 @@ function subscription(
   };
 }
 
-async function postSync(cookie?: string) {
+async function postSync(cookie?: string, origin: string | null = "http://localhost") {
   const { POST } = await import("@/app/api/billing/stripe/sync/route");
 
   return POST(
     new Request("http://localhost/api/billing/stripe/sync", {
       method: "POST",
-      headers: { ...(cookie ? { cookie } : {}) },
+      headers: {
+        ...(origin ? { Origin: origin } : {}),
+        ...(cookie ? { cookie } : {}),
+      },
     })
   );
 }
@@ -101,6 +104,26 @@ describe("POST /api/billing/stripe/sync", () => {
     const response = await postSync();
 
     expect(response.status).toBe(401);
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("rejects an authenticated request from another origin before calling Stripe", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postSync(cookie, "https://evil.example");
+
+    expect(response.status).toBe(403);
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("rejects an authenticated request without an Origin header before calling Stripe", async () => {
+    const { accountId } = await insertTestAccount(env);
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postSync(cookie, null);
+
+    expect(response.status).toBe(403);
     expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled();
   });
 
