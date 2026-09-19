@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
+import { readBodyWithinLimit } from "@/lib/api/body";
 import { downgradeExpiredCardPlan } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
@@ -244,7 +245,6 @@ export const POST = withApiHandler(
     const { env } = getCloudflareContext();
 
     const signature = request.headers.get("stripe-signature");
-    const body = await request.text();
 
     if (!signature || !env.STRIPE_WEBHOOK_SECRET) {
       return Response.json(
@@ -252,6 +252,15 @@ export const POST = withApiHandler(
         { status: 400 }
       );
     }
+
+    const rawBody = await readBodyWithinLimit(request, 256 * 1024);
+    if (!rawBody) {
+      return Response.json(
+        { success: false, error: "リクエストサイズが上限を超えています" },
+        { status: 413 }
+      );
+    }
+    const body = new TextDecoder().decode(rawBody);
 
     const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
       httpClient: Stripe.createFetchHttpClient(),
