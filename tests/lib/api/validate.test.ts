@@ -54,4 +54,88 @@ describe("parseJsonBody", () => {
 
     await expect(parseJsonBody(request, schema)).rejects.toThrow();
   });
+
+  it("rejects an oversized declared body before reading it", async () => {
+    const request = new Request("http://localhost/api/example", {
+      method: "POST",
+      headers: { "Content-Length": "65" },
+      // 本文が不正JSONでも、Content-Lengthだけで413にできることを確認する。
+      body: "not valid json",
+    });
+
+    const result = await parseJsonBody(request, schema, 64);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected ok:false");
+    }
+    expect(result.response.status).toBe(413);
+  });
+
+  it("rejects an oversized streamed body when Content-Length understates it", async () => {
+    const request = new Request("http://localhost/api/example", {
+      method: "POST",
+      headers: { "Content-Length": "1" },
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"name":"'));
+          controller.enqueue(new TextEncoder().encode("a".repeat(64)));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+      // Node's Request implementation requires this when a stream is used.
+      duplex: "half",
+    } as RequestInit);
+
+    const result = await parseJsonBody(request, schema, 64);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected ok:false");
+    }
+    expect(result.response.status).toBe(413);
+  });
+
+  it("rejects a streamed body that exceeds the limit when Content-Length is absent", async () => {
+    const request = new Request("http://localhost/api/example", {
+      method: "POST",
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"name":"'));
+          controller.enqueue(new TextEncoder().encode("a".repeat(64)));
+          controller.enqueue(new TextEncoder().encode('"}'));
+          controller.close();
+        },
+      }),
+      // Node's Request implementation requires this when a stream is used.
+      duplex: "half",
+    } as RequestInit);
+
+    const result = await parseJsonBody(request, schema, 64);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected ok:false");
+    }
+    expect(result.response.status).toBe(413);
+  });
+
+  it("accepts a body exactly at the configured byte limit", async () => {
+    const emptyJson = JSON.stringify({ name: "" });
+    const name = "a".repeat(64 - new TextEncoder().encode(emptyJson).byteLength);
+    const body = JSON.stringify({ name });
+
+    expect(new TextEncoder().encode(body).byteLength).toBe(64);
+
+    const request = new Request("http://localhost/api/example", {
+      method: "POST",
+      body,
+    });
+
+    await expect(parseJsonBody(request, schema, 64)).resolves.toEqual({
+      ok: true,
+      data: { name },
+    });
+  });
 });
