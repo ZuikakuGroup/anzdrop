@@ -22,7 +22,6 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: () => ({ env }),
 }));
 
-const mockConstructEventAsync = vi.fn();
 const mockSubscriptionsRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
@@ -30,10 +29,6 @@ vi.mock("stripe", () => {
     static createFetchHttpClient() {
       return {};
     }
-    static createSubtleCryptoProvider() {
-      return {};
-    }
-    webhooks = { constructEventAsync: mockConstructEventAsync };
     subscriptions = { retrieve: mockSubscriptionsRetrieve };
     constructor() {}
   }
@@ -53,21 +48,60 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
-  mockConstructEventAsync.mockReset();
   mockSubscriptionsRetrieve.mockReset();
   // metadataフォールバック対象のイベントは通常、Stripe上でもactiveのまま。
   // 終端状態や別Subscriptionとの衝突を検証するテストでは上書きする。
   mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
 });
 
-async function postWebhook(body: string, signature = "valid-signature") {
+async function signStripeWebhook(
+  payload: string,
+  secret: string,
+  timestamp = Math.floor(Date.now() / 1000)
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      key,
+      encoder.encode(`${timestamp}.${payload}`)
+    )
+  );
+  const hex = Array.from(signature, (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+  return `t=${timestamp},v1=${hex}`;
+}
+
+async function postWebhook(
+  eventOrBody: object | string,
+  options?: { signature?: string | null }
+) {
   const { POST } = await import("@/app/api/billing/stripe/webhook/route");
+  const rawBody =
+    typeof eventOrBody === "string" ? eventOrBody : JSON.stringify(eventOrBody);
+
+  let signature: string | undefined;
+  if (options && "signature" in options) {
+    signature = options.signature || undefined;
+  } else {
+    signature = await signStripeWebhook(rawBody, env.STRIPE_WEBHOOK_SECRET);
+  }
 
   return POST(
     new Request("http://localhost/api/billing/stripe/webhook", {
       method: "POST",
-      headers: signature ? { "stripe-signature": signature } : {},
-      body,
+      headers: signature
+        ? { "stripe-signature": signature, "content-type": "application/json" }
+        : { "content-type": "application/json" },
+      body: rawBody,
     })
   );
 }
@@ -99,16 +133,16 @@ async function getAccount(accountId: string) {
 
 describe("POST /api/billing/stripe/webhook", () => {
   it("returns 400 when the stripe-signature header is missing", async () => {
-    const response = await postWebhook("{}", "");
+    const response = await postWebhook("{}", { signature: null });
 
     expect(response.status).toBe(400);
-    expect(mockConstructEventAsync).not.toHaveBeenCalled();
   });
 
   it("returns 400 when signature verification fails", async () => {
-    mockConstructEventAsync.mockRejectedValue(new Error("bad signature"));
-
-    const response = await postWebhook("{}");
+    const response = await postWebhook(
+      fakeEvent("evt_bad_sig", "customer.subscription.updated", { id: "sub_x" }),
+      { signature: "t=1,v1=00" }
+    );
 
     expect(response.status).toBe(400);
   });
@@ -120,15 +154,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_3", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_3", "customer.subscription.updated", {
         id: "sub_existing",
         status: "active",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
 
@@ -150,15 +180,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 35 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_renew", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_renew", "customer.subscription.updated", {
         id: "sub_renew",
         status: "active",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     expect(new Date(account!.plan_expires_at!).getTime()).toBe(
@@ -181,8 +207,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     const earlierPeriodEndUnix =
       Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_out_of_order", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_out_of_order", "customer.subscription.updated", {
         id: "sub_out_of_order",
         status: "active",
         // 価格は premium に変わっている(プランは実態へ追従させるべき)。
@@ -190,10 +215,7 @@ describe("POST /api/billing/stripe/webhook", () => {
           env.STRIPE_PRICE_ID_PREMIUM,
           earlierPeriodEndUnix
         ),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -211,15 +233,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_first", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_first", "customer.subscription.updated", {
         id: "sub_first_activation",
         status: "active",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("standard");
@@ -232,15 +250,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_no_match", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_no_match", "customer.subscription.updated", {
         id: "sub_never_registered",
         status: "active",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -270,16 +284,12 @@ describe("POST /api/billing/stripe/webhook", () => {
       .mockResolvedValueOnce({ status: "active" })
       .mockResolvedValueOnce({ status: "canceled" });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_fallback", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_fallback", "customer.subscription.updated", {
         id: "sub_stale",
         status: "active",
         metadata: { accountId, plan: "premium" },
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     // 衝突チェックのため、上書き対象になる「別の」Subscriptionを実際に
@@ -315,8 +325,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     const laterPeriodEndUnix =
       Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_conflict", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_conflict", "customer.subscription.updated", {
         id: "sub_new_attempt",
         status: "active",
         metadata: { accountId, plan: "premium" },
@@ -324,10 +333,7 @@ describe("POST /api/billing/stripe/webhook", () => {
           env.STRIPE_PRICE_ID_PREMIUM,
           laterPeriodEndUnix
         ),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith(
@@ -345,7 +351,7 @@ describe("POST /api/billing/stripe/webhook", () => {
   it("fails the whole webhook (and keeps the account unchanged) when checking the conflicting subscription fails transiently (not a 404)", async () => {
     // 衝突チェックのstripe.subscriptions.retrieve()がレート制限等で一時的に
     // 失敗した場合、「衝突なし」と誤認して上書きしてはならない。イベント
-    // 全体を失敗させ(withApiHandlerの汎用500)、Stripeの再送に賭ける。
+    // 全体を失敗させ(Hibiki の HIBIKI_HANDLER_FAILED / 500)、Stripeの再送に賭ける。
     const originalExpiry = new Date(
       Date.now() + 10 * 24 * 60 * 60 * 1000
     ).toISOString();
@@ -375,9 +381,7 @@ describe("POST /api/billing/stripe/webhook", () => {
         ),
       }
     );
-    mockConstructEventAsync.mockResolvedValue(event);
-
-    const response = await postWebhook("{}");
+const response = await postWebhook(event);
 
     expect(response.status).toBe(500);
 
@@ -413,8 +417,7 @@ describe("POST /api/billing/stripe/webhook", () => {
       .mockResolvedValueOnce({ status: "active" })
       .mockResolvedValueOnce({ status: "canceled" });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_stale_fallback", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_stale_fallback", "customer.subscription.updated", {
         id: "sub_older_stale",
         status: "active",
         metadata: { accountId, plan: "premium" },
@@ -422,10 +425,7 @@ describe("POST /api/billing/stripe/webhook", () => {
           env.STRIPE_PRICE_ID_PREMIUM,
           earlierPeriodEndUnix
         ),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -466,16 +466,12 @@ describe("POST /api/billing/stripe/webhook", () => {
       return { status: "canceled" };
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_race", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_race", "customer.subscription.updated", {
         id: "sub_stale",
         status: "active",
         metadata: { accountId, plan: "premium" },
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -516,16 +512,12 @@ describe("POST /api/billing/stripe/webhook", () => {
       return { status: "canceled" };
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_expiry_race", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_expiry_race", "customer.subscription.updated", {
         id: "sub_stale",
         status: "active",
         metadata: { accountId, plan: "premium" },
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -541,15 +533,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_downgrade", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_downgrade", "customer.subscription.updated", {
         id: "sub_downgrade",
         status: "active",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("standard");
@@ -563,18 +551,14 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_unknown_price",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_unknown_price_update", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_unknown_price_update", "customer.subscription.updated", {
         id: "sub_unknown_price",
         status: "active",
         ...subscriptionWithPrice(
           "price_totally_unrelated",
           Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
         ),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("premium");
@@ -591,18 +575,14 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_past_due",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_4", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_4", "customer.subscription.updated", {
         id: "sub_past_due",
         status: "past_due",
         ...subscriptionWithPrice(
           env.STRIPE_PRICE_ID_PREMIUM,
           Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
         ),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     // past_due は「終端」ではない(まだ復帰しうる)ため、accounts は触らない。
@@ -625,19 +605,15 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_incomplete_expired",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_incomplete_expired", "customer.subscription.updated", {
+const before = Date.now();
+    const response = await postWebhook(fakeEvent("evt_incomplete_expired", "customer.subscription.updated", {
         id: "sub_incomplete_expired",
         status: "incomplete_expired",
         ...subscriptionWithPrice(
           env.STRIPE_PRICE_ID_STANDARD,
           Math.floor(Date.now() / 1000)
         ),
-      })
-    );
-
-    const before = Date.now();
-    const response = await postWebhook("{}");
+      }));
     const after = Date.now();
 
     expect(response.status).toBe(200);
@@ -674,18 +650,14 @@ describe("POST /api/billing/stripe/webhook", () => {
       )
       .run();
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_canceled_updated", "customer.subscription.updated", {
+await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updated", {
         id: "sub_canceled_updated",
         status: "canceled",
         ...subscriptionWithPrice(
           env.STRIPE_PRICE_ID_PREMIUM,
           Math.floor(Date.now() / 1000)
         ),
-      })
-    );
-
-    await postWebhook("{}");
+      }));
 
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBeNull();
@@ -742,26 +714,21 @@ describe("POST /api/billing/stripe/webhook", () => {
         ),
       };
 
-      mockConstructEventAsync
-        .mockResolvedValueOnce(
-          fakeEvent(
+      const __terminalEvent = fakeEvent(
             `evt_terminal_${terminalEventType}_${terminalStatus}`,
             terminalEventType,
             terminalSubscription
-          )
-        )
-        .mockResolvedValueOnce(
-          fakeEvent(
+          );
+      const __staleActiveEvent = fakeEvent(
             `evt_stale_active_${terminalEventType}_${terminalStatus}`,
             "customer.subscription.updated",
             staleActiveSubscription
-          )
-        );
+          );
       mockSubscriptionsRetrieve.mockResolvedValue({ status: terminalStatus });
 
-      const terminalResponse = await postWebhook("{}");
+      const terminalResponse = await postWebhook(__terminalEvent);
       const accountAfterTerminalEvent = await getAccount(accountId);
-      const staleActiveResponse = await postWebhook("{}");
+      const staleActiveResponse = await postWebhook(__staleActiveEvent);
 
       expect(terminalResponse.status).toBe(200);
       expect(staleActiveResponse.status).toBe(200);
@@ -779,14 +746,10 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_deleted",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_5", "customer.subscription.deleted", {
+const before = Date.now();
+    const response = await postWebhook(fakeEvent("evt_5", "customer.subscription.deleted", {
         id: "sub_deleted",
-      })
-    );
-
-    const before = Date.now();
-    const response = await postWebhook("{}");
+      }));
     const after = Date.now();
 
     expect(response.status).toBe(200);
@@ -824,13 +787,9 @@ describe("POST /api/billing/stripe/webhook", () => {
       )
       .run();
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_deleted_btc", "customer.subscription.deleted", {
+const response = await postWebhook(fakeEvent("evt_deleted_btc", "customer.subscription.deleted", {
         id: "sub_switched_to_btc",
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -876,14 +835,10 @@ describe("POST /api/billing/stripe/webhook", () => {
       )
       .run();
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_deleted_no_live_btc", "customer.subscription.deleted", {
+const before = Date.now();
+    await postWebhook(fakeEvent("evt_deleted_no_live_btc", "customer.subscription.deleted", {
         id: "sub_no_live_btc",
-      })
-    );
-
-    const before = Date.now();
-    await postWebhook("{}");
+      }));
     const after = Date.now();
 
     const account = await getAccount(accountId);
@@ -897,13 +852,19 @@ describe("POST /api/billing/stripe/webhook", () => {
   it("acknowledges unhandled event types without making any DB change", async () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
 
-    mockConstructEventAsync.mockResolvedValue(
+    // Hibiki が対応するイベントでもハンドラ未登録なら 204。
+    // 完全未対応イベントは 200。どちらも DB は触らない。
+    const knownUnhandled = await postWebhook(
       fakeEvent("evt_6", "customer.updated", { id: "cus_whatever" })
     );
+    const unknown = await postWebhook(
+      fakeEvent("evt_unknown", "radar.early_fraud_warning.created", {
+        id: "issfr_1",
+      })
+    );
 
-    const response = await postWebhook("{}");
-
-    expect(response.status).toBe(200);
+    expect(knownUnhandled.status).toBe(204);
+    expect(unknown.status).toBe(200);
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("free");
   });
@@ -920,15 +881,13 @@ describe("POST /api/billing/stripe/webhook", () => {
       status: "active",
       ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
     });
-    mockConstructEventAsync.mockResolvedValue(event);
-
-    const first = await postWebhook("{}");
+const first = await postWebhook(event);
     expect(first.status).toBe(200);
 
     const account = await getAccount(accountId);
     expect(account?.plan).toBe("premium");
 
-    const second = await postWebhook("{}");
+    const second = await postWebhook(event);
     expect(second.status).toBe(200);
     const secondBody = await readJson<{ note: string }>(second);
     expect(secondBody.note).toBe("duplicate event");
@@ -963,9 +922,7 @@ describe("POST /api/billing/stripe/webhook", () => {
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
       }
     );
-    mockConstructEventAsync.mockResolvedValue(event);
-
-    // applyEvent内のUPDATEが本物のDBエラーで失敗する状況(例: D1側の一時的な
+// applyEvent内のUPDATEが本物のDBエラーで失敗する状況(例: D1側の一時的な
     // 障害)を、accountsテーブルを一時的にリネームすることで再現する
     // (Stripe APIへの外部呼び出しが無くなったため、失敗点はDB層のみになる。
     // RENAME TOは既存の行データを保持したままテーブル名だけを変えるので、
@@ -980,7 +937,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     let eventRow: unknown;
 
     try {
-      const first = await postWebhook("{}");
+      const first = await postWebhook(event);
       expect(first.status).toBe(500);
 
       // イベントが「処理済み」のまま残っていないこと(accountsに触れずに確認できる)。
@@ -1002,7 +959,7 @@ describe("POST /api/billing/stripe/webhook", () => {
 
     // 2回目(Stripeからの再送を模したもの): 今度は成功する状況で、
     // 同じイベントIDでも正しく処理され、プランが反映されること。
-    const retried = await postWebhook("{}");
+    const retried = await postWebhook(event);
     expect(retried.status).toBe(200);
     const retriedBody = await readJson<{ note?: string }>(retried);
     expect(retriedBody.note).toBeUndefined();
@@ -1018,15 +975,11 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 14 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_trialing", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_trialing", "customer.subscription.updated", {
         id: "sub_trial",
         status: "trialing",
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_STANDARD, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -1046,15 +999,11 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_no_period",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_no_period", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_no_period", "customer.subscription.updated", {
         id: "sub_no_period",
         status: "active",
         items: { data: [] },
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -1072,13 +1021,9 @@ describe("POST /api/billing/stripe/webhook", () => {
       stripeSubscriptionId: "sub_unrelated_still_active",
     });
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_deleted_unknown", "customer.subscription.deleted", {
+const response = await postWebhook(fakeEvent("evt_deleted_unknown", "customer.subscription.deleted", {
         id: "sub_never_seen_here",
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
@@ -1100,16 +1045,12 @@ describe("POST /api/billing/stripe/webhook", () => {
     });
     const periodEndUnix = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_ghost_account", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_ghost_account", "customer.subscription.updated", {
         id: "sub_for_deleted_account",
         status: "active",
         metadata: { accountId: "acct-that-was-deleted", plan: "premium" },
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     // 現在ポインタを持たない(削除済み)アカウントなので衝突チェックも走らない。
@@ -1136,8 +1077,7 @@ describe("POST /api/billing/stripe/webhook", () => {
     const laterPeriodEndUnix =
       Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
 
-    mockConstructEventAsync.mockResolvedValue(
-      fakeEvent("evt_conflict_trialing", "customer.subscription.updated", {
+const response = await postWebhook(fakeEvent("evt_conflict_trialing", "customer.subscription.updated", {
         id: "sub_new_attempt",
         status: "active",
         metadata: { accountId, plan: "premium" },
@@ -1145,10 +1085,7 @@ describe("POST /api/billing/stripe/webhook", () => {
           env.STRIPE_PRICE_ID_PREMIUM,
           laterPeriodEndUnix
         ),
-      })
-    );
-
-    const response = await postWebhook("{}");
+      }));
 
     expect(response.status).toBe(200);
     expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith("sub_other_trialing");

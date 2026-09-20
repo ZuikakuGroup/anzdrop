@@ -1,4 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { Hibiki } from "@hibiki-js/core";
+import { stripe as hibikiStripe } from "@hibiki-js/stripe";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
 import { readBodyWithinLimit } from "@/lib/api/body";
@@ -239,14 +241,47 @@ async function applyEvent(
   }
 }
 
+async function processEventOnce(
+  env: CloudflareEnv,
+  eventId: string | undefined,
+  run: () => Promise<void>
+): Promise<Response> {
+  // Stripeの本番イベントには必ずidが付く。欠ける場合は冪等キーが作れないため
+  // そのまま処理し、再送時の二重適用は呼び出し側の業務ガードに委ねる。
+  if (!eventId) {
+    await run();
+    return Response.json({ success: true });
+  }
+
+  if (!(await markEventAsProcessedOnce(env, eventId))) {
+    return Response.json({ success: true, note: "duplicate event" });
+  }
+
+  try {
+    await run();
+    return Response.json({ success: true });
+  } catch (error) {
+    // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
+    // ままにすると、Stripeが同じイベントIDで再送してきても
+    // markEventAsProcessedOnceが「重複」と誤判定し、二度とプランが
+    // 反映されなくなってしまう(顧客は決済済みなのにアップグレードされない)。
+    await env.DB.prepare(`DELETE FROM stripe_events WHERE id = ?`)
+      .bind(eventId)
+      .run();
+
+    // Hibiki はハンドラ例外を HIBIKI_HANDLER_FAILED に包むため、
+    // withApiHandler の catch には届かない。原因はここで残す。
+    console.error("POST /api/billing/stripe/webhook handler failed:", error);
+    throw error;
+  }
+}
+
 export const POST = withApiHandler(
   "POST /api/billing/stripe/webhook",
   async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const signature = request.headers.get("stripe-signature");
-
-    if (!signature || !env.STRIPE_WEBHOOK_SECRET) {
+    if (!env.STRIPE_WEBHOOK_SECRET) {
       return Response.json(
         { success: false, error: "署名がありません" },
         { status: 400 }
@@ -260,49 +295,51 @@ export const POST = withApiHandler(
         { status: 413 }
       );
     }
-    const body = new TextDecoder().decode(rawBody);
 
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
+    // Hibiki が Request 本体を読むため、サイズ上限を通したボディで作り直す。
+    // Uint8Array<ArrayBufferLike> は BodyInit に直接渡せないためコピーする。
+    const limitedRequest = new Request(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: Uint8Array.from(rawBody),
+    });
+
+    const stripeClient = new Stripe(env.STRIPE_SECRET_KEY, {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // Cloudflare WorkersにはNodeのcryptoモジュールが無いため、SubtleCrypto経由の
-    // 検証(constructEventAsync + createSubtleCryptoProvider)を使う。
-    let event: Stripe.Event;
-
-    try {
-      event = await stripe.webhooks.constructEventAsync(
-        body,
-        signature,
-        env.STRIPE_WEBHOOK_SECRET,
-        undefined,
-        Stripe.createSubtleCryptoProvider()
+    // 署名検証・イベント振り分けは Hibiki。業務ロジックと冪等制御はハンドラ側。
+    const app = new Hibiki()
+      .use(hibikiStripe({ secret: env.STRIPE_WEBHOOK_SECRET }))
+      .on("stripe.customer.subscription.updated", async ({ event, id }) =>
+        processEventOnce(env, id ?? event.id, async () => {
+          await applyEvent(
+            {
+              type: "customer.subscription.updated",
+              data: {
+                object: event.data.object as unknown as Stripe.Subscription,
+              },
+            } as Stripe.Event,
+            stripeClient,
+            env
+          );
+        })
+      )
+      .on("stripe.customer.subscription.deleted", async ({ event, id }) =>
+        processEventOnce(env, id ?? event.id, async () => {
+          await applyEvent(
+            {
+              type: "customer.subscription.deleted",
+              data: {
+                object: event.data.object as unknown as Stripe.Subscription,
+              },
+            } as Stripe.Event,
+            stripeClient,
+            env
+          );
+        })
       );
-    } catch {
-      return Response.json(
-        { success: false, error: "署名が正しくありません" },
-        { status: 400 }
-      );
-    }
 
-    if (!(await markEventAsProcessedOnce(env, event.id))) {
-      return Response.json({ success: true, note: "duplicate event" });
-    }
-
-    try {
-      await applyEvent(event, stripe, env);
-    } catch (error) {
-      // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
-      // ままにすると、Stripeが同じイベントIDで再送してきても
-      // markEventAsProcessedOnceが「重複」と誤判定し、二度とプランが
-      // 反映されなくなってしまう(顧客は決済済みなのにアップグレードされない)。
-      await env.DB.prepare(`DELETE FROM stripe_events WHERE id = ?`)
-        .bind(event.id)
-        .run();
-
-      throw error;
-    }
-
-    return Response.json({ success: true });
+    return app.handle(limitedRequest, { provider: "stripe" });
   }
 );
