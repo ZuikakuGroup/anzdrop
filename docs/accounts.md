@@ -76,7 +76,7 @@ Anzdropは元々、認証もアカウントも一切ない匿名の公開サー�
 - **解約**は`POST /api/billing/stripe/cancellation`(`{ cancelAtPeriodEnd: boolean }`)で行う。`true`で「期間末での解約」(`cancel_at_period_end: true`。自動更新を停止するだけで、期間中はプランを維持)、`false`でその取り消し(自動更新を再開)。即時解約・日割り返金は行わない。実際のプラン失効は、期間末にStripeが発火する`customer.subscription.deleted`(既存のWebhook処理で`downgradeExpiredCardPlan()`により`plan_expires_at`を現在時刻へ更新し`stripe_subscription_id`を外す)に委ねる。`past_due`のSubscriptionも対象にする(自動更新を止める操作は課金を増やさないため安全。止められないと、あとでStripeのリトライが成功したときに解約意思に反して次期分が請求されてしまう)。`/mypage/billing`でのみ操作でき、`sync`が返す要約が`active`なら「解約する」ボタン(押すと2段階確認。確認画面では安全側の「解約しない」を主ボタン、「解約する」をアウトラインにする)、`past_due`なら支払い確認中の案内と同じ「解約する」ボタン、`canceling`なら「解約を取り消す」ボタンと終了予定日を表示し、いずれの状態でも新規契約フロー(プラン選択)は出さない。終了予定日は通常の`canceling`では要約の`currentPeriodEnd`の日付を表示するが、`past_due`から`cancel_at_period_end`が付いて`canceling`になった要約は`currentPeriodEnd`が`null`(前項の理由による)のため具体的な日付を出せず、「現在の請求期間の終了時」という表現に留める。このエンドポイントもサーバーへ新しい情報を保存しない。
 - Cloudflare Workers向けに、Stripe SDKのHTTPクライアントは`Stripe.createFetchHttpClient()`を使う。Webhookの署名検証・イベント振り分けは`@hibiki-js/stripe`（Hibiki）に任せ、業務ロジック（プラン反映・冪等制御）だけ自前で持つ。
 - Stripeの新しいAPIバージョンでは請求期間(`current_period_end`)がSubscription直下ではなく各SubscriptionItemに付く。このアプリは1サブスクリプションにつき1アイテムのみ使うため、先頭アイテムの値を使う(`getSubscriptionPeriodEnd()`)。
-- 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに処理済みイベントIDを記録する。
+- 同一Webhookイベントの再送による二重処理を防ぐため、`stripe_events`テーブルに**業務処理が成功したあと**処理済みイベントIDを記録する。先にマークして失敗時に取り消す方式だと、取り消し自体の失敗で再送が永久にスキップされうるため。
 
 ### Bitcoin(OpenNode、「期間チャージ」方式)
 

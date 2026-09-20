@@ -14,18 +14,30 @@ import {
 } from "@/lib/stripe-subscription";
 
 // 同一イベントの再送(Stripeはリトライしうる)による二重処理を防ぐ。
-// 初めて見るイベントならtrueを返し、以後の処理を進めてよいことを示す。
-async function markEventAsProcessedOnce(
+// 完了マークは業務処理の成功後にだけ付ける。先にマークして失敗時にDELETEする
+// 方式だと、DELETE自体が失敗したときに再送が永久にスキップされるため。
+async function hasProcessedEvent(
   env: CloudflareEnv,
   eventId: string
 ): Promise<boolean> {
-  const result = await env.DB.prepare(
+  const row = await env.DB.prepare(
+    `SELECT 1 AS ok FROM stripe_events WHERE id = ?`
+  )
+    .bind(eventId)
+    .first();
+
+  return row !== null;
+}
+
+async function markEventAsProcessed(
+  env: CloudflareEnv,
+  eventId: string
+): Promise<void> {
+  await env.DB.prepare(
     `INSERT OR IGNORE INTO stripe_events (id, processed_at) VALUES (?, ?)`
   )
     .bind(eventId, new Date().toISOString())
     .run();
-
-  return result.meta.changes === 1;
 }
 
 async function applyEvent(
@@ -106,7 +118,7 @@ async function applyEvent(
             // downgradeExpiredCardPlan がポインタを外した後、古い active イベントを
             // metadata.accountId で再関連付けして有料プランを復活させないよう、
             // フォールバックを行う直前に Stripe 上の現在状態を正とする。
-            // 取得失敗は握りつぶさず、外側で処理済みマークを取り消して再送に賭ける。
+            // 取得失敗は握りつぶさず、外側へ伝播して完了マークを付けずに再送に賭ける。
             const currentSubscription = await stripe.subscriptions.retrieve(
               subscription.id
             );
@@ -141,8 +153,7 @@ async function applyEvent(
                 // みなす。それ以外(レート制限等の一時的な障害)まで握りつぶすと、
                 // 実際には有効な「別の」Subscriptionを見落として誤って
                 // 上書きしてしまいかねない。この場合はイベント全体を失敗させ、
-                // 「処理済み」マークも取り消して(POST側の共通処理)、
-                // Stripeの再送に賭ける。
+                // 完了マークは付けずに(POST側の共通処理)、Stripeの再送に賭ける。
                 const statusCode =
                   error && typeof error === "object" && "statusCode" in error
                     ? (error as { statusCode?: unknown }).statusCode
@@ -253,27 +264,24 @@ async function processEventOnce(
     return Response.json({ success: true });
   }
 
-  if (!(await markEventAsProcessedOnce(env, eventId))) {
+  if (await hasProcessedEvent(env, eventId)) {
     return Response.json({ success: true, note: "duplicate event" });
   }
 
   try {
     await run();
-    return Response.json({ success: true });
   } catch (error) {
-    // 処理中に失敗した場合は「処理済み」のマークを取り消す。マークした
-    // ままにすると、Stripeが同じイベントIDで再送してきても
-    // markEventAsProcessedOnceが「重複」と誤判定し、二度とプランが
-    // 反映されなくなってしまう(顧客は決済済みなのにアップグレードされない)。
-    await env.DB.prepare(`DELETE FROM stripe_events WHERE id = ?`)
-      .bind(eventId)
-      .run();
-
     // Hibiki はハンドラ例外を HIBIKI_HANDLER_FAILED に包むため、
     // withApiHandler の catch には届かない。原因はここで残す。
+    // 完了マークは付けていないので、Stripe再送で再実行できる。
     console.error("POST /api/billing/stripe/webhook handler failed:", error);
     throw error;
   }
+
+  // 業務処理が成功してから完了マークを付ける。並行した同一イベントの二重適用は
+  // 業務側の UPDATE ガードと INSERT OR IGNORE で抑える。
+  await markEventAsProcessed(env, eventId);
+  return Response.json({ success: true });
 }
 
 export const POST = withApiHandler(

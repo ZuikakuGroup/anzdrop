@@ -390,7 +390,7 @@ const response = await postWebhook(event);
     expect(account?.stripe_subscription_id).toBe("sub_other_unknown_state");
     expect(account?.plan_expires_at).toBe(originalExpiry);
 
-    // 「処理済み」マークも取り消され、Stripeの再送を受け付けられること。
+    // 失敗時は完了マークを付けないため、Stripeの再送を受け付けられること。
     const eventRow = await env.DB.prepare(
       `SELECT id FROM stripe_events WHERE id = ?`
     )
@@ -902,11 +902,8 @@ const first = await postWebhook(event);
   });
 
   it("does not permanently mark an event as processed if handling it throws, so a Stripe retry can still succeed", async () => {
-    // 実際に発生していたバグの再現テスト: 「処理済み」マークをswitch文の
-    // 実行前に確定させていたため、途中で例外が起きるとイベントは
-    // 「処理済み」のまま残り、Stripeが同じイベントIDで再送してきても
-    // 二度とプランが反映されなくなっていた(顧客は決済済みなのに
-    // アップグレードされない)。この回帰を防ぐテスト。
+    // 完了マークは業務処理の成功後にだけ付ける。失敗したイベントは
+    // stripe_events に残らないので、Stripe再送で再実行できる。
     const { accountId } = await insertTestAccount(env, {
       plan: "free",
       stripeSubscriptionId: "sub_retry",
@@ -922,7 +919,7 @@ const first = await postWebhook(event);
         ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, periodEndUnix),
       }
     );
-// applyEvent内のUPDATEが本物のDBエラーで失敗する状況(例: D1側の一時的な
+    // applyEvent内のUPDATEが本物のDBエラーで失敗する状況(例: D1側の一時的な
     // 障害)を、accountsテーブルを一時的にリネームすることで再現する
     // (Stripe APIへの外部呼び出しが無くなったため、失敗点はDB層のみになる。
     // RENAME TOは既存の行データを保持したままテーブル名だけを変えるので、
