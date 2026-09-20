@@ -163,7 +163,7 @@
 
 ### `POST /api/billing/stripe/webhook`
 
-Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーで署名検証する。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、終端ステータス(`canceled`/`unpaid`/`incomplete_expired`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す(`deleted`が届かないケースでもゴミポインタを残さないため)。`customer.subscription.deleted`も即時ダウングレード。
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、終端ステータス(`canceled`/`unpaid`/`incomplete_expired`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す(`deleted`が届かないケースでもゴミポインタを残さないため)。`customer.subscription.deleted`も即時ダウングレード。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
 
 ### `POST /api/billing/stripe/sync`
 
