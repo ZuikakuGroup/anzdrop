@@ -23,7 +23,7 @@
     "@hibiki-js/stripe": "^0.2.0",
     "@opennextjs/cloudflare": "^1.20.6",
     "@stripe/react-stripe-js": "^6.11.0",
-    "@stripe/stripe-js": "^9.16.0",
+    "@stripe/stripe-js": "^9.17.0",
     "chart.js": "^4.5.1",
     "fflate": "^0.8.3",
     "jose": "^6.2.12",
