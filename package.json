@@ -20,7 +20,7 @@
   "dependencies": {
     "@cloudflare/workers-types": "^5.20260921.1",
     "@hibiki-js/core": "^0.2.0",
-    "@hibiki-js/stripe": "^0.2.0",
+    "@hibiki-js/stripe": "^0.3.0",
     "@opennextjs/cloudflare": "^1.20.6",
     "@stripe/react-stripe-js": "^6.11.0",
     "@stripe/stripe-js": "^9.17.0",
