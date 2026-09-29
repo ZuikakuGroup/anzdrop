@@ -29,6 +29,11 @@ import {
   checkSharePasswordBeforeUpload,
 } from "@/lib/passwordPolicy";
 import { getCurrentAccount } from "@/lib/account/me-client";
+import {
+  continuePrefetched,
+  prefetchFirst,
+  type PrefetchedAsyncIterator,
+} from "@/lib/upload/prefetchedAsyncIterator";
 
 // 共有リンクの発行後、利用者がQRボタンを押すときだけ必要になる。初回表示で
 // qrcodeライブラリをダウンロード・評価しないようクライアント側で遅延読込する。
@@ -85,14 +90,15 @@ const SHARE_MESSAGE = "Anzdropで暗号化ファイルを共有しました";
 // アップロード中、暗号化1チャンクあたり最大この件数まで、送信側の消費を待たずに
 // 先読みしておく(8チャンク = 64MiB上限)。ファイル全体を暗号化してからアップロード
 // を始めるのではなく、暗号化とアップロードを重ねて進めるためのバッファ上限。
-// この先読みは「アップロードする」を押したあと、実際に処理中のファイル1つ分に
-// ついてのみ走る(GitHub issue #60)。
+// 選択時の先行暗号化はキュー先頭の1チャンク(8MiB)に制限する。
 const ENCRYPT_PREFETCH_CHUNKS = 8;
 
 type QueuedFile = {
   pendingFile: PendingFile;
   // ファイル名の暗号化は小さく即座に終わるので、ファイル追加時点で開始しておく。
   encryptedFileName: Promise<string>;
+  // キュー先頭だけ、選択後に本体の先頭チャンクを暗号化しておく。
+  preparedEncryptedChunks?: PrefetchedAsyncIterator<Uint8Array>;
   // /api/upload/complete まで到達したか。失敗後のリトライで再処理しないための印。
   completed: boolean;
 };
@@ -199,17 +205,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     return keyPromiseRef.current;
   };
 
-  // ファイル本体を暗号化しながら先読みバッファ付きで流すストリームを作る。
-  // ファイル追加時ではなく、upload() が実際にそのファイルを処理する直前に
-  // 呼ぶ。こうすることで、同時に選択したファイル数によらず、先読みバッファ
-  // (ENCRYPT_PREFETCH_CHUNKS = 64MiB)が走るのは常に1ファイル分だけになる
-  // (数十〜数百ファイルのフォルダを追加してもメモリが 64MiB×N にならない。
-  // GitHub issue #60)。
-  //
-  // 失敗後のリトライでは毎回この関数で作り直す。途中まで消費したストリームを
-  // 再利用すると、2回目のマルチパートセッションへファイルの途中からのバイト
-  // だけが送られ、サイズ検証を通り抜けてサイレントに破損する(GitHub issue #58)。
-  const createEncryptedChunkStream = (
+  const createRawEncryptedChunkStream = (
     pendingFile: PendingFile
   ): AsyncGenerator<Uint8Array> => {
     async function* encryptedChunks(): AsyncGenerator<Uint8Array> {
@@ -220,12 +216,41 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       yield* iterateEncryptedChunks(pendingFile.file, key);
     }
 
+    return encryptedChunks();
+  };
+
+  // ファイル本体は8MiBずつ暗号化する。選択時に先頭チャンクを準備した場合は
+  // 同じgeneratorから続きを流し、リトライ時は新しいgeneratorを使う(issue #58)。
+  const createEncryptedChunkStream = (
+    pendingFile: PendingFile,
+    prepared?: PrefetchedAsyncIterator<Uint8Array>
+  ): AsyncGenerator<Uint8Array> => {
+    const chunks = prepared
+      ? continuePrefetched(prepared)
+      : createRawEncryptedChunkStream(pendingFile);
+
     async function* bufferedEncryptedChunks(): AsyncGenerator<Uint8Array> {
       const [{ bufferAhead }] = await loadUploadModules();
-      yield* bufferAhead(encryptedChunks(), ENCRYPT_PREFETCH_CHUNKS);
+      yield* bufferAhead(chunks, ENCRYPT_PREFETCH_CHUNKS);
     }
 
     return bufferedEncryptedChunks();
+  };
+
+  const prepareFirstEncryptedChunk = (item: QueuedFile) => {
+    if (item.preparedEncryptedChunks) {
+      return;
+    }
+
+    const prepared = prefetchFirst(
+      createRawEncryptedChunkStream(item.pendingFile)
+    );
+    item.preparedEncryptedChunks = prepared;
+    void prepared.firstResult.catch(() => {
+      if (item.preparedEncryptedChunks === prepared) {
+        item.preparedEncryptedChunks = undefined;
+      }
+    });
   };
 
   const addFiles = (newFiles: PendingFile[]) => {
@@ -257,9 +282,10 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       },
     });
 
+    const hasPendingFile = queueRef.current.some((item) => !item.completed);
+
     for (const pendingFile of newFiles) {
-      // ファイル名の暗号化(単一チャンク・数十バイト)だけは先に始めておく。
-      // ファイル本体の暗号化は upload() が処理する直前まで始めない(issue #60)。
+      // ファイル名の暗号化(単一チャンク・数十バイト)は先に開始しておく。
       const encryptedFileName = Promise.all([getKey(), loadUploadModules()]).then(
         ([key, [, { encryptFileName }]]) =>
           encryptFileName(pendingFile.path, key)
@@ -272,6 +298,15 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
         encryptedFileName,
         completed: false,
       });
+    }
+
+    // 選択後すぐにキュー先頭の最初の暗号化チャンクだけを準備する。
+    // 全選択ファイルを先行暗号化すると、選択数に応じてメモリが増えるため行わない。
+    if (!isUploading && !hasPendingFile) {
+      const firstPending = queueRef.current.find((item) => !item.completed);
+      if (firstPending) {
+        prepareFirstEncryptedChunk(firstPending);
+      }
     }
   };
 
@@ -360,6 +395,12 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       return;
     }
 
+    // 選択時の先行準備が失敗した場合や、送信後のリトライではここで改めて準備する。
+    const firstPending = pending[0];
+    if (firstPending) {
+      prepareFirstEncryptedChunk(firstPending);
+    }
+
     setError("");
     setIsUploading(true);
     setProgress(0);
@@ -437,11 +478,13 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                 },
               });
             },
-            // ファイル本体の暗号化ストリームは、このファイルを処理する直前に
-            // 作る。失敗後のリトライでこのループに再入した場合も毎回作り直す
-            // (途中まで消費したストリームを再利用しない。issue #58 / #60)。
-            createChunkStream: () =>
-              createEncryptedChunkStream(item.pendingFile),
+            // 選択時の先頭チャンクを一度だけ引き継ぐ。以後のリトライでは
+            // 消費済みgeneratorを再利用せず、先頭から作り直す(issue #58)。
+            createChunkStream: () => {
+              const prepared = item.preparedEncryptedChunks;
+              item.preparedEncryptedChunks = undefined;
+              return createEncryptedChunkStream(item.pendingFile, prepared);
+            },
           });
 
           track("upload_success", {
@@ -460,6 +503,10 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
           }
 
           item.completed = true;
+          const nextPending = pending.find((candidate) => !candidate.completed);
+          if (nextPending) {
+            prepareFirstEncryptedChunk(nextPending);
+          }
         } catch (uploadError) {
           track("upload_error", {
             attemptId,
