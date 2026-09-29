@@ -41,6 +41,7 @@ Cloudflare Workers
 | パス | 役割 |
 | --- | --- |
 | `/`(`app/page.tsx`) | アップロード画面(`components/upload/uploadForm.tsx`) |
+| `/lp/secure-file-sharing`(`app/lp/secure-file-sharing/page.tsx`) | Google検索広告向けの安全なファイル共有LP。利用の流れ、通常の共有URLの鍵の位置、無料プラン、FAQを掲載してアップロード画面へ案内する。最初の着地パスは既存のAnalyticsで計測。Loose Drawingのイラストをローカル同梱し、各素材へのクレジットリンクを掲載 |
 | `/d/[shareId]`(`app/d/[shareId]/page.tsx`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |

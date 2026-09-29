@@ -49,7 +49,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 | イベント | 発火箇所 |
 | --- | --- |
-| `landing_view` | `components/upload/uploadForm.tsx` マウント時 |
+| `landing_view` | LPまたは`components/upload/uploadForm.tsx`の初回表示時。ブラウザ内の`localStorage`でセッションごとに1回だけ送信し、最初の着地パスを記録する |
 | `file_select` | ファイル選択・ドロップ時 |
 | `upload_start` / `upload_success` / `upload_error` | `lib/upload/uploadFile.ts` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
 | `share_link_copy` / `share_native` | 共有リンクコピー・Web Share API利用時 |

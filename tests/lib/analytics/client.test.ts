@@ -19,6 +19,7 @@ function stubSendBeacon(returnValue: boolean | undefined) {
 beforeEach(async () => {
   vi.resetModules();
   window.localStorage.clear();
+  window.sessionStorage.clear();
   vi.useFakeTimers();
   registeredDocumentListeners = [];
   registeredWindowListeners = [];
@@ -72,6 +73,56 @@ describe("track", () => {
       "/api/analytics/events",
       expect.any(Blob)
     );
+  });
+
+  it("records only the first landing path once per analytics session", async () => {
+    const sendBeacon = stubSendBeacon(true);
+    window.history.pushState(
+      {},
+      "",
+      "/lp/secure-file-sharing?utm_source=google&utm_medium=cpc"
+    );
+
+    track("landing_view");
+    window.history.pushState({}, "", "/");
+    track("landing_view");
+    vi.advanceTimersByTime(3000);
+
+    expect(sendBeacon).toHaveBeenCalledOnce();
+    const blob = sendBeacon!.mock.calls[0]![1] as Blob;
+    const body = JSON.parse(await blob.text()) as {
+      events: {
+        context: { landingPath: string };
+        attribution: { source: string; medium: string };
+      }[];
+    };
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0]?.context.landingPath).toBe("/lp/secure-file-sharing");
+    expect(body.events[0]?.attribution).toEqual({ source: "google", medium: "cpc" });
+  });
+
+  it("records a new landing after the analytics session expires", async () => {
+    const sendBeacon = stubSendBeacon(true);
+    window.history.pushState({}, "", "/lp/secure-file-sharing");
+    track("landing_view");
+    vi.advanceTimersByTime(30 * 60 * 1000 + 1);
+    window.history.pushState({}, "", "/about");
+    track("landing_view");
+    vi.advanceTimersByTime(3000);
+
+    expect(sendBeacon).toHaveBeenCalledTimes(2);
+    const eventBatches = await Promise.all(
+      sendBeacon!.mock.calls.map(async ([, blob]) => {
+        const body = JSON.parse(await (blob as Blob).text()) as {
+          events: { context: { landingPath: string } }[];
+        };
+        return body.events;
+      })
+    );
+    expect(eventBatches.flat().map((event) => event.context.landingPath)).toEqual([
+      "/lp/secure-file-sharing",
+      "/about",
+    ]);
   });
 
   it("falls back to fetch(keepalive) when sendBeacon is unavailable", async () => {
@@ -159,12 +210,12 @@ describe("track", () => {
     const sendBeacon = stubSendBeacon(true);
 
     for (let i = 0; i < 19; i += 1) {
-      track("landing_view");
+      track("file_select", { properties: { fileCount: 1, totalSizeBucket: "<10MB" } });
     }
 
     expect(sendBeacon).not.toHaveBeenCalled();
 
-    track("landing_view");
+    track("file_select", { properties: { fileCount: 1, totalSizeBucket: "<10MB" } });
 
     expect(sendBeacon).toHaveBeenCalledTimes(1);
   });
@@ -201,7 +252,7 @@ describe("track", () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
     for (let index = 0; index < 21; index += 1) {
-      track("landing_view");
+      track("file_select", { properties: { fileCount: 1, totalSizeBucket: "<10MB" } });
     }
 
     expect(sendBeacon).toHaveBeenCalledOnce();

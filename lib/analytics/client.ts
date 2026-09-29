@@ -13,6 +13,7 @@ import {
 
 const ENDPOINT = "/api/analytics/events";
 const FLUSH_INTERVAL_MS = 3000;
+const LANDING_VIEW_SESSION_KEY = "anzdrop_analytics_landing_view_session";
 
 export type TrackPayload = {
   analyticsTransferId?: string;
@@ -143,6 +144,19 @@ export function track(eventName: AnalyticsEventName, payload?: TrackPayload): vo
 
     const anonymousClientId = getAnonymousClientId();
     const { sessionId, isNewSession } = getSessionId();
+
+    if (eventName === "landing_view") {
+      try {
+        // analytics session ID is shared across tabs in localStorage, so the
+        // duplicate guard must use the same scope (sessionStorage is tab-local).
+        if (window.localStorage.getItem(LANDING_VIEW_SESSION_KEY) === sessionId) {
+          return;
+        }
+      } catch {
+        // localStorage が使えない環境でも計測を続ける。
+      }
+    }
+
     const { attribution, referrerDomain } = getSessionAttribution(
       sessionId,
       isNewSession
@@ -183,6 +197,14 @@ export function track(eventName: AnalyticsEventName, payload?: TrackPayload): vo
     }
 
     logForDevelopment(event);
+
+    if (eventName === "landing_view") {
+      try {
+        window.localStorage.setItem(LANDING_VIEW_SESSION_KEY, sessionId);
+      } catch {
+        // localStorage が使えない環境では、重複抑制だけを諦める。
+      }
+    }
 
     queue.push(event);
     registerLifecycleFlush();
