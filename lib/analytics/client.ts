@@ -13,6 +13,7 @@ import {
 
 const ENDPOINT = "/api/analytics/events";
 const FLUSH_INTERVAL_MS = 3000;
+const LANDING_VIEW_SESSION_KEY = "anzdrop_analytics_landing_view_session";
 
 export type TrackPayload = {
   analyticsTransferId?: string;
@@ -56,29 +57,41 @@ function logForDevelopment(event: QueuedEvent): void {
 }
 
 function sendBatch(events: QueuedEvent[]): void {
-  const body = JSON.stringify({ events });
+  const retry = () => {
+    queue.unshift(...events);
+    scheduleFlush();
+  };
 
   try {
-    if (typeof navigator.sendBeacon === "function") {
-      const blob = new Blob([body], { type: "application/json" });
+    const body = JSON.stringify({ events });
 
-      if (navigator.sendBeacon(ENDPOINT, blob)) {
-        return;
+    try {
+      if (typeof navigator.sendBeacon === "function") {
+        const blob = new Blob([body], { type: "application/json" });
+
+        if (navigator.sendBeacon(ENDPOINT, blob)) {
+          return;
+        }
       }
+    } catch {
+      // sendBeacon非対応/失敗時はfetchへフォールバックする。
     }
-  } catch {
-    // sendBeacon非対応/失敗時はfetchへフォールバックする。
-  }
 
-  try {
     void fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
-    }).catch(() => {});
+    })
+      .then((response) => {
+        if (!response.ok) {
+          retry();
+        }
+      })
+      .catch(retry);
   } catch {
-    // 送信自体の失敗はここで握りつぶす。
+    // シリアライズや同期的な送信の失敗でもイベントを失わない。
+    retry();
   }
 }
 
@@ -143,6 +156,19 @@ export function track(eventName: AnalyticsEventName, payload?: TrackPayload): vo
 
     const anonymousClientId = getAnonymousClientId();
     const { sessionId, isNewSession } = getSessionId();
+
+    if (eventName === "landing_view") {
+      try {
+        // analytics session ID is shared across tabs in localStorage, so the
+        // duplicate guard must use the same scope (sessionStorage is tab-local).
+        if (window.localStorage.getItem(LANDING_VIEW_SESSION_KEY) === sessionId) {
+          return;
+        }
+      } catch {
+        // localStorage が使えない環境でも計測を続ける。
+      }
+    }
+
     const { attribution, referrerDomain } = getSessionAttribution(
       sessionId,
       isNewSession
@@ -183,6 +209,14 @@ export function track(eventName: AnalyticsEventName, payload?: TrackPayload): vo
     }
 
     logForDevelopment(event);
+
+    if (eventName === "landing_view") {
+      try {
+        window.localStorage.setItem(LANDING_VIEW_SESSION_KEY, sessionId);
+      } catch {
+        // localStorage が使えない環境では、重複抑制だけを諦める。
+      }
+    }
 
     queue.push(event);
     registerLifecycleFlush();

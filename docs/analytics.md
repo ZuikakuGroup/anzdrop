@@ -32,6 +32,8 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 計測APIへの送信は常に非同期・fire-and-forestで行われ、失敗してもアップロード・ダウンロード・共有といった本来の機能は一切ブロックされません([`lib/analytics/client.ts`](../lib/analytics/client.ts))。
 
+送信失敗（fetchの拒否・非成功レスポンス、同期例外）時は、バッチをメモリ内キューの先頭へ戻し、3秒後の再送を予約します。sendBeaconが拒否・例外を返した場合は、まずfetchへフォールバックします。再送時も同じevent_idを使用します。キューはページ終了後には保持されず、sendBeaconが受理した後の配送失敗は検出できません。
+
 ## 識別子
 
 | 識別子 | 生成場所 | 保存先 | 用途 |
@@ -49,7 +51,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 | イベント | 発火箇所 |
 | --- | --- |
-| `landing_view` | `components/upload/uploadForm.tsx` マウント時 |
+| `landing_view` | LPまたは`components/upload/uploadForm.tsx`の初回表示時。ブラウザ内の`localStorage`でセッションごとに1回だけ送信し、最初の着地パスを記録する |
 | `file_select` | ファイル選択・ドロップ時 |
 | `upload_start` / `upload_success` / `upload_error` | `lib/upload/uploadFile.ts` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
 | `share_link_copy` / `share_native` | 共有リンクコピー・Web Share API利用時 |

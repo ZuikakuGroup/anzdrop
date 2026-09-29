@@ -20,6 +20,10 @@ Cloudflare Workers
 
 エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
 
+## LPのフォント
+
+[`/lp/secure-file-sharing`](../app/lp/secure-file-sharing/page.tsx)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`app/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
+
 ## Cloudflareバインディング
 
 [`wrangler.jsonc`](../wrangler.jsonc) で定義されているバインディング(型定義は `worker-configuration.d.ts` に `wrangler types` で自動生成):
@@ -41,6 +45,7 @@ Cloudflare Workers
 | パス | 役割 |
 | --- | --- |
 | `/`(`app/page.tsx`) | アップロード画面(`components/upload/uploadForm.tsx`) |
+| `/lp/secure-file-sharing`(`app/lp/secure-file-sharing/page.tsx`) | Google検索広告向けの安全なファイル共有LP。利用の流れ、通常の共有URLの鍵の位置、無料プラン、FAQを掲載してアップロード画面へ案内する。最初の着地パスは既存のAnalyticsで計測。Loose Drawingのイラストをローカル同梱し、各素材へのクレジットリンクを掲載 |
 | `/d/[shareId]`(`app/d/[shareId]/page.tsx`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
