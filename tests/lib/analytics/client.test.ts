@@ -152,6 +152,90 @@ describe("track", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  describe.each(["unavailable", "false", "throws"])("when sendBeacon %s", (beaconFailure) => {
+    it.each(["rejects", "non-OK", "throws"])("retries the same landing event when fetch %s", async (fetchFailure) => {
+      const beacon = stubSendBeacon(beaconFailure === "unavailable" ? undefined : false);
+      if (beaconFailure === "throws") {
+        beacon!.mockImplementation(() => { throw new Error("beacon failed"); });
+      }
+      const fetchMock = vi.fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 200 }));
+      if (fetchFailure === "rejects") {
+        fetchMock.mockRejectedValueOnce(new Error("offline"));
+      } else if (fetchFailure === "non-OK") {
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+      } else {
+        fetchMock.mockImplementationOnce(() => { throw new Error("fetch failed"); });
+      }
+      vi.stubGlobal("fetch", fetchMock);
+
+      track("landing_view");
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const originalBody = fetchMock.mock.calls[0]![1]!.body;
+
+      // The session guard must not prevent delivery of the original queued event.
+      track("landing_view");
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1]![1]!.body).toBe(originalBody);
+
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("returns a rejected batch ahead of events queued while fetch was pending", async () => {
+    stubSendBeacon(false);
+    let rejectDelivery!: (reason: Error) => void;
+    const delivery = new Promise<Response>((_, reject) => { rejectDelivery = reject; });
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValue(new Response(null, { status: 200 }))
+      .mockReturnValueOnce(delivery);
+    vi.stubGlobal("fetch", fetchMock);
+
+    track("landing_view");
+    track("file_select");
+    await vi.advanceTimersByTimeAsync(3000);
+    const original = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    track("upload_start");
+    rejectDelivery(new Error("offline"));
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retried = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
+    expect(retried.events.slice(0, 2)).toEqual(original.events);
+    expect(retried.events).toHaveLength(3);
+    expect(retried.events[2].eventName).toBe("upload_start");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves the landing event when serialization throws synchronously", async () => {
+    const beacon = stubSendBeacon(true);
+    track("landing_view");
+    const stringify = vi.spyOn(JSON, "stringify").mockImplementationOnce(() => {
+      throw new Error("serialization failed");
+    });
+    try {
+      expect(() => vi.advanceTimersByTime(3000)).not.toThrow();
+      expect(beacon).not.toHaveBeenCalled();
+    } finally {
+      stringify.mockRestore();
+    }
+
+    track("landing_view");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(beacon).toHaveBeenCalledOnce();
+    const body = JSON.parse(await (beacon!.mock.calls[0]![1] as Blob).text());
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0].eventName).toBe("landing_view");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(beacon).toHaveBeenCalledOnce();
+  });
+
   it("never throws even when a forbidden property key is passed", () => {
     stubSendBeacon(true);
 

@@ -57,29 +57,41 @@ function logForDevelopment(event: QueuedEvent): void {
 }
 
 function sendBatch(events: QueuedEvent[]): void {
-  const body = JSON.stringify({ events });
+  const retry = () => {
+    queue.unshift(...events);
+    scheduleFlush();
+  };
 
   try {
-    if (typeof navigator.sendBeacon === "function") {
-      const blob = new Blob([body], { type: "application/json" });
+    const body = JSON.stringify({ events });
 
-      if (navigator.sendBeacon(ENDPOINT, blob)) {
-        return;
+    try {
+      if (typeof navigator.sendBeacon === "function") {
+        const blob = new Blob([body], { type: "application/json" });
+
+        if (navigator.sendBeacon(ENDPOINT, blob)) {
+          return;
+        }
       }
+    } catch {
+      // sendBeacon非対応/失敗時はfetchへフォールバックする。
     }
-  } catch {
-    // sendBeacon非対応/失敗時はfetchへフォールバックする。
-  }
 
-  try {
     void fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
-    }).catch(() => {});
+    })
+      .then((response) => {
+        if (!response.ok) {
+          retry();
+        }
+      })
+      .catch(retry);
   } catch {
-    // 送信自体の失敗はここで握りつぶす。
+    // シリアライズや同期的な送信の失敗でもイベントを失わない。
+    retry();
   }
 }
 
