@@ -53,6 +53,8 @@ npm run dev
 
 `main`ブランチへのpushで GitHub Actions が自動的にD1マイグレーション適用とデプロイを行います([`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml))。
 
+本番デプロイでは、ビルドした3つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
+
 ## ドキュメント
 
 | ドキュメント | 内容 |

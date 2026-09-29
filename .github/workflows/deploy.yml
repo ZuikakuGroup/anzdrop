@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
 
-# このワークフローはソースの取得・D1マイグレーション・wrangler デプロイのみで、
-# GITHUB_TOKEN による書き込みは一切行わない。既定の権限に依存せず最小権限にする。
+# 公開リポジトリのビルド成果物に GitHub Artifact Attestation を付ける。
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -38,25 +43,41 @@ jobs:
       - name: Test
         run: npx vitest run
 
+      - name: Build and archive deployable Workers
+        run: bash scripts/prepare-auditable-deployment.sh
+        env:
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+
+      - name: Attest deployment archive
+        uses: actions/attest@v4
+        with:
+          subject-path: tmp/anzdrop-deploy.tar
+
+      - name: Save deployment archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/anzdrop-deploy.tar
+            tmp/anzdrop-deploy.tar.sha256
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - name: Deploy
-        run: npm run deploy
+      - name: Deploy attested Workers and identify deployments
+        run: node scripts/deploy-audited.mjs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
-          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
 
-      - name: Deploy home page Worker
-        run: npm run deploy:home
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
-
-      - name: Deploy router Worker
-        run: npm run deploy:router
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Save successful deployment manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/deployment-manifest.json
+          if-no-files-found: error
+          retention-days: 90
