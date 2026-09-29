@@ -57,7 +57,7 @@ const ILLUSTRATION_CREDITS = [
 
 export default function SecureFileSharingLandingPage() {
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className="landing-page-font min-h-screen bg-paper text-ink">
       <LandingViewTracker />
 
       <header className="bg-paper">

@@ -20,6 +20,10 @@ Cloudflare Workers
 
 エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
 
+## LPのフォント
+
+[`/lp/secure-file-sharing`](../app/lp/secure-file-sharing/page.tsx)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`app/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
+
 ## Cloudflareバインディング
 
 [`wrangler.jsonc`](../wrangler.jsonc) で定義されているバインディング(型定義は `worker-configuration.d.ts` に `wrangler types` で自動生成):
