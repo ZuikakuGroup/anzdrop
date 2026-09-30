@@ -7,12 +7,40 @@
 1. 依存関係インストール(`npm ci`)
 2. `npm run lint`
 3. `npx tsc --noEmit`
-4. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
-5. **既存アプリWorkerのデプロイ**: `npm run deploy`
-6. **トップページWorkerのデプロイ**: `npm run deploy:home`
-7. **ルーターWorkerのデプロイ**: `npm run deploy:router`
+4. OpenNextで既存アプリとトップページをそれぞれ1回ビルドし、`strip-vercel-og.mts`を適用する。Wranglerの`--dry-run --outdir`でアプリ・トップページ・ルーターのアップロード用バンドルを生成する
+5. 3つのバンドル、両Nextアプリの静的アセット、3つのWrangler設定を決定論的なtarにまとめ、tarファイルのSHA-256を計算する
+6. 公開リポジトリのGitHub Artifact Attestationをtarに対して作成し、tarとSHA-256ファイルをActions Artifactへ保存する
+7. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
+8. tarのSHA-256を再確認して展開し、`wrangler deploy --no-bundle`でアプリ、トップページ、ルーターの順に、そのtar内のバンドルとアセットをデプロイする。各コマンドが出力したWorker Version IDと、Cloudflare APIでそのVersion IDを100%配信するDeployment IDを取得する
+9. 3つのデプロイとID照合がすべて成功した後にJSON manifestを生成し、Actions Artifactへ保存する
 
-いずれかのステップが失敗すると後続は実行されない。ルーターは最後に更新するため、トップページWorkerのビルドやデプロイに失敗しても公開トラフィックは既存Workerのまま維持される。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+いずれかのステップが失敗すると後続は実行されない。Workersのデプロイは原子的な3件セットではない。たとえばアプリWorkerのデプロイ後にトップページWorkerが失敗すると、既存ルーターは新しいアプリWorkerへ非トップページ経路を引き続き転送する。途中で失敗した場合、部分適用が残る可能性があるため、「すべて成功した」というmanifestは作成しない。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+
+### 監査用artifactとmanifest
+
+- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWranglerバンドル、2つの静的アセットディレクトリ、各Wrangler設定が入る。アプリとトップページの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のNext.jsビルドやWranglerバンドルは行わない。
+- `deployment-build-<runId>-<attempt>` Actions Artifactにtarと`.sha256`、`deployment-manifest-<runId>-<attempt>` Actions Artifactに成功後の`deployment-manifest.json`を保存する。manifestはリポジトリ、コミット、ref、workflow、run ID・attempt、tarのSHA-256、3つのWorker名・Version ID・Deployment ID・作成時刻、本番URLを記録する。トークン等の秘密情報は含まない。
+- Deployment IDは「最新のDeployment」から採らない。各`wrangler deploy`が出力した固有のVersion IDと、デプロイ開始後の[Cloudflare Workers Deployment API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)の記録を照合する。同一Version IDのDeploymentが複数ある、100%配信ではない、作成時刻が合わない等の場合は失敗する。WorkersのVersion IDはコード・設定・静的アセットのバージョン、Deployment IDはそれを配信する記録を表す。
+- GitHub Actions Artifactの保存期間は90日（組織・リポジトリの設定で短縮される場合がある）。それを超える長期保存が必要なら別途アーカイブを設計する。releaseやmainへの自動書き戻しは行わず、`contents: read`を維持する。
+- GitHub ActionsのAction参照は既存workflowと同じメジャーバージョンタグを使用する。タグの更新を信頼する運用であり、Action本体まで固定したい場合は全ActionをコミットSHAへpinする追加変更が必要。
+
+検証例（`RUN_ID`と`ATTEMPT`は対象のActions runに置き換える）:
+
+```bash
+gh run download "$RUN_ID" -R ZuikakuGroup/anzdrop -n "deployment-build-$RUN_ID-$ATTEMPT" -D build
+gh run download "$RUN_ID" -R ZuikakuGroup/anzdrop -n "deployment-manifest-$RUN_ID-$ATTEMPT" -D manifest
+(cd build && sha256sum -c anzdrop-deploy.tar.sha256)
+gh attestation verify build/anzdrop-deploy.tar --repo ZuikakuGroup/anzdrop \
+  --signer-workflow ZuikakuGroup/anzdrop/.github/workflows/deploy.yml \
+  --source-digest "$(jq -r .gitCommit manifest/deployment-manifest.json)" \
+  --source-ref refs/heads/main
+jq -r '.artifact.sha256' manifest/deployment-manifest.json
+jq -r '.cloudflare.deployments[] | [.worker, .versionId, .deploymentId] | @tsv' manifest/deployment-manifest.json
+```
+
+tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestationの署名・リポジトリ・workflow・コミット・refを検証する。Cloudflare側の対応を確かめるには、対象アカウントのWorkers Deployment閲覧権限で、manifest内の3つのDeployment IDが各Version IDを100%配信していた記録と一致することを確認する。Cloudflareの記録は公開APIではないため、アカウント権限のない第三者がCloudflare内部の状態まで独立に確認できるわけではない。
+
+この仕組みはGitHubのソース、Actions workflow、配布したtar、CloudflareのDeployment記録を追跡するためのもの。Cloudflareの実サーバーが現在そのartifactだけを実行していることを暗号学的に証明するRemote Attestationではない。CloudflareとGitHub Actionsの実行基盤は信頼境界に残る。
 
 ### 必要なGitHub Secrets
 
@@ -145,4 +173,4 @@ npm run deploy:router # 公開ルートを受けるRouter Workerを最後にデ�
 
 上記の順番で実行する。Router Workerを最後に更新することで、トップページWorkerのデプロイに失敗しても、公開ルートは既存アプリWorkerを向いたままになる。
 
-手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。
+手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。この手動コマンドは監査用tar・Attestation・manifestを生成しない。

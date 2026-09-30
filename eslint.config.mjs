@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     "workers/router/worker-configuration.d.ts",
     "out/**",
     "build/**",
+    "tmp/**",
     "next-env.d.ts",
   ]),
 ]);
