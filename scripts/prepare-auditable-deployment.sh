@@ -41,7 +41,7 @@ node scripts/prepare-production-config.mjs \
 
 # Normalize file order and metadata. The archiver also refuses symlinks, which
 # could otherwise make deployed bytes depend on paths outside the archive.
-python3 scripts/create-deployment-tar.py "$payload_dir" "$artifact"
+node scripts/create-deployment-tar.mjs "$payload_dir" "$artifact"
 digest=$(sha256sum "$artifact" | cut -d ' ' -f 1)
 printf '%s  %s\n' "$digest" "$(basename "$artifact")" > "$artifact.sha256"
 echo "Deployment artifact SHA-256: sha256:$digest"

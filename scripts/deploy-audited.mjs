@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 import ts from "typescript";
@@ -86,6 +86,7 @@ async function main() {
   if (!/^[0-9a-f]{64}$/.test(expected) || await sha256(artifact) !== expected) {
     throw new Error("Deployment archive SHA-256 does not match its recorded digest");
   }
+  await rm(extracted, { recursive: true, force: true });
   await mkdir(extracted, { recursive: true });
   await run("tar", ["-xf", artifact, "-C", extracted]);
 
