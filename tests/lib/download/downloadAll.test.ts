@@ -100,7 +100,7 @@ describe("downloadAllFiles — 経路の選択", () => {
     );
 
     expect(showSaveFilePicker).toHaveBeenCalledWith({
-      suggestedName: "anzdrop.zip",
+      suggestedName: "a-ほか1件.zip",
     });
     expect(result.started).toBe(true);
     expect(fetchAndDecrypt).not.toHaveBeenCalled();
@@ -140,13 +140,13 @@ describe("downloadAllFiles — 経路の選択", () => {
     const blob = stubBlobDownload();
     fetchAndDecrypt.mockResolvedValue(new TextEncoder().encode("small zip"));
 
-    const result = await downloadAllFiles([file("a", "a.txt", 10)], KEY);
+    const result = await downloadAllFiles([file("a", "folder/re\u202Eport.txt", 10)], KEY);
 
     expect(result.started).toBe(true);
     expect(showSaveFilePicker).not.toHaveBeenCalled();
     expect(showDirectoryPicker).not.toHaveBeenCalled();
     expect(fetchDecryptedStream).not.toHaveBeenCalled();
-    expect(blob.downloadedName()).toBe("anzdrop.zip");
+    expect(blob.downloadedName()).toBe("re_port.zip");
   });
 
   it("4GiB を超える場合は showDirectoryPicker でフォルダへ1ファイルずつ保存", async () => {
@@ -304,7 +304,7 @@ describe("downloadAllFiles — 経路の選択", () => {
     expect(fetchAndDecrypt).not.toHaveBeenCalled();
     expect(posted).toHaveLength(1);
     expect(posted[0].message.type).toBe("ANZDROP_STREAM_DOWNLOAD");
-    expect(posted[0].message.filename).toBe("anzdrop.zip");
+    expect(posted[0].message.filename).toBe("a-ほか1件.zip");
     expect(iframes[0].src).toBe("/_anzdrop_download/z");
 
     // SW へ流れたバイト列が展開可能な ZIP になっている。
@@ -481,7 +481,7 @@ describe("downloadAllFiles — 経路の選択", () => {
     );
 
     expect(fetchDecryptedStream).not.toHaveBeenCalled();
-    expect(blob.downloadedName()).toBe("anzdrop.zip");
+    expect(blob.downloadedName()).toBe("a-ほか1件.zip");
     expect(result.started).toBe(true);
 
     const unzipped = unzipSync(blob.blobParts()[0] as Uint8Array);
@@ -521,7 +521,7 @@ describe("downloadAllFiles — 404 の扱い", () => {
     const gone: string[] = [];
 
     fetchAndDecrypt.mockImplementation(async (f: DecryptedFile) => {
-      if (f.id === "b") throw new FileGoneError("gone");
+      if (f.id === "a") throw new FileGoneError("gone");
       return new TextEncoder().encode(`mem-${f.id}`);
     });
 
@@ -531,11 +531,12 @@ describe("downloadAllFiles — 404 の扱い", () => {
       { onFileGone: (id) => gone.push(id) }
     );
 
-    expect(gone).toEqual(["b"]);
-    expect(result.goneFileIds).toEqual(["b"]);
+    expect(gone).toEqual(["a"]);
+    expect(result.goneFileIds).toEqual(["a"]);
 
     const unzipped = unzipSync(blob.blobParts()[0] as Uint8Array);
-    expect(Object.keys(unzipped).sort()).toEqual(["a.txt", "c.txt"]);
+    expect(Object.keys(unzipped).sort()).toEqual(["b.txt", "c.txt"]);
+    expect(blob.downloadedName()).toBe("b-ほか1件.zip");
   });
 
   it("メモリ内 ZIP 経路: 全ファイルが消えていたら「削除されています」で中断", async () => {

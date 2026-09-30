@@ -45,6 +45,18 @@ export type DownloadAllOptions = {
 
 type NamedFile = { file: DecryptedFile; name: string };
 
+function archiveFilename(files: DecryptedFile[]): string {
+  const filename = files[0]?.name.split(/[\\/]/).at(-1) ?? "";
+  const dot = filename.lastIndexOf(".");
+  const stem = dot > 0 ? filename.slice(0, dot) : filename;
+  const safeStem = stem
+    .replace(/[<>:"|?*\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu, "_")
+    .replace(/^[.\s]+|[.\s]+$/g, "");
+  const base = Array.from(safeStem).slice(0, 40).join("").replace(/[.\s]+$/g, "") || "files";
+  const others = files.length > 1 ? `-ほか${files.length - 1}件` : "";
+  return `${base}${others}.zip`;
+}
+
 function assignZipNames(files: DecryptedFile[]): NamedFile[] {
   const usedNames = new Map<string, number>();
 
@@ -87,6 +99,7 @@ export async function downloadAllFiles(
   options: DownloadAllOptions = {}
 ): Promise<DownloadAllResult> {
   const named = assignZipNames(files);
+  const zipFilename = archiveFilename(files);
   const sizes = files.map((file) => file.size);
   const totalBytes = sizes.reduce((sum, size) => sum + size, 0);
   const goneFileIds: string[] = [];
@@ -129,7 +142,7 @@ export async function downloadAllFiles(
   ) {
     let handle;
     try {
-      handle = await savePicker({ suggestedName: "anzdrop.zip" });
+      handle = await savePicker({ suggestedName: zipFilename });
     } catch (err) {
       if (isAbortError(err)) {
         return { cancelled: true, goneFileIds, started: false };
@@ -160,7 +173,7 @@ export async function downloadAllFiles(
     // メモリ内 ZIP へ安全にフォールバックできる。
     let handedOff = false;
     try {
-      await saveViaServiceWorker(transform.readable, "anzdrop.zip", null);
+      await saveViaServiceWorker(transform.readable, zipFilename, null);
       handedOff = true;
     } catch {
       // SW への受け渡しに失敗(URL 未返却・一過性の不通など)。writable を
@@ -220,10 +233,12 @@ export async function downloadAllFiles(
   }
 
   const zipInput: Record<string, Uint8Array> = {};
+  const availableFiles: DecryptedFile[] = [];
 
   for (const { file, name } of named) {
     try {
       zipInput[name] = await fetchAndDecrypt(file, key);
+      availableFiles.push(file);
     } catch (err) {
       if (err instanceof FileGoneError) {
         markGone(file.id);
@@ -237,6 +252,6 @@ export async function downloadAllFiles(
     throw new FriendlyError(FILE_GONE_ERROR);
   }
 
-  triggerBlobDownload([await zipFiles(zipInput)], "anzdrop.zip");
+  triggerBlobDownload([await zipFiles(zipInput)], archiveFilename(availableFiles));
   return { cancelled: false, goneFileIds, started: true };
 }
