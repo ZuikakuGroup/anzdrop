@@ -55,7 +55,7 @@ jobs:
           subject-path: tmp/anzdrop-deploy.tar
 
       - name: Save deployment archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -75,7 +75,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Save successful deployment manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-manifest-${{ github.run_id }}-${{ github.run_attempt }}
           path: tmp/deployment-manifest.json
