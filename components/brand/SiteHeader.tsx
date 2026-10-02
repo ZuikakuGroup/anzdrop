@@ -74,7 +74,7 @@ export default function SiteHeader() {
         </Link>
       </div>
 
-      <nav className="hidden flex-1 justify-center gap-6 text-xs font-bold md:flex">
+      <nav className="hidden flex-1 justify-center gap-5 whitespace-nowrap text-xs font-bold lg:flex xl:gap-6">
         {NAV_LINKS.map((link) => (
           <a
             key={link.href}
@@ -86,7 +86,7 @@ export default function SiteHeader() {
         ))}
       </nav>
 
-      <div className="hidden flex-1 items-center justify-end gap-4 md:flex">
+      <div className="hidden flex-1 items-center justify-end gap-4 lg:flex">
         {isAuthChecked && (accountId ? (
           <div ref={menuRef} className="relative">
             <button
@@ -140,7 +140,7 @@ export default function SiteHeader() {
             </a>
             <a
               href="/mypage/signup"
-              className="rounded bg-brand px-3 py-1.5 text-paper transition-colors hover:bg-brand/90"
+              className="rounded bg-brand-action px-3 py-1.5 text-paper transition-colors hover:bg-brand-text"
             >
               アカウント作成
             </a>
@@ -148,7 +148,7 @@ export default function SiteHeader() {
         ))}
       </div>
 
-      <div className="flex flex-1 justify-end md:hidden">
+      <div className="flex flex-1 justify-end lg:hidden">
         <button
           onClick={() => setIsMobileMenuOpen((open) => !open)}
           aria-label={isMobileMenuOpen ? "メニューを閉じる" : "メニューを開く"}
@@ -163,7 +163,7 @@ export default function SiteHeader() {
       <div
         id="mobile-menu-panel"
         inert={!isMobileMenuOpen}
-        className={`absolute left-0 right-0 top-full z-10 overflow-hidden border-b border-ink/10 bg-paper shadow-lg transition-[max-height] duration-300 ease-in-out md:hidden ${
+        className={`absolute left-0 right-0 top-full z-10 overflow-hidden border-b border-ink/10 bg-paper shadow-lg transition-[max-height] duration-300 ease-in-out lg:hidden ${
           isMobileMenuOpen ? "max-h-[480px]" : "max-h-0"
         }`}
       >
@@ -217,7 +217,7 @@ export default function SiteHeader() {
                 </a>
                 <a
                   href="/mypage/signup"
-                  className="inline-block w-fit rounded bg-brand px-3 py-1.5 text-paper transition-colors hover:bg-brand/90"
+                  className="inline-block w-fit rounded bg-brand-action px-3 py-1.5 text-paper transition-colors hover:bg-brand-text"
                 >
                   アカウント作成
                 </a>
