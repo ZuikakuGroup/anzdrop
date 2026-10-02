@@ -22,7 +22,7 @@ Cloudflare Workers
 
 ## LPのフォント
 
-[`/lp/secure-file-sharing`](../app/lp/secure-file-sharing/page.tsx)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`app/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
+[`/lp/secure-file-sharing`](../app/lp/secure-file-sharing/page.tsx)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページと共通ヘッダー・フッターで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。見出し用の800ウェイトまで含みます。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`app/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
 
 ## Cloudflareバインディング
 
@@ -45,7 +45,7 @@ Cloudflare Workers
 | パス | 役割 |
 | --- | --- |
 | `/`(`app/page.tsx`) | アップロード画面(`components/upload/uploadForm.tsx`) |
-| `/lp/secure-file-sharing`(`app/lp/secure-file-sharing/page.tsx`) | Google検索広告向けの安全なファイル共有LP。利用の流れ、通常の共有URLの鍵の位置、無料プラン、FAQを掲載してアップロード画面へ案内する。最初の着地パスは既存のAnalyticsで計測。Loose Drawingのイラストをローカル同梱し、各素材へのクレジットリンクを掲載 |
+| `/lp/secure-file-sharing`(`app/lp/secure-file-sharing/page.tsx`) | Google検索広告向けのファイル共有LP。共通ヘッダーを使い、登録不要・送信前のブラウザ内暗号化・無料プランの条件を冒頭で示す。3段階の利用手順、通常の共有URLの鍵の位置、FAQを掲載して`/`へ案内する。最初の着地パスは既存のAnalyticsで計測。ヒーローのLoose Drawingイラスト1点をローカル同梱する。見出しアクセントとCTAは共通のブランド色(`#f15a22`)を使う |
 | `/d/[shareId]`(`app/d/[shareId]/page.tsx`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |

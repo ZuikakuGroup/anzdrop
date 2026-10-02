@@ -33,8 +33,8 @@ Anzdropは、登録不要でも安心して使える、エンドツーエンド�
 | --- | --- | --- |
 | `paper` | `#ffffff` | ページとカードの背景、白文字の基準 |
 | `ink` | `#0a0a0a` | 本文、見出し、強い枠線、第二CTA |
-| `brand` | `#f15a22` | 主CTA・選択状態の面、枠、アイコン、進行状況。通常文字には使わない |
-| `brand-action` | `#c2410c` | 主CTAの背景。`text-paper` と組み合わせる |
+| `brand` | `#f15a22` | 選択状態の面、枠、アイコン、進行状況。通常文字には使わない |
+| `brand-action` | `#c94714` | 主CTAの背景。`text-paper` と組み合わせ、白文字とのコントラスト比は約4.78:1 |
 | `brand-text` | `#a53f17` | リンク、エラー、要点など白背景上の通常文字 |
 | `ink/70`〜`ink/60` | `ink` の透過色 | 補足本文、通常のリンク |
 | `ink/50`〜`ink/40` | `ink` の透過色 | 非操作的な装飾、無効状態。ラベル・補助説明には使わない |
@@ -43,7 +43,7 @@ Anzdropは、登録不要でも安心して使える、エンドツーエンド�
 | `admin-warning-*` | `#fef3c7` / `#78350f` / `#b45309` | 管理画面の要注意状態。`bg-admin-warning-surface text-admin-warning-text border-admin-warning-border` |
 | `admin-danger-*` | `#fee2e2` / `#991b1b` / `#b91c1c` | 管理画面の緊急状態。`bg-admin-danger-surface text-admin-danger-text border-admin-danger-border` |
 
-`brand-action` と `paper`、`brand-text` と `paper` は、通常文字のコントラスト基準を満たす組合せです。新規画面と改修する画面では、`brand` と `paper`、`ink/50` 以下と `paper` を通常文字に使わない。既存画面は機能改修とあわせてこの契約へ段階的に移行する。管理画面では、一時停止などの要注意状態に `admin-warning-*`、CSAMなど緊急性を明確に区別すべき表示に `admin-danger-*` を使う。これらの状態色を一般画面へ拡張しない。
+`brand-action` と `paper`、`brand-text` と `paper` は、通常文字のコントラスト基準（4.5:1以上）を満たす組合せです。新規画面と改修する画面では、`brand` と `paper`、`ink/50` 以下と `paper` を通常文字に使わない。既存画面は機能改修とあわせてこの契約へ段階的に移行する。管理画面では、一時停止などの要注意状態に `admin-warning-*`、CSAMなど緊急性を明確に区別すべき表示に `admin-danger-*` を使う。これらの状態色を一般画面へ拡張しない。
 
 ### 文字
 
@@ -88,7 +88,7 @@ Anzdropは、登録不要でも安心して使える、エンドツーエンド�
 ### レスポンシブ
 
 - 狭い画面を起点に組み、必要なときだけ `sm`、`md` 以上で拡張する。
-- ヘッダーの主要ナビゲーションは `md` 未満ではメニューに収める。情報を隠すのでなく、縦に並べて到達可能にする。
+- ヘッダーの主要ナビゲーションは `lg` 未満ではメニューに収める。情報を隠すのでなく、縦に並べて到達可能にする。
 - 横並びの比較カードは `md:grid-cols-*` で段階的に列を増やす。
 - 固定幅で横スクロールを発生させない。ID・URL・リカバリーコードは `break-all` と等幅フォントを使う。
 - タップ対象は、文字だけの補助リンクを除き、十分な余白を持たせる。アイコンのみのボタンには必ず `aria-label` を付ける。
@@ -97,7 +97,7 @@ Anzdropは、登録不要でも安心して使える、エンドツーエンド�
 
 ### ボタンとリンク
 
-主CTAは濃い杏色の塗り、白文字、太字です。標準は `rounded bg-brand-action px-4 py-3.5 text-sm font-black tracking-wider text-paper`。ホバーは `bg-brand-action/90`、無効状態は `disabled:opacity-30` を使う。
+主CTAは `brand-action`（`#c94714`）の塗り、白文字、太字です。標準は `rounded bg-brand-action px-4 py-3.5 text-sm font-black tracking-wider text-paper`。ホバーは `bg-brand-text`、無効状態は `disabled:opacity-30` を使う。
 
 第二CTAは白背景に黒の2px枠を使う。破壊的でない補助操作、戻る、再読み込み、プランの比較開始などに用いる。ホバーでは `bg-ink/[0.03]` または枠線を濃くする。
 
