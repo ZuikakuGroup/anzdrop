@@ -27,10 +27,12 @@ export default function FaqAccordion({
       {items.map((item, index) => {
         const isOpen = openIndex === index;
         const panelId = `${baseId}-panel-${index}`;
+        const buttonId = `${baseId}-button-${index}`;
 
         return (
           <div key={item.question} className="py-5">
             <button
+              id={buttonId}
               type="button"
               onClick={() => setOpenIndex(isOpen ? null : index)}
               aria-expanded={isOpen}
@@ -55,6 +57,7 @@ export default function FaqAccordion({
             <div
               id={panelId}
               role="region"
+              aria-labelledby={buttonId}
               aria-hidden={!isOpen}
               inert={!isOpen ? true : undefined}
               className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
