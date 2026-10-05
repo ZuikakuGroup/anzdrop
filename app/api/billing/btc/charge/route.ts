@@ -3,11 +3,8 @@ import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { verifySameOrigin } from "@/lib/access";
 import { createCharge } from "@/lib/opennode";
-import {
-  isAdminGrantedPaidPlan,
-  isPurchasablePlan,
-  PLAN_LABELS,
-} from "@/lib/plan";
+import { isAdminGrantedPaidPlan } from "@/lib/billing/cardPlan";
+import { isPurchasablePlan, PLAN_LABELS } from "@/lib/plan";
 import { isManageableSubscriptionStatus } from "@/lib/stripe-subscription";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";

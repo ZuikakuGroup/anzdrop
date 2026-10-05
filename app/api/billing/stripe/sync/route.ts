@@ -7,9 +7,9 @@ import { checkRateLimit } from "@/lib/rateLimit";
 import {
   clearNeverActivatedSubscriptionPointer,
   downgradeExpiredCardPlan,
-  getAccountPlanInfo,
   isAdminGrantedPaidPlan,
-} from "@/lib/plan";
+} from "@/lib/billing/cardPlan";
+import { getAccountPlanInfo } from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,

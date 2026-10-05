@@ -1,4 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import {
+  parseAdminStatusFilter,
+  resolvedAtWhereClause,
+} from "@/lib/admin/statusFilter";
 import { requireAdmin } from "@/lib/api/adminAuth";
 import { withApiHandler } from "@/lib/api/handler";
 
@@ -42,28 +46,6 @@ type AdminReport = {
   category: string;
   share: ReportShareInfo;
 };
-
-type StatusFilter = "open" | "resolved" | "all";
-
-function parseStatus(value: string | null): StatusFilter {
-  if (value === "resolved" || value === "all") {
-    return value;
-  }
-
-  return "open";
-}
-
-function whereClauseFor(status: StatusFilter): string {
-  if (status === "resolved") {
-    return "WHERE resolved_at IS NOT NULL";
-  }
-
-  if (status === "all") {
-    return "";
-  }
-
-  return "WHERE resolved_at IS NULL";
-}
 
 async function fetchShareInfoByIds(
   env: CloudflareEnv,
@@ -109,14 +91,14 @@ export const GET = withApiHandler(
     }
 
     const url = new URL(request.url);
-    const status = parseStatus(url.searchParams.get("status"));
+    const status = parseAdminStatusFilter(url.searchParams.get("status"));
 
     const { results: reports } = await env.DB.prepare(
       `
         SELECT id, share_id, reason, created_at, resolved_at,
                report_type, claimant_name, contact_email, right_type, category
         FROM reports
-        ${whereClauseFor(status)}
+        ${resolvedAtWhereClause(status)}
         ORDER BY (category = 'csam') DESC, created_at DESC
       `
     ).all<ReportRow>();

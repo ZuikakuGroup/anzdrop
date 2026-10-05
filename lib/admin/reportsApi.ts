@@ -1,6 +1,7 @@
 import type { ShareInfo } from "./reportLabels";
+import type { AdminStatusFilter } from "@/lib/admin/statusFilter";
 
-export type StatusFilter = "open" | "resolved" | "all";
+export type StatusFilter = AdminStatusFilter;
 
 export type AdminReport = {
   id: string;

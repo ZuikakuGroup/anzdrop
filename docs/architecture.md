@@ -62,7 +62,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## フロントエンドのロジック配置
 
-`components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。
+`components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。画面の見た目部品は同ディレクトリ内の兄弟コンポーネントへ分割している(`components/upload/`の共有結果・進捗・ファイル一覧、`components/download/`のパスワード解除・プレビュー・送信CTA、`components/billing/`のプラン選択・契約管理、`components/admin/StatusFilterTabs.tsx`など)。アカウント作成・ログイン・再設定と通報フォームは中央カード型の外枠を[`CenteredFormShell`](../components/brand/CenteredFormShell.tsx)に共有する。カード契約のDB更新(`downgradeExpiredCardPlan`・admin付与判定など)は[`lib/billing/cardPlan.ts`](../lib/billing/cardPlan.ts)に、プラン上限・実効プラン判定は[`lib/plan.ts`](../lib/plan.ts)に置く。オーケストレーター側のエントリ(`uploadForm.tsx`・`DownloadPage.tsx`・`BillingPage.tsx`)は従来どおり。
 
 - [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
 - [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。アップロード画面はキュー先頭のファイルだけ、選択直後に先頭の8MiBチャンクをクライアント内で先行暗号化し、アップロード開始後は同じストリームの続きへつなぐ。選択数に比例してメモリが増えないよう、他のファイルは順番が来てから準備する。失敗時は呼び出し側が再試行でき、使用済みストリームは再利用せず、ファイル先頭から新しいストリームを作る(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。

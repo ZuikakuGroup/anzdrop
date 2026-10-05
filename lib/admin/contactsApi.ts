@@ -1,4 +1,6 @@
-export type StatusFilter = "open" | "resolved" | "all";
+import type { AdminStatusFilter } from "@/lib/admin/statusFilter";
+
+export type StatusFilter = AdminStatusFilter;
 
 export type AdminContact = {
   id: string;

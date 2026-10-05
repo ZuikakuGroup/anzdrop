@@ -3,6 +3,10 @@
 // 生の例外文言がそのまま出てしまうのを防ぐため)。
 export class FriendlyError extends Error {}
 
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
 // ダウンロード対象のファイルがサーバー側で既に消費/削除済み(「1回」設定など)だったことを示す。
 // 通常のダウンロード失敗と違い、再試行を促さず一覧からも取り除く。
 export class FileGoneError extends FriendlyError {}

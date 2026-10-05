@@ -6,21 +6,18 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
 import StripePaymentForm from "@/components/billing/StripePaymentForm";
+import SubscriptionManager from "@/components/billing/SubscriptionManager";
+import AdminGrantedPlanNotice from "@/components/billing/AdminGrantedPlanNotice";
+import PlanPicker from "@/components/billing/PlanPicker";
 import type { SubscriptionResponse } from "@/app/api/billing/stripe/subscription/schema";
 import type { CancellationResponse } from "@/app/api/billing/stripe/cancellation/schema";
 import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
 import {
-  PLAN_LABELS,
-  PLAN_LIMITS,
-  PLAN_MONTHLY_PRICE_JPY,
   PURCHASABLE_PLANS,
   type PurchasablePlan,
 } from "@/lib/plan";
-import { formatBytes } from "@/lib/format";
 import { getStripe, STRIPE_PUBLISHABLE_KEY } from "@/lib/stripe-client";
-import type { StripeSubscriptionSummary } from "@/lib/stripe-subscription";
 import {
-  describeContract,
   loadPlanStatus,
   type PlanStatus,
 } from "@/lib/account/planStatus";
@@ -331,108 +328,14 @@ export default function BillingPage({
               ) : me.adminGranted ? (
                 <AdminGrantedPlanNotice status={me} />
               ) : (
-                <>
-                  <div
-                    className={`grid gap-2 ${
-                      PURCHASABLE_PLANS.length > 1 ? "grid-cols-2" : "grid-cols-1"
-                    }`}
-                  >
-                    {PURCHASABLE_PLANS.map((plan) => (
-                      <button
-                        key={plan}
-                        type="button"
-                        onClick={() => setSelectedPlan(plan)}
-                        disabled={isLoadingAction !== null}
-                        className={`rounded border-2 p-3 text-left text-xs transition-colors disabled:opacity-30 ${
-                          selectedPlan === plan
-                            ? "border-brand bg-brand/5"
-                            : "border-ink/20 hover:border-ink/40"
-                        }`}
-                      >
-                        <p className="text-sm font-black">
-                          {PLAN_LABELS[plan]}
-                        </p>
-                        <p className="mt-0.5 font-bold text-ink/70">
-                          ¥{PLAN_MONTHLY_PRICE_JPY[plan]} / 月
-                        </p>
-                        <ul className="mt-2 space-y-0.5 text-ink/60">
-                          <li>
-                            最大
-                            {formatBytes(PLAN_LIMITS[plan].maxFileSizeBytes)}
-                          </li>
-                          <li>
-                            {PLAN_LIMITS[plan].previewEnabled
-                              ? "ブラウザ内プレビュー可"
-                              : "プレビュー不可"}
-                          </li>
-                        </ul>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-1 rounded border border-ink/15 bg-ink/[0.02] p-3 text-xs leading-relaxed text-ink/70">
-                    <p className="font-bold text-ink">
-                      お申し込み内容(クレジットカードの場合)
-                    </p>
-                    <p>
-                      {PLAN_LABELS[selectedPlan]} ― 月額 ¥
-                      {PLAN_MONTHLY_PRICE_JPY[selectedPlan].toLocaleString(
-                        "ja-JP"
-                      )}
-                      (税込)
-                    </p>
-                    <p>
-                      契約期間の定めはなく、解約されるまで毎月自動的に更新・課金されます。決済の完了後、プランへの反映まで少しお時間をいただくことがあります。
-                    </p>
-                    <p>
-                      自動更新はこの「プラン・お支払い」画面からいつでも停止でき、日割りでの返金はありません。
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <button
-                      onClick={startStripeSubscription}
-                      disabled={isLoadingAction !== null}
-                      className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
-                    >
-                      {isLoadingAction === "stripe" && (
-                        <Spinner className="h-4 w-4 text-paper" />
-                      )}
-                      カードで契約する
-                    </button>
-
-                    <button
-                      onClick={startBtcCharge}
-                      disabled
-                      className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3.5 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
-                    >
-                      ビットコインで支払う(準備中)
-                    </button>
-                  </div>
-
-                  <p className="text-center text-xs leading-relaxed text-ink/50">
-                    <a
-                      href="/legal/terms"
-                      className="font-bold text-brand hover:underline"
-                    >
-                      利用規約
-                    </a>
-                    {" ・ "}
-                    <a
-                      href="/legal/tokushoho"
-                      className="font-bold text-brand hover:underline"
-                    >
-                      特定商取引法
-                    </a>
-                  </p>
-
-                  <p
-                    role="alert"
-                    className="min-h-[20px] text-sm font-bold text-brand"
-                  >
-                    {error}
-                  </p>
-                </>
+                <PlanPicker
+                  selectedPlan={selectedPlan}
+                  isLoadingAction={isLoadingAction}
+                  error={error}
+                  onSelectPlan={setSelectedPlan}
+                  onStartStripe={startStripeSubscription}
+                  onStartBtc={startBtcCharge}
+                />
               )}
             </div>
           )}
@@ -440,174 +343,6 @@ export default function BillingPage({
       </main>
 
       <SiteFooter />
-    </div>
-  );
-}
-
-// /admin から付与された有料プラン中。追加のカード/Bitcoin 契約は出さない。
-function AdminGrantedPlanNotice({ status }: { status: PlanStatus }) {
-  const contract = describeContract(status);
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1 rounded border border-ink/15 bg-ink/[0.02] p-4">
-        <p className="text-xs font-bold text-ink/50">現在のプラン</p>
-        <p className="text-lg font-black">{PLAN_LABELS[status.plan]}</p>
-        <p className="text-sm font-bold text-ink/70">{contract.stateLabel}</p>
-        {contract.detail && (
-          <p className="text-xs text-ink/60">{contract.detail}</p>
-        )}
-        {contract.note && (
-          <p className="pt-1 text-xs leading-relaxed text-ink/60">
-            {contract.note}
-          </p>
-        )}
-      </div>
-
-      <div
-        aria-disabled="true"
-        className="space-y-2 opacity-40"
-      >
-        <button
-          type="button"
-          disabled
-          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper disabled:opacity-100"
-        >
-          カードで契約する
-        </button>
-        <button
-          type="button"
-          disabled
-          className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3.5 text-sm font-black tracking-wider text-ink disabled:opacity-100"
-        >
-          ビットコインで支払う(準備中)
-        </button>
-      </div>
-
-      <p className="text-center text-xs leading-relaxed text-ink/50">
-        運営により付与されたプランの利用中は、こちらから追加の契約はできません。
-      </p>
-    </div>
-  );
-}
-
-// 期間末の日付。取得できない稀なケースでは日付を出さず「現在の請求期間の終了時」
-// という言い回しにする(文が「〜に終了します」で自然につながるようにする)。
-function formatPeriodEnd(iso: string | null): string {
-  return iso
-    ? new Date(iso).toLocaleDateString("ja-JP")
-    : "現在の請求期間の終了時";
-}
-
-type SubscriptionManagerProps = {
-  subscription: StripeSubscriptionSummary;
-  action: "cancel" | "resume" | null;
-  confirmingCancel: boolean;
-  error: string;
-  onStartConfirm: () => void;
-  onDismissConfirm: () => void;
-  onCancel: () => void;
-  onResume: () => void;
-};
-
-// カード契約(自動更新サブスク)がある場合に、契約フローの代わりに表示する
-// 管理ブロック。解約は「期間末で自動更新を停止」で、期間中はいつでも取り消せる。
-function SubscriptionManager({
-  subscription,
-  action,
-  confirmingCancel,
-  error,
-  onStartConfirm,
-  onDismissConfirm,
-  onCancel,
-  onResume,
-}: SubscriptionManagerProps) {
-  const busy = action !== null;
-  const periodEnd = formatPeriodEnd(subscription.currentPeriodEnd);
-  // active も past_due も「自動更新が動いている(=停止できる)」側。
-  // canceling(解約予約済み)のときだけ再開ボタンを出す。
-  const autoRenewing = subscription.state !== "canceling";
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded border border-ink/15 bg-ink/[0.02] p-4 text-sm">
-        {subscription.state === "active" ? (
-          <>
-            <p className="font-bold">カードでの自動更新が有効です。</p>
-            {subscription.currentPeriodEnd && (
-              <p className="mt-1 text-xs text-ink/60">
-                次回更新日: {periodEnd}
-              </p>
-            )}
-          </>
-        ) : subscription.state === "past_due" ? (
-          <>
-            <p className="font-bold">お支払いの確認が取れていません。</p>
-            <p className="mt-1 text-xs text-ink/60">
-              カードの有効期限切れなどで自動更新の決済に失敗しています。お支払い方法の変更が必要な場合はお問い合わせください。このまま自動更新を停止することもできます。
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="font-bold">{periodEnd}にこのプランは終了します。</p>
-            <p className="mt-1 text-xs text-ink/60">
-              自動更新は停止済みです。終了後は自動的に無料プランへ戻ります。
-            </p>
-          </>
-        )}
-      </div>
-
-      {autoRenewing ? (
-        confirmingCancel ? (
-          <div className="space-y-2">
-            <p className="text-sm font-bold">
-              {subscription.state === "past_due"
-                ? "自動更新を停止します。失敗している決済のリトライは続き、成功しなければ有効期限の到来時に無料プランへ戻ります。よろしいですか?"
-                : `解約すると、${periodEnd}に無料プランへ戻ります。よろしいですか?`}
-            </p>
-            <button
-              type="button"
-              onClick={onDismissConfirm}
-              disabled={busy}
-              className="w-full rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
-            >
-              解約しない
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={busy}
-              className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
-            >
-              {action === "cancel" && <Spinner className="h-4 w-4 text-ink" />}
-              解約する
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onStartConfirm}
-            disabled={busy}
-            className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
-          >
-            解約する
-          </button>
-        )
-      ) : (
-        <button
-          type="button"
-          onClick={onResume}
-          disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
-        >
-          {action === "resume" && <Spinner className="h-4 w-4 text-paper" />}
-          解約を取り消す
-        </button>
-      )}
-
-      <p role="alert" className="min-h-[20px] text-sm font-bold text-brand">
-        {error}
-      </p>
     </div>
   );
 }

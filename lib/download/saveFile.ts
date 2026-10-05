@@ -1,5 +1,5 @@
 import { fetchDecryptedStream, type DecryptedFile } from "./decrypt";
-import { FileGoneError, FriendlyError } from "./errors";
+import { FileGoneError, FriendlyError, isAbortError } from "./errors";
 import { withDuplicateSuffix } from "./zipDownload";
 import {
   canSaveViaServiceWorker,
@@ -57,9 +57,7 @@ export function getShowDirectoryPicker(): ShowDirectoryPicker | null {
   return typeof candidate === "function" ? candidate : null;
 }
 
-export function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
+export { isAbortError } from "./errors";
 
 // ReadableStream を WritableFileStream へ逐次コピーする。失敗時は読み取り側を
 // 打ち切り、書き込み側を abort してから元の例外を投げ直す。

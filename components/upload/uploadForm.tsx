@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import dynamic from "next/dynamic";
 import Script from "next/script";
 import {
   getMaxFileSizeBytes,
@@ -10,15 +9,8 @@ import {
   type Plan,
 } from "@/lib/plan";
 import type { Retention } from "@/lib/retention";
-import DropMark from "@/components/brand/DropMark";
 import Spinner from "@/components/brand/Spinner";
-import {
-  XIcon,
-  LineIcon,
-  QrCodeIcon,
-  ShareIcon,
-  ChevronIcon,
-} from "@/components/brand/ShareIcons";
+import { ChevronIcon } from "@/components/brand/ShareIcons";
 import { formatBytes } from "@/lib/format";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
 import { track } from "@/lib/analytics/client";
@@ -34,12 +26,11 @@ import {
   prefetchFirst,
   type PrefetchedAsyncIterator,
 } from "@/lib/upload/prefetchedAsyncIterator";
-
-// 共有リンクの発行後、利用者がQRボタンを押すときだけ必要になる。初回表示で
-// qrcodeライブラリをダウンロード・評価しないようクライアント側で遅延読込する。
-const QrCodeModal = dynamic(() => import("@/components/brand/QrCodeModal"), {
-  ssr: false,
-});
+import UploadDropOverlay from "@/components/upload/UploadDropOverlay";
+import UploadShareResult from "@/components/upload/UploadShareResult";
+import UploadProgress from "@/components/upload/UploadProgress";
+import UploadErrorPanel from "@/components/upload/UploadErrorPanel";
+import UploadFilePicker from "@/components/upload/UploadFilePicker";
 
 type AdvancedSettingsModule = typeof import("@/components/upload/AdvancedSettings");
 
@@ -606,12 +597,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {isDragging && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-paper/90 backdrop-blur-xs">
-          <DropMark className="h-14 w-14 text-brand" />
-          <p className="text-lg font-black">ここにドロップ</p>
-        </div>
-      )}
+      {isDragging && <UploadDropOverlay />}
 
       {header}
 
@@ -635,132 +621,28 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
 
           <div className="space-y-5">
             {shareUrl ? (
-              <div className="anz-scroll relative flex h-40 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
-                <button
-                  onClick={resetForm}
-                  aria-label="閉じる"
-                  title="閉じる"
-                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                </button>
-
-                <p className="text-xs font-bold text-ink/50">
-                  共有リンクを発行しました
-                </p>
-
-                <div className="flex items-center gap-3">
-                  {canShareNatively && (
-                    <button
-                      onClick={shareNative}
-                      aria-label="共有"
-                      title="共有"
-                      className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
-                    >
-                      <ShareIcon className="h-4 w-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={shareToLine}
-                    aria-label="LINEで共有"
-                    title="LINEで共有"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
-                  >
-                    <LineIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => setIsQrOpen(true)}
-                    aria-label="QRコードを表示"
-                    title="QRコードを表示"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-ink text-ink transition-colors hover:bg-ink/[0.03]"
-                  >
-                    <QrCodeIcon className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <QrCodeModal
-                  url={shareUrl}
-                  isOpen={isQrOpen}
-                  onClose={() => setIsQrOpen(false)}
-                />
-
-                <button
-                  onClick={handleCopy}
-                  className="rounded bg-ink px-3 py-1 text-xs font-bold text-paper transition-colors hover:bg-ink/90"
-                >
-                  {copyState === "copied"
-                    ? "コピーしました"
-                    : copyState === "failed"
-                      ? "コピーできませんでした"
-                      : "URLをコピー"}
-                </button>
-              </div>
+              <UploadShareResult
+                shareUrl={shareUrl}
+                copyState={copyState}
+                canShareNatively={canShareNatively}
+                isQrOpen={isQrOpen}
+                onReset={resetForm}
+                onCopy={handleCopy}
+                onShareNative={shareNative}
+                onShareToLine={shareToLine}
+                onOpenQr={() => setIsQrOpen(true)}
+                onCloseQr={() => setIsQrOpen(false)}
+              />
             ) : isUploading ? (
-              <div className="flex h-40 flex-col items-center justify-center gap-3 rounded border-2 border-ink p-6 text-center">
-                <Spinner className="h-6 w-6 text-brand" />
-                <span className="text-xs font-bold text-ink/50">
-                  アップロード中... {progress}%
-                </span>
-                <div className="h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-ink/10">
-                  <div
-                    className="h-full rounded-full bg-brand transition-all duration-200"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
+              <UploadProgress progress={progress} />
             ) : error ? (
-              <div className="relative flex h-40 flex-col items-center justify-center gap-2 rounded border-2 border-brand p-6 text-center">
-                <button
-                  onClick={() => setError("")}
-                  aria-label="閉じる"
-                  title="閉じる"
-                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
-                >
-                  <XIcon className="h-3.5 w-3.5" />
-                </button>
-                <p className="text-sm font-bold text-brand">{error}</p>
-              </div>
+              <UploadErrorPanel error={error} onDismiss={() => setError("")} />
             ) : (
-              <label
-                htmlFor={fileInputId}
-                className={
-                  files.length === 0
-                    ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center transition-colors hover:bg-ink/[0.03]"
-                    : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03]"
-                }
-              >
-                {files.length === 0 ? (
-                  <>
-                    <span className="text-base font-black">
-                      ファイルを選択
-                    </span>
-                    <span className="text-xs font-bold text-ink/50">
-                      クリックまたはドラッグ&ドロップで選択<br />フォルダはドラッグでアップロード
-                    </span>
-                  </>
-                ) : (
-                  <ul className="divide-y divide-ink/10 text-[13px]">
-                    {files.map((pendingFile) => (
-                      <li
-                        key={`${pendingFile.path}-${pendingFile.file.lastModified}`}
-                        className="flex items-center justify-between gap-4 px-2 py-2"
-                      >
-                        <span className="truncate">{pendingFile.path}</span>
-                        <span className="shrink-0 font-bold text-ink/40">
-                          {formatBytes(pendingFile.file.size)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <input
-                  id={fileInputId}
-                  type="file"
-                  multiple
-                  onChange={handleFileChange}
-                  className="sr-only"
-                />
-              </label>
+              <UploadFilePicker
+                fileInputId={fileInputId}
+                files={files}
+                onFileChange={handleFileChange}
+              />
             )}
 
             <div

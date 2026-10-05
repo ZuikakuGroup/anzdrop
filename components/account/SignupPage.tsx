@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import Script from "next/script";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
+import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
-import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { useTurnstile } from "@/lib/turnstile-client";
 import { useRedirectIfLoggedIn } from "@/lib/account/useRedirectIfLoggedIn";
 import PasswordInput from "@/components/brand/PasswordInput";
 import {
@@ -115,145 +113,122 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-
-      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
-              アカウント作成
-            </h1>
-            <p className="text-xs text-ink/50">
-              アカウントIDとパスワードだけで利用できます。
+    <CenteredFormShell
+      title="アカウント作成"
+      description="アカウントIDとパスワードだけで利用できます。"
+    >
+      {!canRenderForm ? (
+        <div className="flex justify-center py-8">
+          <Spinner className="h-6 w-6 text-brand" />
+        </div>
+      ) : result ? (
+        <div className="space-y-4">
+          <div className="rounded border-2 border-brand p-4 text-sm">
+            <p className="mb-3 font-bold text-brand">
+              この画面だけでしか表示されません。必ず保存してください。
+            </p>
+            <dl className="space-y-2 text-[13px]">
+              <div>
+                <dt className="font-bold text-ink/50">アカウントID</dt>
+                <dd className="break-all font-mono">{result.accountId}</dd>
+              </div>
+              <div>
+                <dt className="font-bold text-ink/50">リカバリーコード</dt>
+                <dd className="break-all font-mono">{result.recoveryCode}</dd>
+              </div>
+            </dl>
+            <p className="mt-3 text-xs leading-relaxed text-ink/60">
+              リカバリーコードはパスワードを忘れた際の再設定にのみ使います。紛失すると運営側でも復旧できません。
             </p>
           </div>
 
-          {!canRenderForm ? (
-            <div className="flex justify-center py-8">
-              <Spinner className="h-6 w-6 text-brand" />
-            </div>
-          ) : result ? (
-            <div className="space-y-4">
-              <div className="rounded border-2 border-brand p-4 text-sm">
-                <p className="mb-3 font-bold text-brand">
-                  この画面だけでしか表示されません。必ず保存してください。
-                </p>
-                <dl className="space-y-2 text-[13px]">
-                  <div>
-                    <dt className="font-bold text-ink/50">アカウントID</dt>
-                    <dd className="break-all font-mono">{result.accountId}</dd>
-                  </div>
-                  <div>
-                    <dt className="font-bold text-ink/50">リカバリーコード</dt>
-                    <dd className="break-all font-mono">
-                      {result.recoveryCode}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="mt-3 text-xs leading-relaxed text-ink/60">
-                  リカバリーコードはパスワードを忘れた際の再設定にのみ使います。紛失すると運営側でも復旧できません。
-                </p>
-              </div>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
+          >
+            {copyState === "copied"
+              ? "コピーしました"
+              : copyState === "failed"
+                ? "コピーできませんでした。手で控えてください"
+                : "両方コピー"}
+          </button>
 
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="w-full rounded border-2 border-ink/20 px-4 py-2.5 text-sm font-bold transition-colors hover:border-ink/40"
-              >
-                {copyState === "copied"
-                  ? "コピーしました"
-                  : copyState === "failed"
-                    ? "コピーできませんでした。手で控えてください"
-                    : "両方コピー"}
-              </button>
-
-              <a
-                href="/mypage/login"
-                className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
-              >
-                ログインへ進む
-              </a>
-            </div>
-          ) : (
-            <form onSubmit={submit} className="space-y-4">
-              <div className="space-y-1">
-                <label
-                  htmlFor="signup-account-id"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  アカウントID
-                </label>
-                <input
-                  id="signup-account-id"
-                  name="accountId"
-                  type="text"
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
-                  placeholder="yamada-taro"
-                  autoComplete="username"
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="w-full rounded border-2 border-ink/20 px-3 py-2 font-mono text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="signup-password"
-                  className="text-xs font-bold text-ink/50"
-                >
-                  パスワード
-                </label>
-                <PasswordInput
-                  id="signup-password"
-                  name="password"
-                  value={password}
-                  onChange={setPassword}
-                  placeholder="8文字以上のパスワード"
-                  autoComplete="new-password"
-                  className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
-                />
-              </div>
-
-              {turnstileWidget}
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
-              >
-                {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
-                {isSubmitting ? "作成中..." : "アカウントを作成する"}
-              </button>
-
-              <p
-                role="alert"
-                className="min-h-[20px] text-sm font-bold text-brand"
-              >
-                {error}
-              </p>
-
-              <p className="text-center text-xs text-ink/50">
-                すでにアカウントをお持ちの場合は{" "}
-                <a href="/mypage/login" className="font-bold text-brand hover:underline">
-                  ログイン
-                </a>
-              </p>
-            </form>
-          )}
+          <a
+            href="/mypage/login"
+            className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+          >
+            ログインへ進む
+          </a>
         </div>
-      </main>
+      ) : (
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1">
+            <label
+              htmlFor="signup-account-id"
+              className="text-xs font-bold text-ink/50"
+            >
+              アカウントID
+            </label>
+            <input
+              id="signup-account-id"
+              name="accountId"
+              type="text"
+              value={accountId}
+              onChange={(event) => setAccountId(event.target.value)}
+              placeholder="yamada-taro"
+              autoComplete="username"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full rounded border-2 border-ink/20 px-3 py-2 font-mono text-base outline-none focus:border-brand sm:text-sm"
+            />
+          </div>
 
-      <SiteFooter />
+          <div className="space-y-1">
+            <label
+              htmlFor="signup-password"
+              className="text-xs font-bold text-ink/50"
+            >
+              パスワード
+            </label>
+            <PasswordInput
+              id="signup-password"
+              name="password"
+              value={password}
+              onChange={setPassword}
+              placeholder="8文字以上のパスワード"
+              autoComplete="new-password"
+              className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand sm:text-sm"
+            />
+          </div>
 
-      {TURNSTILE_SITE_KEY && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
+          {turnstileWidget}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+          >
+            {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
+            {isSubmitting ? "作成中..." : "アカウントを作成する"}
+          </button>
+
+          <p
+            role="alert"
+            className="min-h-[20px] text-sm font-bold text-brand"
+          >
+            {error}
+          </p>
+
+          <p className="text-center text-xs text-ink/50">
+            すでにアカウントをお持ちの場合は{" "}
+            <a href="/mypage/login" className="font-bold text-brand hover:underline">
+              ログイン
+            </a>
+          </p>
+        </form>
       )}
-    </div>
+    </CenteredFormShell>
   );
 }
