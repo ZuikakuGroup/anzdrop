@@ -1,8 +1,14 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import Stripe from "stripe";
 import { verifySession } from "@/lib/account/session";
 import { verifySameOrigin } from "@/lib/access";
 import { createCharge } from "@/lib/opennode";
-import { isPurchasablePlan, PLAN_LABELS } from "@/lib/plan";
+import {
+  isAdminGrantedPaidPlan,
+  isPurchasablePlan,
+  PLAN_LABELS,
+} from "@/lib/plan";
+import { isManageableSubscriptionStatus } from "@/lib/stripe-subscription";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
@@ -49,6 +55,53 @@ export const POST = withApiHandler(
       return Response.json(
         { success: false, error: "このプランは現在購入できません" },
         { status: 400 }
+      );
+    }
+
+    // /admin 付与中は Bitcoin での追加契約も受け付けない。
+    // 生きているカード契約がある場合は admin 付与ではない(期間チャージ可)。
+    const account = await env.DB.prepare(
+      `SELECT stripe_subscription_id FROM accounts WHERE id = ? LIMIT 1`
+    )
+      .bind(session.accountId)
+      .first<{ stripe_subscription_id: string | null }>();
+
+    let hasManageableStripeSubscription = false;
+
+    if (account?.stripe_subscription_id) {
+      try {
+        const existing = await new Stripe(env.STRIPE_SECRET_KEY, {
+          httpClient: Stripe.createFetchHttpClient(),
+        }).subscriptions.retrieve(account.stripe_subscription_id);
+        hasManageableStripeSubscription = isManageableSubscriptionStatus(
+          existing.status
+        );
+      } catch (error) {
+        // 404 だけ「契約なし」とみなす。レート制限・障害まで握りつぶすと、
+        // カード契約中のアカウントを誤って admin 付与扱いにして 409 にする。
+        const statusCode =
+          error && typeof error === "object" && "statusCode" in error
+            ? (error as { statusCode?: unknown }).statusCode
+            : undefined;
+
+        if (statusCode !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (
+      await isAdminGrantedPaidPlan(env, session.accountId, {
+        hasManageableStripeSubscription,
+      })
+    ) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "運営により付与されたプランの利用中は、追加の契約はできません",
+        },
+        { status: 409 }
       );
     }
 

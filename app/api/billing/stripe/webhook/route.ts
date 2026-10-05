@@ -4,11 +4,15 @@ import { stripe as hibikiStripe } from "@hibiki-js/stripe";
 import Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
 import { readBodyWithinLimit } from "@/lib/api/body";
-import { downgradeExpiredCardPlan } from "@/lib/plan";
+import {
+  clearNeverActivatedSubscriptionPointer,
+  downgradeExpiredCardPlan,
+} from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
   isDeadSubscriptionStatus,
+  isNeverActivatedSubscriptionStatus,
   planFromSubscription,
   unixSecondsToIso,
 } from "@/lib/stripe-subscription";
@@ -123,7 +127,10 @@ async function applyEvent(
               subscription.id
             );
 
-            if (isDeadSubscriptionStatus(currentSubscription.status)) {
+            if (
+              isNeverActivatedSubscriptionStatus(currentSubscription.status) ||
+              isDeadSubscriptionStatus(currentSubscription.status)
+            ) {
               return;
             }
 
@@ -217,17 +224,17 @@ async function applyEvent(
             }
           }
         }
+      } else if (isNeverActivatedSubscriptionStatus(subscription.status)) {
+        // 初回支払い未確定のまま失効。ゴミポインタだけ外し、plan /
+        // plan_expires_at は触らない(/admin 付与を消さない)。sync と同じ。
+        await clearNeverActivatedSubscriptionPointer(env, {
+          subscriptionId: subscription.id,
+        });
       } else if (isDeadSubscriptionStatus(subscription.status)) {
-        // incomplete_expired / canceled / unpaid へ遷移したが
-        // customer.subscription.deleted が届かない場合の掃除。特に
-        // 「決済フォームを開いただけで離脱」した incomplete の Subscription は、
-        // 約23時間後に incomplete_expired へ status 遷移する更新イベントだけが
-        // 届き(deleted は来ない)、そのままだと accounts.stripe_subscription_id に
-        // ゴミポインタが残り続ける。sync 側の reconcileFromStripe と同じく
-        // downgradeExpiredCardPlan で即時ダウングレード(古いポインタを外し、
-        // Bitcoin 前払い分があればその期限・プランは残す)を行い、sync と
-        // Webhook の挙動を揃える。該当ポインタを持つ行が無ければ何もしない
-        // (deleted ハンドラと同じ)。
+        // canceled / unpaid へ遷移したが customer.subscription.deleted が
+        // 届かない場合の掃除。sync 側の reconcileFromStripe と同じく
+        // downgradeExpiredCardPlan で即時ダウングレードする。該当ポインタを
+        // 持つ行が無ければ何もしない(deleted ハンドラと同じ)。
         // ここでポインタを外したあとに順不同で古い active イベントが届いても、
         // 上の metadata.accountId フォールバックは Stripe 上の現在状態を再取得し、
         // 終端状態なら再関連付けしない。
@@ -240,9 +247,23 @@ async function applyEvent(
     case "customer.subscription.deleted": {
       const subscription = event.data.object as Stripe.Subscription;
 
-      // 即時ダウングレード(plan_expires_atを現在時刻へ、追跡用IDを外す)。
-      // ただしBitcoinの期間チャージで先まで前払いされている分は残す。
-      await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
+      // 初回未確定のまま消えた Subscription はプランを落とさない
+      // (/admin 付与を消さない)。status が無い古い/不完全な payload は
+      // 従来どおり即時ダウングレードする。
+      if (
+        subscription.status === "incomplete" ||
+        isNeverActivatedSubscriptionStatus(subscription.status)
+      ) {
+        await clearNeverActivatedSubscriptionPointer(env, {
+          subscriptionId: subscription.id,
+        });
+      } else {
+        // 即時ダウングレード(plan_expires_atを現在時刻へ、追跡用IDを外す)。
+        // ただしBitcoinの期間チャージで先まで前払いされている分は残す。
+        await downgradeExpiredCardPlan(env, {
+          subscriptionId: subscription.id,
+        });
+      }
 
       break;
     }

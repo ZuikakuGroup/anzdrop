@@ -5,8 +5,11 @@ import { verifySameOrigin } from "@/lib/access";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { parseJsonBody } from "@/lib/api/validate";
-import { isDeadSubscriptionStatus } from "@/lib/stripe-subscription";
-import { isPurchasablePlan } from "@/lib/plan";
+import {
+  isDeadSubscriptionStatus,
+  isNeverActivatedSubscriptionStatus,
+} from "@/lib/stripe-subscription";
+import { isAdminGrantedPaidPlan, isPurchasablePlan } from "@/lib/plan";
 import {
   SubscriptionRequestSchema,
   type SubscriptionResponse,
@@ -159,7 +162,9 @@ export const POST = withApiHandler(
                 const recheck = await stripe.subscriptions.retrieve(
                   account.stripe_subscription_id
                 );
-                stillBillable = !isDeadSubscriptionStatus(recheck.status);
+                stillBillable =
+                  !isDeadSubscriptionStatus(recheck.status) &&
+                  !isNeverActivatedSubscriptionStatus(recheck.status);
               } catch (recheckError) {
                 if (getStripeErrorStatusCode(recheckError) === 404) {
                   stillBillable = false;
@@ -184,6 +189,24 @@ export const POST = withApiHandler(
           throw error;
         }
       }
+    }
+
+    // /admin 付与中は追加のカード契約を作らない(画面のグレーアウトと揃える)。
+    // 生きているカード契約は上のブロックで既に 409 になっているため、ここでは
+    // manageable Stripe が無い前提で判定する。
+    if (
+      await isAdminGrantedPaidPlan(env, session.accountId, {
+        hasManageableStripeSubscription: false,
+      })
+    ) {
+      return Response.json(
+        {
+          success: false,
+          error:
+            "運営により付与されたプランの利用中は、追加の契約はできません",
+        },
+        { status: 409 }
+      );
     }
 
     // このアプリはメールアドレスを収集しないため、Customerには紐づける

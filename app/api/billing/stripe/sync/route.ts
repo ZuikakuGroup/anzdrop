@@ -4,11 +4,17 @@ import { verifySession } from "@/lib/account/session";
 import { verifySameOrigin } from "@/lib/access";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
-import { downgradeExpiredCardPlan, getAccountPlanInfo } from "@/lib/plan";
+import {
+  clearNeverActivatedSubscriptionPointer,
+  downgradeExpiredCardPlan,
+  getAccountPlanInfo,
+  isAdminGrantedPaidPlan,
+} from "@/lib/plan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,
   isDeadSubscriptionStatus,
+  isNeverActivatedSubscriptionStatus,
   planFromSubscription,
   toSubscriptionSummary,
   unixSecondsToIso,
@@ -90,12 +96,17 @@ export const POST = withApiHandler(
       env
     );
 
+    const adminGranted = await isAdminGrantedPaidPlan(env, session.accountId, {
+      hasManageableStripeSubscription: subscription !== null,
+    });
+
     const responseBody: StripeSyncResponse = {
       success: true,
       accountId: session.accountId,
       plan,
       planExpiresAt,
       subscription,
+      adminGranted,
     };
 
     return Response.json(responseBody);
@@ -182,17 +193,23 @@ async function reconcileFromStripe(
     )
       .bind(plan, newExpiresAt, newExpiresAt, accountId, subscriptionId)
       .run();
+  } else if (isNeverActivatedSubscriptionStatus(subscription.status)) {
+    // 初回支払い未確定のまま失効。ゴミポインタだけ外し、plan /
+    // plan_expires_at は触らない(/admin 付与や Bitcoin 前払いを消さない)。
+    await clearNeverActivatedSubscriptionPointer(env, {
+      accountId,
+      subscriptionId,
+    });
   } else if (isDeadSubscriptionStatus(subscription.status)) {
-    // canceled / incomplete_expired / unpaid。Webhook の
-    // customer.subscription.deleted と同じ「即時ダウングレード」を行う
-    // (plan_expires_at を現在時刻に、stripe_subscription_id を外す。ただし
-    // Bitcoin の期間チャージで先まで前払いされている分は残す)。
-    // 期間末解約の通常フローでは、Stripe が canceled にする時点で既に
-    // 期間末に達しているため実質的な差は無い。一方サポートからの即時解約
-    // (返金・不正対応)の場合は、この即時ダウングレードが意図どおり。
-    // ここで plan_expires_at を触らずポインタだけ外すと、後から届いた
-    // deleted Webhook が突き合わせる行を失い、即時ダウングレードが
-    // 恒久的に不発になってしまう。
+    // canceled / unpaid。Webhook の customer.subscription.deleted と同じ
+    // 「即時ダウングレード」を行う(plan_expires_at を現在時刻に、
+    // stripe_subscription_id を外す。ただし Bitcoin の期間チャージで先まで
+    // 前払いされている分は残す)。期間末解約の通常フローでは、Stripe が
+    // canceled にする時点で既に期間末に達しているため実質的な差は無い。
+    // 一方サポートからの即時解約(返金・不正対応)の場合は、この即時
+    // ダウングレードが意図どおり。ここで plan_expires_at を触らずポインタ
+    // だけ外すと、後から届いた deleted Webhook が突き合わせる行を失い、
+    // 即時ダウングレードが恒久的に不発になってしまう。
     await downgradeExpiredCardPlan(env, { accountId, subscriptionId });
   }
 
