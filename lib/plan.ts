@@ -179,8 +179,62 @@ export function extendPaidPeriod(
   return new Date(base + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+// まだ消費し切っていない Bitcoin 前払いがあるか。admin 付与との区別に使う
+// (plan_source 列は持たない方針のため、有効な btc_payments の有無で推論する)。
+export async function hasLiveBtcPrepaidPlan(
+  env: CloudflareEnv,
+  accountId: string,
+  nowIso: string = new Date().toISOString()
+): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `
+    SELECT 1 AS ok
+    FROM btc_payments
+    WHERE account_id = ?
+      AND status = 'paid'
+      AND extends_plan_until IS NOT NULL
+      AND extends_plan_until > ?
+    LIMIT 1
+  `
+  )
+    .bind(accountId, nowIso)
+    .first<{ ok: number }>();
+
+  return row !== null;
+}
+
+// 初回支払い未確定のまま失効した Subscription のポインタだけ外す。
+// plan / plan_expires_at は触らない(admin 付与を消さないため)。
+export async function clearNeverActivatedSubscriptionPointer(
+  env: CloudflareEnv,
+  match: { subscriptionId: string; accountId?: string }
+): Promise<void> {
+  if (match.accountId) {
+    await env.DB.prepare(
+      `
+      UPDATE accounts
+      SET stripe_subscription_id = NULL
+      WHERE id = ? AND stripe_subscription_id = ?
+    `
+    )
+      .bind(match.accountId, match.subscriptionId)
+      .run();
+    return;
+  }
+
+  await env.DB.prepare(
+    `
+    UPDATE accounts
+    SET stripe_subscription_id = NULL
+    WHERE stripe_subscription_id = ?
+  `
+  )
+    .bind(match.subscriptionId)
+    .run();
+}
+
 // カード契約が終端(Webhookの customer.subscription.deleted、または sync が読み取る
-// canceled / unpaid / incomplete_expired)に達したときの「即時ダウングレード」。
+// canceled / unpaid)に達したときの「即時ダウングレード」。
 // 追跡用の stripe_subscription_id を外し、plan / plan_expires_at を「カードが
 // 無くなった後に実際に有効な状態」へ合わせ直す。
 //
@@ -297,4 +351,24 @@ export async function getAccountPlanInfo(
     ),
     planExpiresAt: account.plan_expires_at,
   };
+}
+
+// 実効有料プランがあり、生きているカード契約も Bitcoin 前払いもない
+// (= /admin からの手動付与とみなす)。追加契約を止める判定に使う。
+export async function isAdminGrantedPaidPlan(
+  env: CloudflareEnv,
+  accountId: string,
+  options: { hasManageableStripeSubscription: boolean }
+): Promise<boolean> {
+  if (options.hasManageableStripeSubscription) {
+    return false;
+  }
+
+  const { plan } = await getAccountPlanInfo(accountId, env);
+
+  if (plan === "free") {
+    return false;
+  }
+
+  return !(await hasLiveBtcPrepaidPlan(env, accountId));
 }

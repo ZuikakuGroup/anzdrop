@@ -160,18 +160,20 @@
   - 型としては両方受けるが、実際に決済へ進めるのは購入導線に出しているプランのみ(`PURCHASABLE_PLANS`、[`lib/plan.ts`](../lib/plan.ts))。現状は `premium` のみで、`standard`(提供準備中。Issue #5)は購入UIを迂回して直接叩いても400で拒否する。`btc/charge` も同じ判定。
 - アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe側にCustomerもSubscriptionも作らず429(`Retry-After: 60`)。`stripe/sync` と**同じ `ACCOUNT_RATE_LIMITER` の枠を共有する**ため、閾値を調整するときは両方の呼び出し頻度を合算して考えること。
 - レスポンス: `{ success: true, clientSecret }`
+- `/admin`付与中(`isAdminGrantedPaidPlan()`)は409で拒否する(追加契約不可)。
 
 ### `POST /api/billing/stripe/webhook`
 
-Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、終端ステータス(`canceled`/`unpaid`/`incomplete_expired`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す(`deleted`が届かないケースでもゴミポインタを残さないため)。`customer.subscription.deleted`も即時ダウングレード。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、`incomplete_expired`ではゴミポインタだけ外して`plan`は維持、終端ステータス(`canceled`/`unpaid`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す。`customer.subscription.deleted`も即時ダウングレード。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
 
 ### `POST /api/billing/stripe/sync`
 
 ログイン必須。`customer.subscription.updated` / `deleted` のWebhookが一時的に届かなかった場合の保険。アカウントに紐づく`stripe_subscription_id`のSubscriptionをStripeから取り直し、`accounts.plan` / `plan_expires_at`をStripe側の実態へ合わせ直す(Webhookと同じ列・同じ判定を使い、新しい情報の保存はしない)。`/mypage`と`/mypage/billing`の初回表示時、およびカード決済確定直後のポーリングでクライアントから呼ばれる(クライアント側の呼び出し・401/500ハンドリングは`lib/account/planStatus.ts`に集約)。Stripeで契約したことが無いアカウントはStripe APIを呼ばず現在値を返す。あわせて画面表示用の現在のサブスクリプション要約も返す。
 
 - アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe APIを呼ばず429(`Retry-After: 60`)。
-- レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription }`。`subscription`は`{ state: "active"|"canceling"|"past_due", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)、`"past_due"`は更新の決済に失敗しdunningリトライ中(お支払い方法の更新か自動更新の停止が必要)を表し、このとき`currentPeriodEnd`は常に`null`(Stripeの`current_period_end`が未払いの次期を指しうるため、支払い済みの期限としては使わない)。
-  - `null`になるのは、契約が無い / Subscriptionが`active`・`trialing`・`past_due`のいずれでもない(`incomplete`・`canceled`等) / retrieveが失敗し`plan_expires_at`も過去のとき。
+- レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription, adminGranted }`。`subscription`は`{ state: "active"|"canceling"|"past_due", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)、`"past_due"`は更新の決済に失敗しdunningリトライ中(お支払い方法の更新か自動更新の停止が必要)を表し、このとき`currentPeriodEnd`は常に`null`(Stripeの`current_period_end`が未払いの次期を指しうるため、支払い済みの期限としては使わない)。`adminGranted`は`/admin`付与中(実効有料・生きているカード契約なし・有効なBitcoin前払いなし)かどうか。
+  - `subscription`が`null`になるのは、契約が無い / Subscriptionが`active`・`trialing`・`past_due`のいずれでもない(`incomplete`・`canceled`等) / retrieveが失敗し`plan_expires_at`も過去のとき。
+  - `incomplete_expired`のときはゴミポインタだけ外し、`plan` / `plan_expires_at`は維持する。
   - Stripe取得が**404**(Stripe側にSubscriptionが無い)の場合は、`accounts`を一切書き換えない。404はモード/APIキーの取り違えや破損IDでも起きるうえ、`stripe_subscription_id`まで外すと本物の削除時に後続の`customer.subscription.deleted`が突き合わせ先を失うため。実際のダウングレードは署名検証済みの`deleted`と`effectivePlan()`に委ねる。要約は次項と同じ暫定フォールバック。
   - Stripe取得が**404含め失敗**(モード不一致・レート制限・タイムアウト・Stripe障害)した場合は`accounts`を書き換えず、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。
 
@@ -189,6 +191,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証
 
 - リクエスト: `{ plan: "standard"|"premium" }`(`subscription` と同じく、実際に受理するのは `PURCHASABLE_PLANS` のプランのみ。現状 `premium`。`standard` は400)
 - レスポンス: `{ success: true, hostedCheckoutUrl }`
+- `/admin`付与中は409で拒否する(追加契約不可)。
 
 ### `POST /api/billing/btc/webhook`
 

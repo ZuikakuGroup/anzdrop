@@ -47,16 +47,23 @@ export function isActiveSubscriptionStatus(
   return status === "active" || status === "trialing";
 }
 
+// 初回支払いが一度も確定しないまま失効した Subscription か。
+// 「決済フォームを開いただけ」のゴミポインタ掃除には使うが、
+// plan / plan_expires_at は触らない(admin 付与や Bitcoin 前払いを消さない)。
+export function isNeverActivatedSubscriptionStatus(
+  status: Stripe.Subscription.Status
+): boolean {
+  return status === "incomplete_expired";
+}
+
 // もう二度と有効化されない終端ステータスか(呼び出し元で
 // accounts.stripe_subscription_idの追跡を外す・ダウングレードする判断に使う)。
+// incomplete_expired はポインタ掃除だけでプランを落とさないため含めない
+// (isNeverActivatedSubscriptionStatus を参照)。
 export function isDeadSubscriptionStatus(
   status: Stripe.Subscription.Status
 ): boolean {
-  return (
-    status === "canceled" ||
-    status === "incomplete_expired" ||
-    status === "unpaid"
-  );
+  return status === "canceled" || status === "unpaid";
 }
 
 // 「まだ管理対象として生きている」サブスクリプションのステータスか。

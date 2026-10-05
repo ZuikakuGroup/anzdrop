@@ -591,38 +591,33 @@ await postWebhook(fakeEvent("evt_4", "customer.subscription.updated", {
     expect(account?.stripe_subscription_id).toBe("sub_past_due");
   });
 
-  it("clears the stale pointer and downgrades when customer.subscription.updated reports a terminal status (mirrors sync, so an incomplete_expired transition delivered only via .updated is still cleaned up)", async () => {
+  it("clears only the stale pointer when customer.subscription.updated reports incomplete_expired (keeps plan/expiry)", async () => {
     // 「決済フォームを開いただけで離脱」した incomplete の Subscription は、
     // 約23時間後に incomplete_expired へ status 遷移する更新イベントだけが届き
-    // (deleted は来ない)。この場合でも accounts.stripe_subscription_id の
-    // ゴミポインタが残らないこと。
+    // (deleted は来ない)。ゴミポインタは外すが、/admin 付与の plan は残す。
     const paidUntil = new Date(
       Date.now() + 5 * 24 * 60 * 60 * 1000
     ).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "free",
+      plan: "premium",
       planExpiresAt: paidUntil,
       stripeSubscriptionId: "sub_incomplete_expired",
     });
 
-const before = Date.now();
     const response = await postWebhook(fakeEvent("evt_incomplete_expired", "customer.subscription.updated", {
         id: "sub_incomplete_expired",
         status: "incomplete_expired",
         ...subscriptionWithPrice(
-          env.STRIPE_PRICE_ID_STANDARD,
+          env.STRIPE_PRICE_ID_PREMIUM,
           Math.floor(Date.now() / 1000)
         ),
       }));
-    const after = Date.now();
 
     expect(response.status).toBe(200);
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBeNull();
-    expect(account?.plan).toBe("free");
-    const expiresAtMs = new Date(account!.plan_expires_at!).getTime();
-    expect(expiresAtMs).toBeGreaterThanOrEqual(before - 1000);
-    expect(expiresAtMs).toBeLessThanOrEqual(after + 1000);
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
   });
 
   it("downgrades and keeps a Bitcoin-prepaid future period when customer.subscription.updated reports 'canceled'", async () => {
@@ -666,10 +661,6 @@ await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updat
   });
 
   it.each([
-    {
-      terminalEventType: "customer.subscription.updated",
-      terminalStatus: "incomplete_expired",
-    },
     {
       terminalEventType: "customer.subscription.updated",
       terminalStatus: "canceled",
@@ -739,6 +730,52 @@ await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updat
     }
   );
 
+  it("does not re-attach a never-activated subscription from an out-of-order active event after incomplete_expired", async () => {
+    const subscriptionId = "sub_terminal_incomplete_expired";
+    const paidUntil = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: subscriptionId,
+    });
+
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      status: "incomplete_expired",
+    });
+
+    const terminalResponse = await postWebhook(
+      fakeEvent("evt_terminal_incomplete_expired", "customer.subscription.updated", {
+        id: subscriptionId,
+        status: "incomplete_expired",
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          Math.floor(Date.now() / 1000)
+        ),
+      })
+    );
+    const accountAfterTerminalEvent = await getAccount(accountId);
+    const staleActiveResponse = await postWebhook(
+      fakeEvent("evt_stale_active_incomplete_expired", "customer.subscription.updated", {
+        id: subscriptionId,
+        status: "active",
+        metadata: { accountId },
+        ...subscriptionWithPrice(
+          env.STRIPE_PRICE_ID_PREMIUM,
+          Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60
+        ),
+      })
+    );
+
+    expect(terminalResponse.status).toBe(200);
+    expect(staleActiveResponse.status).toBe(200);
+    expect(await getAccount(accountId)).toEqual(accountAfterTerminalEvent);
+    expect(accountAfterTerminalEvent?.plan).toBe("premium");
+    expect(accountAfterTerminalEvent?.plan_expires_at).toBe(paidUntil);
+    expect(accountAfterTerminalEvent?.stripe_subscription_id).toBeNull();
+  });
+
   it("processes customer.subscription.deleted by clearing the subscription id and expiring the plan immediately", async () => {
     const { accountId } = await insertTestAccount(env, {
       plan: "premium",
@@ -759,6 +796,30 @@ const before = Date.now();
     const expiresAtMs = new Date(account!.plan_expires_at!).getTime();
     expect(expiresAtMs).toBeGreaterThanOrEqual(before);
     expect(expiresAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it("keeps an admin-granted plan when customer.subscription.deleted reports incomplete_expired", async () => {
+    const paidUntil = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_deleted_incomplete_expired",
+    });
+
+    const response = await postWebhook(
+      fakeEvent("evt_deleted_incomplete_expired", "customer.subscription.deleted", {
+        id: "sub_deleted_incomplete_expired",
+        status: "incomplete_expired",
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
   });
 
   it("keeps a Bitcoin-prepaid future period on customer.subscription.deleted instead of expiring immediately", async () => {

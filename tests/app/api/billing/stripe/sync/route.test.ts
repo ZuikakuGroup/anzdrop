@@ -574,10 +574,11 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.subscription).toBeNull();
   });
 
-  it("immediately downgrades on an 'incomplete_expired' subscription (initial payment never confirmed)", async () => {
+  it("clears only the stale pointer on 'incomplete_expired' and keeps an admin-granted plan", async () => {
+    // 決済フォーム離脱で残ったゴミポインタ掃除が、/admin 付与を消してはいけない。
     const paidUntil = new Date(daysFromNowUnix(3) * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
-      plan: "standard",
+      plan: "premium",
       planExpiresAt: paidUntil,
       stripeSubscriptionId: "sub_incomplete_expired",
     });
@@ -585,24 +586,26 @@ describe("POST /api/billing/stripe/sync", () => {
     mockSubscriptionsRetrieve.mockResolvedValue(
       subscription(
         "incomplete_expired",
-        env.STRIPE_PRICE_ID_STANDARD,
+        env.STRIPE_PRICE_ID_PREMIUM,
         daysFromNowUnix(-1)
       )
     );
 
-    const before = Date.now();
     const response = await postSync(cookie);
-    const after = Date.now();
 
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBeNull();
-    const newExpiry = new Date(account?.plan_expires_at ?? 0).getTime();
-    expect(newExpiry).toBeGreaterThanOrEqual(before - 1000);
-    expect(newExpiry).toBeLessThanOrEqual(after + 1000);
-    expect(newExpiry).toBeLessThan(new Date(paidUntil).getTime());
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
 
-    const body = await readJson<{ plan: string }>(response);
-    expect(body.plan).toBe("free");
+    const body = await readJson<{
+      plan: string;
+      adminGranted: boolean;
+      subscription: unknown;
+    }>(response);
+    expect(body.plan).toBe("premium");
+    expect(body.adminGranted).toBe(true);
+    expect(body.subscription).toBeNull();
   });
 
   it("reports 'canceling' for a trialing subscription that is set to cancel at period end", async () => {

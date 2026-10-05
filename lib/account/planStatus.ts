@@ -12,6 +12,8 @@ export type PlanStatus = {
   plan: Plan;
   planExpiresAt: string | null;
   subscription: StripeSubscriptionSummary | null;
+  // /admin からの手動付与中。true のとき /mypage/billing は追加契約を出さない。
+  adminGranted: boolean;
 };
 
 export type PlanStatusResult =
@@ -51,6 +53,7 @@ export async function loadPlanStatus(): Promise<PlanStatusResult> {
         plan: data.plan,
         planExpiresAt: data.planExpiresAt,
         subscription: data.subscription,
+        adminGranted: data.adminGranted,
       },
     };
   } catch {
@@ -151,9 +154,20 @@ export function describeContract(status: PlanStatus): ContractView {
     };
   }
 
-  // 有料プランだが Stripe Subscription を持たない = Bitcoin の期間チャージ
-  // (または旧 "paid" 移行分)。自動更新はなく、期限が切れると free に戻る。
+  // 有料プランだが Stripe Subscription を持たない。
   const date = formatDate(planExpiresAt);
+
+  // /admin からの手動付与(Bitcoin 前払いが無い有料状態)。追加契約は不要。
+  if (status.adminGranted) {
+    return {
+      stateLabel: "有効期限あり（自動更新なし）",
+      detail: date ? `有効期限: ${date}` : null,
+      note: "運営により付与されたプランです。期限の更新は運営にお問い合わせください。",
+    };
+  }
+
+  // Bitcoin の期間チャージ(または旧 "paid" 移行分)。自動更新はなく、
+  // 期限が切れると free に戻る。
   return {
     stateLabel: "有効期限あり（自動更新なし）",
     detail: date ? `有効期限: ${date}` : null,

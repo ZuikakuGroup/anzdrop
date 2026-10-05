@@ -5,6 +5,7 @@ import {
   isActiveSubscriptionStatus,
   isDeadSubscriptionStatus,
   isManageableSubscriptionStatus,
+  isNeverActivatedSubscriptionStatus,
   planFromSubscription,
   toSubscriptionSummary,
   unixSecondsToIso,
@@ -155,11 +156,25 @@ describe("isActiveSubscriptionStatus", () => {
   });
 });
 
+describe("isNeverActivatedSubscriptionStatus", () => {
+  it("is true only for incomplete_expired (payment never confirmed)", () => {
+    expect(isNeverActivatedSubscriptionStatus("incomplete_expired")).toBe(true);
+    expect(isNeverActivatedSubscriptionStatus("canceled")).toBe(false);
+    expect(isNeverActivatedSubscriptionStatus("unpaid")).toBe(false);
+    expect(isNeverActivatedSubscriptionStatus("incomplete")).toBe(false);
+  });
+});
+
 describe("isDeadSubscriptionStatus", () => {
-  it("is true only for the terminal statuses that never come back", () => {
+  it("is true only for canceled/unpaid (real subscriptions that ended)", () => {
     expect(isDeadSubscriptionStatus("canceled")).toBe(true);
-    expect(isDeadSubscriptionStatus("incomplete_expired")).toBe(true);
     expect(isDeadSubscriptionStatus("unpaid")).toBe(true);
+  });
+
+  it("is false for incomplete_expired (pointer cleanup only; do not wipe plan)", () => {
+    // admin 付与や Bitcoin 前払いを消さないため、incomplete_expired は
+    // プランを落とす dead には含めない。
+    expect(isDeadSubscriptionStatus("incomplete_expired")).toBe(false);
   });
 
   it("is false for active/trialing", () => {

@@ -13,6 +13,7 @@ function baseStatus(overrides: Partial<PlanStatus> = {}): PlanStatus {
     plan: "standard",
     planExpiresAt: "2026-09-28T00:00:00.000Z",
     subscription: null,
+    adminGranted: false,
     ...overrides,
   };
 }
@@ -118,6 +119,7 @@ describe("describeContract", () => {
         plan: "premium",
         planExpiresAt: "2026-12-01T00:00:00.000Z",
         subscription: null,
+        adminGranted: false,
       })
     );
 
@@ -128,12 +130,30 @@ describe("describeContract", () => {
     );
   });
 
+  it("reports an admin-granted dated plan without a renewal CTA", () => {
+    const view = describeContract(
+      baseStatus({
+        plan: "premium",
+        planExpiresAt: "2026-12-01T00:00:00.000Z",
+        subscription: null,
+        adminGranted: true,
+      })
+    );
+
+    expect(view.stateLabel).toBe("有効期限あり（自動更新なし）");
+    expect(view.detail).toContain("有効期限:");
+    expect(view.note).toBe(
+      "運営により付与されたプランです。期限の更新は運営にお問い合わせください。"
+    );
+  });
+
   it("reports an indefinitely granted plan without an expiry date or renewal nag", () => {
     const view = describeContract(
       baseStatus({
         plan: "premium",
         planExpiresAt: INDEFINITE_PLAN_EXPIRES_AT,
         subscription: null,
+        adminGranted: true,
       })
     );
 
@@ -255,6 +275,7 @@ describe("loadPlanStatus", () => {
               state: "canceling",
               currentPeriodEnd: "2026-11-01T00:00:00.000Z",
             },
+            adminGranted: false,
           }),
           { status: 200 }
         )
@@ -270,6 +291,7 @@ describe("loadPlanStatus", () => {
           state: "canceling",
           currentPeriodEnd: "2026-11-01T00:00:00.000Z",
         },
+        adminGranted: false,
       },
     });
   });

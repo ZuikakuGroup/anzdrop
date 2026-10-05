@@ -52,7 +52,7 @@ Cloudflare Workers
 | `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
 | `/mypage`(`app/mypage/page.tsx`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
-| `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`) |
+| `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
 | `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
 | `/about`(`app/about/page.tsx`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
 | `/contact`(`app/contact/page.tsx`) | 一般向けお問い合わせフォーム(`components/contact/ContactForm.tsx`)。共通ヘッダー・フッターから遷移 |

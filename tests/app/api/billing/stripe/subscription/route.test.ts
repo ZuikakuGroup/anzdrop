@@ -611,4 +611,21 @@ describe("POST /api/billing/stripe/subscription", () => {
       expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
     });
   });
+
+  it("rejects with 409 when the account has an admin-granted paid plan", async () => {
+    const { INDEFINITE_PLAN_EXPIRES_AT } = await import("@/lib/plan");
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: INDEFINITE_PLAN_EXPIRES_AT,
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+
+    const response = await postSubscription(cookie);
+    const body = await readJson<{ success: boolean; error?: string }>(response);
+
+    expect(response.status).toBe(409);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("運営により付与されたプラン");
+    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+  });
 });

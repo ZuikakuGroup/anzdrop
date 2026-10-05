@@ -11,6 +11,8 @@ import {
   extendPaidPeriod,
   getAccountPlanInfo,
   downgradeExpiredCardPlan,
+  isAdminGrantedPaidPlan,
+  INDEFINITE_PLAN_EXPIRES_AT,
 } from "@/lib/plan";
 import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 import { createTestEnv, clearAllTables, insertTestAccount, type TestEnv } from "@/test/env";
@@ -581,5 +583,77 @@ describe("downgradeExpiredCardPlan", () => {
     const account = await getAccount(accountId);
     expect(account?.stripe_subscription_id).toBe("sub_current");
     expect(account?.plan_expires_at).toBe(originalExpiry);
+  });
+});
+
+describe("isAdminGrantedPaidPlan", () => {
+  let env: TestEnv;
+  let dispose: () => Promise<void>;
+
+  beforeAll(async () => {
+    const handle = await createTestEnv();
+    env = handle.env;
+    dispose = handle.dispose;
+  });
+
+  afterAll(async () => {
+    await dispose();
+  });
+
+  beforeEach(async () => {
+    await clearAllTables(env);
+  });
+
+  it("is true for an admin-granted paid plan without Stripe or Bitcoin", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: INDEFINITE_PLAN_EXPIRES_AT,
+    });
+
+    await expect(
+      isAdminGrantedPaidPlan(env, accountId, {
+        hasManageableStripeSubscription: false,
+      })
+    ).resolves.toBe(true);
+  });
+
+  it("is false when a manageable Stripe subscription exists", async () => {
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: INDEFINITE_PLAN_EXPIRES_AT,
+    });
+
+    await expect(
+      isAdminGrantedPaidPlan(env, accountId, {
+        hasManageableStripeSubscription: true,
+      })
+    ).resolves.toBe(false);
+  });
+
+  it("is false when a live Bitcoin prepaid period exists", async () => {
+    const until = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: until,
+    });
+    await env.DB.prepare(
+      `INSERT INTO btc_payments
+         (id, account_id, opennode_charge_id, status, extends_plan_until, plan, created_at)
+       VALUES (?, ?, ?, 'paid', ?, 'premium', ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        accountId,
+        "charge_admin_vs_btc",
+        until,
+        new Date().toISOString()
+      )
+      .run();
+
+    await expect(
+      isAdminGrantedPaidPlan(env, accountId, {
+        hasManageableStripeSubscription: false,
+      })
+    ).resolves.toBe(false);
   });
 });
