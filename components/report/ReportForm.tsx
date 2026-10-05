@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import Script from "next/script";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
+import { useState } from "react";
+import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import { sanitizeReportText } from "@/lib/sanitize";
-import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { useTurnstile } from "@/lib/turnstile-client";
+import { usePageOrigin } from "@/lib/browser/usePageOrigin";
 import { REPORT_CATEGORIES } from "@/app/api/report/schema";
 
 type ReportFormProps = {
@@ -27,12 +26,6 @@ const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
   { value: "other", label: "その他" },
 ];
 
-// window.location.origin はReactの外側にある値なので、SSR中は取得できない。
-// useSyncExternalStoreでサーバー描画時は空文字、クライアントでは実際のoriginを返す。
-const noopSubscribe = () => () => {};
-const getOriginSnapshot = () => window.location.origin;
-const getOriginServerSnapshot = () => "";
-
 export default function ReportForm({
   initialShareId,
 }: ReportFormProps) {
@@ -42,11 +35,7 @@ export default function ReportForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const origin = useSyncExternalStore(
-    noopSubscribe,
-    getOriginSnapshot,
-    getOriginServerSnapshot
-  );
+  const origin = usePageOrigin();
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
@@ -100,37 +89,28 @@ export default function ReportForm({
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-
-      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
-              問題を報告
-            </h1>
-            <p className="text-xs text-ink/50">
-              不正なファイルや迷惑行為を報告できます
-            </p>
-          </div>
-
-          <div className="space-y-1 border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
-            <p>
-              著作権など、ご自身が権利をお持ちのコンテンツについての申し立ては
-              {" "}
-              <a
-                href={`/report/rights${
-                  shareId ? `?shareId=${encodeURIComponent(shareId)}` : ""
-                }`}
-                className="font-bold text-brand hover:underline"
-              >
-                権利者の方向けフォーム
-              </a>
-              {" "}
-              をご利用ください。
-            </p>
-          </div>
-
+    <CenteredFormShell
+      title="問題を報告"
+      description="不正なファイルや迷惑行為を報告できます"
+      notice={
+        <div className="space-y-1 border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
+          <p>
+            著作権など、ご自身が権利をお持ちのコンテンツについての申し立ては
+            {" "}
+            <a
+              href={`/report/rights${
+                shareId ? `?shareId=${encodeURIComponent(shareId)}` : ""
+              }`}
+              className="font-bold text-brand hover:underline"
+            >
+              権利者の方向けフォーム
+            </a>
+            {" "}
+            をご利用ください。
+          </p>
+        </div>
+      }
+    >
           <div className="grid min-h-[400px]">
             <div
               className={`col-start-1 row-start-1 space-y-4 ${
@@ -241,17 +221,6 @@ export default function ReportForm({
               </p>
             </div>
           </div>
-        </div>
-      </main>
-
-      <SiteFooter />
-
-      {TURNSTILE_SITE_KEY && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
-      )}
-    </div>
+    </CenteredFormShell>
   );
 }

@@ -9,7 +9,8 @@ import {
   isDeadSubscriptionStatus,
   isNeverActivatedSubscriptionStatus,
 } from "@/lib/stripe-subscription";
-import { isAdminGrantedPaidPlan, isPurchasablePlan } from "@/lib/plan";
+import { isAdminGrantedPaidPlan } from "@/lib/billing/cardPlan";
+import { isPurchasablePlan } from "@/lib/plan";
 import {
   SubscriptionRequestSchema,
   type SubscriptionResponse,

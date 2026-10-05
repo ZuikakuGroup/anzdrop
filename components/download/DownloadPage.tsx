@@ -1,23 +1,17 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { importKey, decodeBase64Url } from "@/lib/crypto";
-import { formatBytes } from "@/lib/format";
 import {
   guessPreviewMimeType,
   getPreviewKind,
   canPreviewFile,
-  type PreviewKind,
 } from "@/lib/preview";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
-import { XIcon, EyeIcon } from "@/components/brand/ShareIcons";
-import PasswordInput from "@/components/brand/PasswordInput";
 import {
   FileGoneError,
   FriendlyError,
-  NON_DISMISSIBLE_ERRORS,
   shareLoadErrorFor,
   toFriendlyMessage,
 } from "@/lib/download/errors";
@@ -41,6 +35,14 @@ import {
 import { registerDownloadServiceWorker } from "@/lib/download/streamDownloadSaver";
 import { track } from "@/lib/analytics/client";
 import { classifyDownloadError } from "@/lib/analytics/errorCodes";
+import PasswordGate from "@/components/download/PasswordGate";
+import DownloadLoading from "@/components/download/DownloadLoading";
+import DownloadErrorPanel from "@/components/download/DownloadErrorPanel";
+import DownloadFileList from "@/components/download/DownloadFileList";
+import FilePreviewModal, {
+  type PreviewState,
+} from "@/components/download/FilePreviewModal";
+import SendCtaModal from "@/components/download/SendCtaModal";
 
 type DownloadPageProps = {
   shareId: string;
@@ -58,12 +60,6 @@ type DownloadResponse = {
   files: RawFile[];
   analyticsTransferId?: string;
   error?: string;
-};
-
-type PreviewState = {
-  file: DecryptedFile;
-  url: string;
-  kind: PreviewKind;
 };
 
 const GENERIC_LOAD_ERROR =
@@ -115,8 +111,6 @@ export default function DownloadPage({
     getSendCtaDisabled
   );
   const ctaViewTrackedRef = useRef(false);
-  const sendCtaCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const sendCtaDisableCheckboxRef = useRef<HTMLInputElement>(null);
 
   // showSaveFilePicker が使えないブラウザ(Firefox/Safari)向けに、
   // 大容量ファイルをメモリに載せずに保存するための Service Worker を登録する
@@ -258,7 +252,6 @@ export default function DownloadPage({
     const analyticsTransferId = analyticsTransferIdRef.current;
 
     try {
-      // eslint-disable-next-line react-hooks/purity -- onClick越しに呼ばれるだけでレンダー中には実行されない
       const startedAt = Date.now();
 
       track("download_start", { attemptId, analyticsTransferId });
@@ -272,7 +265,6 @@ export default function DownloadPage({
       track("download_success", {
         attemptId,
         analyticsTransferId,
-        // eslint-disable-next-line react-hooks/purity -- 上記と同じ理由
         properties: { durationMs: Date.now() - startedAt },
       });
       setDownloadedFileIds((previous) => new Set(previous).add(file.id));
@@ -370,53 +362,6 @@ export default function DownloadPage({
     }
   }, [downloadedFileIds, files, isSendCtaDisabled, unavailableFileIds]);
 
-  useEffect(() => {
-    if (!isSendCtaOpen) {
-      return;
-    }
-
-    const previousFocus = document.activeElement;
-    sendCtaCloseButtonRef.current?.focus();
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsSendCtaOpen(false);
-      }
-    };
-
-    const keepFocusInModal = (event: KeyboardEvent) => {
-      if (event.key !== "Tab") {
-        return;
-      }
-
-      const closeButton = sendCtaCloseButtonRef.current;
-      const disableCheckbox = sendCtaDisableCheckboxRef.current;
-
-      if (!closeButton || !disableCheckbox) {
-        return;
-      }
-
-      if (event.shiftKey && document.activeElement === closeButton) {
-        event.preventDefault();
-        disableCheckbox.focus();
-      } else if (!event.shiftKey && document.activeElement === disableCheckbox) {
-        event.preventDefault();
-        closeButton.focus();
-      }
-    };
-
-    window.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("keydown", keepFocusInModal);
-
-    return () => {
-      window.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("keydown", keepFocusInModal);
-      if (previousFocus instanceof HTMLElement) {
-        previousFocus.focus();
-      }
-    };
-  }, [isSendCtaOpen]);
-
   const handleSendCtaClick = () => {
     track("recipient_send_cta_click", {
       analyticsTransferId: analyticsTransferIdRef.current,
@@ -510,98 +455,29 @@ export default function DownloadPage({
 
           <div className="space-y-5">
             {isLoading ? (
-              <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
-                <Spinner className="mb-1 h-6 w-6 text-brand" />
-                <span className="text-xs font-bold text-ink/50">
-                  読み込み中...
-                </span>
-              </div>
+              <DownloadLoading />
             ) : passwordProtection ? (
-              <div className="anz-scroll flex h-40 flex-col justify-center gap-2 overflow-y-auto rounded border-2 border-ink p-6">
-                <span className="text-sm font-bold text-ink/50">
-                  パスワードで保護されています
-                </span>
-                <PasswordInput
-                  value={passwordInput}
-                  onChange={setPasswordInput}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      unlockWithPassword();
-                    }
-                  }}
-                  placeholder="パスワード"
-                  autoComplete="current-password"
-                  className="w-full rounded border-2 border-ink/20 py-3.5 pl-4 pr-10 text-base outline-none focus:border-brand sm:text-sm"
-                />
-                <p className="min-h-[17px] text-sm font-bold text-brand">
-                  {passwordError}
-                </p>
-              </div>
+              <PasswordGate
+                passwordInput={passwordInput}
+                passwordError={passwordError}
+                onPasswordChange={setPasswordInput}
+                onSubmit={unlockWithPassword}
+              />
             ) : error ? (
-              <div className="relative flex h-40 flex-col items-center justify-center gap-2 rounded border-2 border-brand p-6 text-center">
-                {!NON_DISMISSIBLE_ERRORS.has(error) && (
-                  <button
-                    onClick={() => setError("")}
-                    aria-label="閉じる"
-                    title="閉じる"
-                    className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <p className="text-sm font-bold text-brand">{error}</p>
-              </div>
+              <DownloadErrorPanel
+                error={error}
+                onDismiss={() => setError("")}
+              />
             ) : (
-              <ul className="anz-scroll h-40 divide-y divide-ink/10 overflow-y-auto rounded border-2 border-ink p-2 text-[13px]">
-                {files.map((file) => (
-                  <li key={file.id} className="flex items-center gap-1">
-                    <button
-                      onClick={() => downloadFile(file)}
-                      disabled={
-                        downloadingId === file.id ||
-                        isDownloadingAll ||
-                        !!previewLoadingId
-                      }
-                      className="flex min-w-0 flex-1 items-center justify-between gap-4 px-2 py-2 text-left transition-colors hover:bg-ink/[0.03] disabled:opacity-50"
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {file.name}
-                      </span>
-                      {downloadingId === file.id ? (
-                        <Spinner className="h-4 w-4 shrink-0 text-brand" />
-                      ) : (
-                        <span className="shrink-0 font-bold text-ink/40">
-                          {formatBytes(file.size)}
-                        </span>
-                      )}
-                    </button>
-
-                    {canPreviewFile({
-                      shareAllowsPreview: previewAllowed,
-                      isOneTimeFile: file.isOneTime,
-                      filename: file.name,
-                    }) && (
-                      <button
-                        onClick={() => openPreview(file)}
-                        disabled={
-                          downloadingId === file.id ||
-                          isDownloadingAll ||
-                          !!previewLoadingId
-                        }
-                        aria-label="プレビュー"
-                        title="プレビュー"
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-30"
-                      >
-                        {previewLoadingId === file.id ? (
-                          <Spinner className="h-4 w-4 text-brand" />
-                        ) : (
-                          <EyeIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <DownloadFileList
+                files={files}
+                previewAllowed={previewAllowed}
+                downloadingId={downloadingId}
+                isDownloadingAll={isDownloadingAll}
+                previewLoadingId={previewLoadingId}
+                onDownload={downloadFile}
+                onPreview={openPreview}
+              />
             )}
 
             <button
@@ -636,98 +512,16 @@ export default function DownloadPage({
       <SiteFooter reportShareId={shareId} />
 
       {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4"
-          onClick={closePreview}
-        >
-          <div
-            className="relative max-h-[90vh] w-full max-w-2xl rounded-lg bg-paper p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              onClick={closePreview}
-              aria-label="閉じる"
-              title="閉じる"
-              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-
-            <p className="mb-3 truncate pr-10 text-sm font-bold">
-              {preview.file.name}
-            </p>
-
-            {preview.kind === "video" && (
-              <video
-                src={preview.url}
-                controls
-                autoPlay
-                className="max-h-[70vh] w-full rounded"
-              />
-            )}
-            {preview.kind === "audio" && (
-              <audio src={preview.url} controls autoPlay className="w-full" />
-            )}
-            {preview.kind === "image" && (
-              // eslint-disable-next-line @next/next/no-img-element -- blob: URLの表示なのでnext/imageの最適化対象外
-              <img
-                src={preview.url}
-                alt={preview.file.name}
-                className="max-h-[70vh] w-full rounded object-contain"
-              />
-            )}
-          </div>
-        </div>
+        <FilePreviewModal preview={preview} onClose={closePreview} />
       )}
 
       {isSendCtaOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/70 p-4"
-          onClick={() => setIsSendCtaOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="send-cta-title"
-            className="relative w-full max-w-md rounded-xl bg-paper p-8 text-center sm:p-10"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              ref={sendCtaCloseButtonRef}
-              onClick={() => setIsSendCtaOpen(false)}
-              aria-label="閉じる"
-              title="閉じる"
-              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-            <h2 id="send-cta-title" className="text-xl font-black">
-              ダウンロードが完了しました
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-ink/60">
-              Anzdropなら、あなたもかんたんにファイルを送れます。
-            </p>
-            <Link
-              href="/"
-              onClick={handleSendCtaClick}
-              className="mt-7 inline-flex items-center justify-center rounded bg-brand px-5 py-2.5 text-xs font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
-            >
-              Anzdropでファイルを送る
-            </Link>
-            <label className="mt-5 flex items-center justify-center gap-2 text-xs text-ink/60">
-              <input
-                ref={sendCtaDisableCheckboxRef}
-                type="checkbox"
-                checked={isSendCtaDisabled}
-                onChange={(event) =>
-                  handleSendCtaDisabledChange(event.target.checked)
-                }
-                className="h-4 w-4 accent-brand"
-              />
-              次から表示しない
-            </label>
-          </div>
-        </div>
+        <SendCtaModal
+          isSendCtaDisabled={isSendCtaDisabled}
+          onClose={() => setIsSendCtaOpen(false)}
+          onCtaClick={handleSendCtaClick}
+          onDisabledChange={handleSendCtaDisabledChange}
+        />
       )}
     </div>
   );

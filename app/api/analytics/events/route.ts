@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { readBodyWithinLimit } from "@/lib/api/body";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -15,45 +16,6 @@ import {
 // Beacon/fetchのbodyサイズが際限なく膨らまないようにする(20件バッチ、
 // 各イベントは小さなJSONのため十分な余裕を見た上限)。
 const MAX_BODY_BYTES = 32 * 1024;
-
-async function readBodyWithinLimit(
-  request: Request
-): Promise<Uint8Array<ArrayBuffer> | null> {
-  if (!request.body) {
-    return new Uint8Array();
-  }
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) {
-      break;
-    }
-
-    totalBytes += value.byteLength;
-
-    if (totalBytes > MAX_BODY_BYTES) {
-      await reader.cancel().catch(() => {});
-      return null;
-    }
-
-    chunks.push(value);
-  }
-
-  const body: Uint8Array<ArrayBuffer> = new Uint8Array(totalBytes);
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return body;
-}
 
 // クライアント時刻を信頼しすぎないための妥当性チェック(要件書19章の
 // 「計測処理がUXをブロックしない」とは独立に、明らかに壊れた/なりすました
@@ -104,16 +66,7 @@ export const POST = withApiHandler(
   async (request: Request): Promise<Response> => {
     const { env } = getCloudflareContext();
 
-    const contentLength = request.headers.get("content-length");
-
-    if (
-      /^\d+$/.test(contentLength?.trim() ?? "") &&
-      Number(contentLength) > MAX_BODY_BYTES
-    ) {
-      return rejectedResponse("リクエストサイズが上限を超えています");
-    }
-
-    const body = await readBodyWithinLimit(request);
+    const body = await readBodyWithinLimit(request, MAX_BODY_BYTES);
 
     if (!body) {
       return rejectedResponse("リクエストサイズが上限を超えています");
@@ -123,7 +76,7 @@ export const POST = withApiHandler(
       new Request(request.url, {
         method: request.method,
         headers: request.headers,
-        body: body.buffer,
+        body: Uint8Array.from(body),
       }),
       AnalyticsEventsRequestSchema
     );

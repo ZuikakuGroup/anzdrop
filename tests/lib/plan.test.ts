@@ -10,10 +10,12 @@ import {
   effectivePlan,
   extendPaidPeriod,
   getAccountPlanInfo,
-  downgradeExpiredCardPlan,
-  isAdminGrantedPaidPlan,
   INDEFINITE_PLAN_EXPIRES_AT,
 } from "@/lib/plan";
+import {
+  downgradeExpiredCardPlan,
+  isAdminGrantedPaidPlan,
+} from "@/lib/billing/cardPlan";
 import { MAX_FILE_SIZE_BYTES } from "@/lib/limits";
 import { createTestEnv, clearAllTables, insertTestAccount, type TestEnv } from "@/test/env";
 

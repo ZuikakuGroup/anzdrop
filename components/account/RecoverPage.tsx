@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import Script from "next/script";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
+import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
-import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
 import type { RecoverResponse } from "@/app/api/account/recover/schema";
 
@@ -105,20 +103,10 @@ export default function RecoverPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-
-      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
-              パスワードの再設定
-            </h1>
-            <p className="text-xs text-ink/50">
-              メールでの再設定は行っていません。アカウントID・リカバリーコードが必要です。
-            </p>
-          </div>
-
+    <CenteredFormShell
+      title="パスワードの再設定"
+      description="メールでの再設定は行っていません。アカウントID・リカバリーコードが必要です。"
+    >
           {newRecoveryCode ? (
             <div className="space-y-4">
               <div className="rounded border-2 border-brand p-4 text-sm">
@@ -242,17 +230,6 @@ export default function RecoverPage() {
               </p>
             </form>
           )}
-        </div>
-      </main>
-
-      <SiteFooter />
-
-      {TURNSTILE_SITE_KEY && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
-      )}
-    </div>
+    </CenteredFormShell>
   );
 }

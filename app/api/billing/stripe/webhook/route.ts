@@ -7,7 +7,7 @@ import { readBodyWithinLimit } from "@/lib/api/body";
 import {
   clearNeverActivatedSubscriptionPointer,
   downgradeExpiredCardPlan,
-} from "@/lib/plan";
+} from "@/lib/billing/cardPlan";
 import {
   getSubscriptionPeriodEnd,
   isActiveSubscriptionStatus,

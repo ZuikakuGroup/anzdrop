@@ -1,4 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import {
+  parseAdminStatusFilter,
+  resolvedAtWhereClause,
+} from "@/lib/admin/statusFilter";
 import { requireAdmin } from "@/lib/api/adminAuth";
 import { withApiHandler } from "@/lib/api/handler";
 
@@ -22,28 +26,6 @@ type AdminContact = {
   resolvedAt: string | null;
 };
 
-type StatusFilter = "open" | "resolved" | "all";
-
-function parseStatus(value: string | null): StatusFilter {
-  if (value === "resolved" || value === "all") {
-    return value;
-  }
-
-  return "open";
-}
-
-function whereClauseFor(status: StatusFilter): string {
-  if (status === "resolved") {
-    return "WHERE resolved_at IS NOT NULL";
-  }
-
-  if (status === "all") {
-    return "";
-  }
-
-  return "WHERE resolved_at IS NULL";
-}
-
 export const GET = withApiHandler(
   "GET /api/admin/contacts",
   async (request: Request): Promise<Response> => {
@@ -56,13 +38,13 @@ export const GET = withApiHandler(
     }
 
     const url = new URL(request.url);
-    const status = parseStatus(url.searchParams.get("status"));
+    const status = parseAdminStatusFilter(url.searchParams.get("status"));
 
     const { results: contacts } = await env.DB.prepare(
       `
         SELECT id, name, email, subject, message, created_at, resolved_at
         FROM contacts
-        ${whereClauseFor(status)}
+        ${resolvedAtWhereClause(status)}
         ORDER BY created_at DESC
       `
     ).all<ContactRow>();

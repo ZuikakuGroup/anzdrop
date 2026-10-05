@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { readBodyWithinLimit } from "@/lib/api/body";
 import type { ApiResponse } from "@/lib/api/response";
 
 export type ParsedBody<T> =
@@ -15,57 +16,6 @@ function payloadTooLargeResponse(): Response {
     { success: false, error: "リクエストサイズが上限を超えています" },
     { status: 413 }
   );
-}
-
-async function readBodyWithinLimit(
-  request: Request,
-  maxBytes: number
-): Promise<Uint8Array | null> {
-  const contentLength = request.headers.get("content-length");
-
-  // Content-Lengthは偽装できるため、早期拒否の最適化にだけ使い、後段の
-  // ストリーム読み込みでも必ず実測値を検証する。
-  if (
-    /^\d+$/.test(contentLength?.trim() ?? "") &&
-    Number(contentLength) > maxBytes
-  ) {
-    return null;
-  }
-
-  if (!request.body) {
-    return new Uint8Array();
-  }
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) {
-      break;
-    }
-
-    totalBytes += value.byteLength;
-
-    if (totalBytes > maxBytes) {
-      await reader.cancel().catch(() => {});
-      return null;
-    }
-
-    chunks.push(value);
-  }
-
-  const body = new Uint8Array(totalBytes);
-  let offset = 0;
-
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-
-  return body;
 }
 
 // リクエストボディのJSONパース失敗(不正なJSON構文)は従来どおり例外として

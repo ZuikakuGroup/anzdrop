@@ -5,6 +5,7 @@ import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
 import AdminNav from "@/components/admin/AdminNav";
+import StatusFilterTabs from "@/components/admin/StatusFilterTabs";
 import { formatDateTime } from "@/lib/admin/reportLabels";
 import {
   deleteContact as deleteContactRequest,
@@ -13,12 +14,6 @@ import {
   type AdminContact,
   type StatusFilter,
 } from "@/lib/admin/contactsApi";
-
-const STATUS_TABS: { value: StatusFilter; label: string }[] = [
-  { value: "open", label: "未対応" },
-  { value: "resolved", label: "対応済み" },
-  { value: "all", label: "すべて" },
-];
 
 export default function AdminContactsPage() {
   const [status, setStatus] = useState<StatusFilter>("open");
@@ -175,21 +170,7 @@ export default function AdminContactsPage() {
             </p>
           </div>
 
-          <div className="flex gap-2">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => switchStatus(tab.value)}
-                className={`rounded px-3 py-1.5 text-xs font-bold transition-colors ${
-                  status === tab.value
-                    ? "bg-ink text-paper"
-                    : "border border-ink/20 text-ink/60 hover:bg-ink/[0.06]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <StatusFilterTabs status={status} onChange={switchStatus} />
 
           {error && (
             <div className="rounded border-2 border-brand p-3 text-sm font-bold text-brand">

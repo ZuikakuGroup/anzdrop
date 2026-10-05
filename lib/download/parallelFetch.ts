@@ -18,7 +18,12 @@
 // ウィンドウで 206 以外が返った場合は、全体本体をウィンドウ位置へ混ぜて壊さない
 // よう、そのダウンロードを失敗させて呼び出し側の再試行に委ねる。
 
-import { FileGoneError, FriendlyError, FILE_GONE_ERROR } from "./errors";
+import {
+  FileGoneError,
+  FriendlyError,
+  FILE_GONE_ERROR,
+  isAbortError,
+} from "./errors";
 
 // 1 Range リクエストで取得するバイト数。大きいほどリクエスト数(= Worker/D1/R2
 // の固定コスト)は減るが、送信中に同時展開されるメモリ(下記 maxAhead 分)が
@@ -69,10 +74,6 @@ function parseTotalFromContentRange(header: string | null): number | null {
   const total = Number(match[1]);
 
   return Number.isSafeInteger(total) && total >= 0 ? total : null;
-}
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
 }
 
 // 1本の Range リクエストを、一時エラー(リトライ可能なステータス・fetch 自体の

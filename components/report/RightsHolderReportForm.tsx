@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import Script from "next/script";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
+import { useState } from "react";
+import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import { sanitizeReportText } from "@/lib/sanitize";
-import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
+import { useTurnstile } from "@/lib/turnstile-client";
+import { usePageOrigin } from "@/lib/browser/usePageOrigin";
 import { RIGHT_TYPES } from "@/app/api/report/schema";
 
 type RightsHolderReportFormProps = {
@@ -26,12 +25,6 @@ const RIGHT_TYPE_OPTIONS: { value: RightType; label: string }[] = [
   { value: "other", label: "その他" },
 ];
 
-// window.location.origin はReactの外側にある値なので、SSR中は取得できない。
-// useSyncExternalStoreでサーバー描画時は空文字、クライアントでは実際のoriginを返す。
-const noopSubscribe = () => () => {};
-const getOriginSnapshot = () => window.location.origin;
-const getOriginServerSnapshot = () => "";
-
 export default function RightsHolderReportForm({
   initialShareId,
 }: RightsHolderReportFormProps) {
@@ -44,11 +37,7 @@ export default function RightsHolderReportForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const origin = useSyncExternalStore(
-    noopSubscribe,
-    getOriginSnapshot,
-    getOriginServerSnapshot
-  );
+  const origin = usePageOrigin();
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
@@ -114,37 +103,28 @@ export default function RightsHolderReportForm({
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
-
-      <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
-              権利侵害の申し立て
-            </h1>
-            <p className="text-xs text-ink/50">
-              著作権など、ご自身が権利をお持ちのコンテンツについて申し立てできます
-            </p>
-          </div>
-
-          <div className="space-y-1 border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
-            <p>
-              権利者ご本人以外の方は
-              {" "}
-              <a
-                href={`/report${
-                  shareId ? `?shareId=${encodeURIComponent(shareId)}` : ""
-                }`}
-                className="font-bold text-brand hover:underline"
-              >
-                通常の通報フォーム
-              </a>
-              {" "}
-              をご利用ください。
-            </p>
-          </div>
-
+    <CenteredFormShell
+      title="権利侵害の申し立て"
+      description="著作権など、ご自身が権利をお持ちのコンテンツについて申し立てできます"
+      notice={
+        <div className="space-y-1 border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
+          <p>
+            権利者ご本人以外の方は
+            {" "}
+            <a
+              href={`/report${
+                shareId ? `?shareId=${encodeURIComponent(shareId)}` : ""
+              }`}
+              className="font-bold text-brand hover:underline"
+            >
+              通常の通報フォーム
+            </a>
+            {" "}
+            をご利用ください。
+          </p>
+        </div>
+      }
+    >
           <div className="grid min-h-[560px]">
             <div
               className={`col-start-1 row-start-1 space-y-4 ${
@@ -298,17 +278,6 @@ export default function RightsHolderReportForm({
               </p>
             </div>
           </div>
-        </div>
-      </main>
-
-      <SiteFooter />
-
-      {TURNSTILE_SITE_KEY && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
-      )}
-    </div>
+    </CenteredFormShell>
   );
 }
