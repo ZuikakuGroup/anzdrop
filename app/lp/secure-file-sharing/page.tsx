@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import SecureFileSharingLandingPage from "@/components/landing/SecureFileSharingLandingPage";
 
 export const metadata: Metadata = {
-  title: "安全なファイル共有を、登録不要ですぐに | Anzdrop",
+  title: "ファイルは、送る前に暗号化。登録不要のファイル共有 | Anzdrop",
   description:
-    "ファイルをブラウザ内で暗号化してから共有。復号鍵はサーバーに送られません。登録不要、無料で最大5GBまで使えるAnzdropのファイル共有サービス。",
+    "登録不要でファイルを選び、ブラウザ内で暗号化してリンクで共有。通常の共有では復号鍵をサーバーに送らず、無料プランは1ファイル最大5GBまで使えます。",
 };
 
 export default function Page() {

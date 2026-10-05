@@ -1,12 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const pagePath = "components/landing/SecureFileSharingLandingPage.tsx";
+const headerPath = "components/brand/SiteHeader.tsx";
 const footerPath = "components/brand/SiteFooter.tsx";
 const cssPath = "app/globals.css";
 const fontPath = "public/fonts/noto-sans-jp-lp/noto-sans-jp-lp.woff2";
 
 const sourceText = (await Promise.all([
   readFile(pagePath, "utf8"),
+  readFile(headerPath, "utf8"),
   readFile(footerPath, "utf8"),
 ])).join("");
 const codePoints = new Set(
@@ -41,7 +43,7 @@ for (let index = 0; index < unicodeRanges.length; index += 8) {
 }
 
 const query = new URLSearchParams({
-  family: "Noto Sans JP:wght@400..700",
+  family: "Noto Sans JP:wght@400..800",
   text: String.fromCodePoint(...sortedCodePoints),
 });
 const cssResponse = await fetch(`https://fonts.googleapis.com/css2?${query}`, {
@@ -52,7 +54,7 @@ const cssResponse = await fetch(`https://fonts.googleapis.com/css2?${query}`, {
 });
 if (!cssResponse.ok) throw new Error(`Google Fonts CSS request failed: ${cssResponse.status}`);
 const fontCss = await cssResponse.text();
-const fontUrl = fontCss.match(/font-weight:\s*400 700;[\s\S]*?src:\s*url\((https:\/\/[^)]+)\)/)?.[1];
+const fontUrl = fontCss.match(/font-weight:\s*400 800;[\s\S]*?src:\s*url\((https:\/\/[^)]+)\)/)?.[1];
 if (!fontUrl) throw new Error("Variable WOFF2 URL was not found in the Google Fonts response.");
 
 const fontResponse = await fetch(fontUrl);
