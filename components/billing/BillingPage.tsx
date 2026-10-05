@@ -408,14 +408,9 @@ export default function BillingPage({
                     >
                       ビットコインで支払う(準備中)
                     </button>
-
-                    <p className="text-center text-xs text-ink/50">
-                      ビットコイン決済は現在準備中のため、しばらくお待ちください。
-                    </p>
                   </div>
 
                   <p className="text-center text-xs leading-relaxed text-ink/50">
-                    お申し込みの前に{" "}
                     <a
                       href="/legal/terms"
                       className="font-bold text-brand hover:underline"
@@ -427,9 +422,8 @@ export default function BillingPage({
                       href="/legal/tokushoho"
                       className="font-bold text-brand hover:underline"
                     >
-                      特定商取引法に基づく表記
+                      特定商取引法
                     </a>
-                    {" "}をご確認ください。
                   </p>
 
                   <p
