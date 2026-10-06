@@ -40,6 +40,9 @@ jobs:
       # cache poisoning 警告(actions/cache-poisoning)の対象になるため避ける。
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # npm ci のライフサイクルスクリプトから GITHUB_TOKEN を読ませない
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v7

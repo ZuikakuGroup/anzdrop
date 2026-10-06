@@ -19,11 +19,10 @@ max_redirects = 10
 
 user_agent = "Mozilla/5.0 (compatible; AnzdropLinkCheck/1.0; +https://github.com/ZuikakuGroup/anzdrop)"
 
-# 成功とみなすステータス。
-# - 429: リトライ後も残る一時制限
-# - 403: Cloudflare 等の bot 対策で「到達はしているが拒否」されるケース
-#   (404 等の確定的なリンク切れは失敗のまま)
-accept = ["200..=299", "403", "429"]
+# 成功とみなすステータス(本番 URL 検査でもこの設定を使う)。
+# 外部ドキュメント向けに 403/429 を許す場合は、docs 検査側の CLI で上書きする。
+# 404 等の確定的なリンク切れは失敗のまま。
+accept = ["200..=299"]
 
 scheme = ["https", "http", "file"]
 include_mail = false

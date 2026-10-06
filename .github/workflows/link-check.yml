@@ -36,6 +36,7 @@ jobs:
             --config .lychee.toml
             --verbose
             --no-progress
+            --accept '200..=299,403,429'
             README.md
             docs
           output: lychee-repo-report.md
@@ -50,6 +51,7 @@ jobs:
         with:
           # 本番 Workers(https://anzdrop.com)の主要入口と sitemap。
           # Cloudflare Pages は使っていないため、Pages Preview は対象外。
+          # 本番 URL では 403/429 を成功扱いにしない(.lychee.toml の accept のみ)。
           format: markdown
           args: >-
             --config .lychee.toml
