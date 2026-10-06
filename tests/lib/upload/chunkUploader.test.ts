@@ -676,4 +676,97 @@ describe("uploadChunksFromStream", () => {
     expect(onBytesUploaded).toHaveBeenCalledTimes(1);
     expect(onBytesUploaded).toHaveBeenCalledWith(100);
   });
+
+  it("direct mode: falls back to the same multipart session after R2 rejects a PUT", async () => {
+    const proxyParts: Array<{ number: number; session: string; body: Uint8Array }> = [];
+    let directPuts = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit = {}) => {
+      if (url === "/api/upload/part-urls") {
+        const request = JSON.parse(String(init.body)) as {
+          parts: Array<{ partNumber: number }>;
+        };
+        return Response.json({
+          success: true,
+          urls: request.parts.map(({ partNumber }) => ({
+            partNumber,
+            url: `https://r2.example/part/${partNumber}`,
+          })),
+        });
+      }
+      if (typeof url === "string" && url.startsWith("https://r2.example/")) {
+        directPuts++;
+        return new Response(null, { status: 403 });
+      }
+      if (url === "/api/upload/chunk") {
+        const headers = init.headers as Record<string, string>;
+        proxyParts.push({
+          number: Number(headers["Anzdrop-Part-Number"]),
+          session: headers["Anzdrop-Upload-Session"],
+          body: new Uint8Array(init.body as ArrayBuffer),
+        });
+        return Response.json({ success: true });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }));
+
+    const source = [ramp(UPLOAD_PART_SIZE, 1), ramp(10, 2)];
+    const onBytesUploaded = vi.fn();
+    await uploadChunksFromStream(
+      fromArray(source), "session-1", "token-1", "fallback.bin", 1,
+      onBytesUploaded, { uploadMode: "direct", ...noBackoff }
+    );
+
+    expect(directPuts).toBe(1);
+    expect(proxyParts.map(({ number, session }) => [number, session])).toEqual([
+      [1, "session-1"], [2, "session-1"],
+    ]);
+    expectBytesEqual(concat(proxyParts.map(({ body }) => body)), concat(source));
+    expect(onBytesUploaded.mock.calls).toEqual([[UPLOAD_PART_SIZE], [10]]);
+  });
+
+  it("direct mode: reports an error if both direct and proxy uploads fail", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/upload/part-urls") {
+        return Response.json({
+          success: true,
+          urls: [{ partNumber: 1, url: "https://r2.example/part/1" }],
+        });
+      }
+      return new Response(null, { status: 403 });
+    }));
+
+    const onBytesUploaded = vi.fn();
+    await expect(uploadChunksFromStream(
+      fromArray([ramp(100)]), "session-1", "token-1", "failed.bin", 1,
+      onBytesUploaded, { uploadMode: "direct", ...noBackoff }
+    )).rejects.toThrow("failed.bin のパート 1 アップロードに失敗しました");
+    expect(onBytesUploaded).not.toHaveBeenCalled();
+  });
+
+  it("direct mode: recovers through the proxy when the browser cannot reach R2", async () => {
+    const proxyUpload = vi.fn(async () => Response.json({ success: true }));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/upload/part-urls") {
+        return Response.json({
+          success: true,
+          urls: [{ partNumber: 1, url: "https://r2.example/part/1" }],
+        });
+      }
+      if (url === "/api/upload/chunk") {
+        return proxyUpload();
+      }
+      throw new TypeError("Failed to fetch");
+    }));
+
+    const onBytesUploaded = vi.fn();
+    await uploadChunksFromStream(
+      fromArray([ramp(100)]), "session-1", "token-1", "network.bin", 1,
+      onBytesUploaded,
+      { uploadMode: "direct", maxAttempts: 1, ...noBackoff }
+    );
+    expect(proxyUpload).toHaveBeenCalledTimes(1);
+    expect(onBytesUploaded).toHaveBeenCalledOnce();
+    expect(onBytesUploaded).toHaveBeenCalledWith(100);
+  });
 });
