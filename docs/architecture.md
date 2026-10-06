@@ -64,7 +64,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 `components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。画面の見た目部品は同ディレクトリ内の兄弟コンポーネントへ分割している(`components/upload/`の共有結果・進捗・ファイル一覧、`components/download/`のパスワード解除・プレビュー・送信CTA、`components/billing/`のプラン選択・契約管理、`components/admin/StatusFilterTabs.tsx`など)。アカウント作成・ログイン・再設定と通報フォームは中央カード型の外枠を[`CenteredFormShell`](../components/brand/CenteredFormShell.tsx)に共有する。カード契約のDB更新(`downgradeExpiredCardPlan`・admin付与判定など)は[`lib/billing/cardPlan.ts`](../lib/billing/cardPlan.ts)に、プラン上限・実効プラン判定は[`lib/plan.ts`](../lib/plan.ts)に置く。オーケストレーター側のエントリ(`uploadForm.tsx`・`DownloadPage.tsx`・`BillingPage.tsx`)は従来どおり。
 
-- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+- [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。`start` が返す `uploadMode` で経路を切り替える。`direct` では `part-urls` で署名付きURLをバッチ取得→ブラウザからR2へPUT→`part-ack` でETag記録。`proxy` では従来どおり `/api/upload/chunk`。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(どちらの経路も同じパート番号の再送に冪等。GitHub issue #65)。
 - [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。アップロード画面はキュー先頭のファイルだけ、選択直後に先頭の8MiBチャンクをクライアント内で先行暗号化し、アップロード開始後は同じストリームの続きへつなぐ。選択数に比例してメモリが増えないよう、他のファイルは順番が来てから準備する。失敗時は呼び出し側が再試行でき、使用済みストリームは再利用せず、ファイル先頭から新しいストリームを作る(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
 - [`lib/upload/dragDropFiles.ts`](../lib/upload/dragDropFiles.ts): ドラッグ&ドロップされたフォルダの再帰展開(`collectDataTransferFiles`)。
 - [`lib/upload/encrypt.ts`](../lib/upload/encrypt.ts): ファイル名の暗号化・パスワードによる鍵のラップ(`encryptFileName`/`wrapKeyWithPassword`)。`lib/crypto/`の暗号プリミティブを組み合わせたアップロード固有の処理。
@@ -81,12 +81,14 @@ API側の詳細は [`api.md`](./api.md) を参照。
 ## アップロードの流れ
 
 1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大64MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `64MiB × ファイル数` にならない(GitHub issue #60)。
-2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
-3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、`POST /api/upload/chunk` でR2のマルチパートアップロードにパートとして送信(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
-4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。`start`・`chunk` と同じく `uploadToken` の一致で認可し、`start` より後に共有が期限切れ/一時停止された場合は完了させない。
+2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。レスポンスの `uploadMode` が `"direct"` か `"proxy"` かを返す(R2 S3 Secrets の有無で決定)。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
+3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、パートとしてR2へ送る(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
+   - **direct**: `POST /api/upload/part-urls` で署名付きPUT URLを取得(`contentLength` を署名に含め `UPLOAD_PART_SIZE` 超を拒否) → ブラウザからR2へ直接PUT → `POST /api/upload/part-ack` でETagを `upload_parts` に記録。暗号文はWorkerを往復しない。
+   - **proxy**(Secrets未設定時のフォールバック): 従来どおり `POST /api/upload/chunk` でWorker経由。
+4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。`start`・パート送信と同じく `uploadToken` の一致で認可し、`start` より後に共有が期限切れ/一時停止された場合は完了させない。完了時はR2オブジェクト実サイズで再検証する(クライアント申告は信頼しない)。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
 
-各パートの送信は一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで最大 6 回・合計 ~15.5 秒までリトライする(`/api/upload/chunk` は同じパート番号の再送に冪等。GitHub issue #65)。
+各パートの送信は一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで最大 6 回・合計 ~15.5 秒までリトライする(proxyの `/api/upload/chunk` も direct の `part-ack` も同じパート番号の再送に冪等。GitHub issue #65)。
 
 これを超える通信断でアップロードが失敗しても、「アップロードする」を押し直すだけで再試行できる。まだ `complete` まで到達していないファイルだけを対象に、暗号化パイプラインを作り直して `start` からやり直す(部分的に消費されたストリームを持ち越さないため、リトライでファイルがサイレント破損することはない。GitHub issue #58)。既に完了したファイルや、作成済み共有のパスワード保護の有無は再試行をまたいで保持される。1 回目で失敗した `start` 済みのセッションは掃除(Cleanup)で回収される。なお押し直しでの再試行は毎回ファイルの先頭から送り直す(送信済みパートだけをスキップする本格的な「再開」は、パケットの IV がパートごとに乱数で、パケット境界とパート境界が一致しないため暗号化フォーマットの再設計が必要。別 issue)。
 
@@ -134,7 +136,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 | --- | --- | --- | --- |
 | `FILE_RATE_LIMITER` | `GET /api/file/[fileId]` | `fileId` | 1回の論理的なダウンロードが8MiBウィンドウ×並列6本の `Range` リクエストへ分かれる([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))。3000/60秒 ≒ 3.2Gbps 相当で、1人の利用者では到達しない |
 | `SHARE_RATE_LIMITER` | `GET /api/download/[shareId]` | `shareId` | 正当な利用ではダウンロードページを開くたびに1回だけ([`components/download/DownloadPage.tsx`](../components/download/DownloadPage.tsx)。ポーリングもリトライもしない)。ただし1つの共有URLを多人数へ配る使い方があるため、人数ぶんの余裕を大きく取る |
-| `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
+| `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk`・`POST /api/upload/part-urls`・`POST /api/upload/part-ack` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
 | `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
 | `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | エンドポイント全体の固定キー + `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。固定キーでD1への総書き込み量を抑え、匿名ID単位でも連打を止める。IPは扱わない |
 

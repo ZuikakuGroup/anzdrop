@@ -481,4 +481,141 @@ describe("uploadChunksFromStream", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("direct mode: fetches part URLs, PUTs to R2, then acks ETags", async () => {
+    const putBodies = new Map<number, Uint8Array>();
+    const acked: Array<{ partNumber: number; etag: string }> = [];
+    const requestedPartNumbers: number[][] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === "/api/upload/part-urls") {
+          const body = JSON.parse(String(init.body)) as {
+            parts: Array<{ partNumber: number; contentLength: number }>;
+          };
+          requestedPartNumbers.push(body.parts.map((part) => part.partNumber));
+          return Response.json({
+            success: true,
+            urls: body.parts.map((part) => ({
+              partNumber: part.partNumber,
+              url: `https://r2.example/part/${part.partNumber}`,
+            })),
+          });
+        }
+
+        if (typeof url === "string" && url.startsWith("https://r2.example/part/")) {
+          const partNumber = Number(url.split("/").pop());
+          putBodies.set(
+            partNumber,
+            new Uint8Array(init.body as ArrayBuffer)
+          );
+          return new Response(null, {
+            status: 200,
+            headers: { ETag: `"etag-${partNumber}"` },
+          });
+        }
+
+        if (url === "/api/upload/part-ack") {
+          const body = JSON.parse(String(init.body)) as {
+            parts: Array<{ partNumber: number; etag: string }>;
+          };
+          acked.push(...body.parts);
+          return Response.json({ success: true });
+        }
+
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+
+    const source = [
+      ramp(UPLOAD_PART_SIZE, 1),
+      ramp(UPLOAD_PART_SIZE, 2),
+      ramp(50, 3),
+    ];
+    const onBytesUploaded = vi.fn();
+
+    await uploadChunksFromStream(
+      fromArray(source),
+      "session-1",
+      "token-1",
+      "direct.bin",
+      2,
+      onBytesUploaded,
+      { uploadMode: "direct", ...noBackoff }
+    );
+
+    expect(putBodies.size).toBe(3);
+    expect(acked.map((part) => part.partNumber).sort((a, b) => a - b)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(acked.every((part) => part.etag === `etag-${part.partNumber}`)).toBe(
+      true
+    );
+    expectBytesEqual(
+      concat([1, 2, 3].map((partNumber) => putBodies.get(partNumber)!)),
+      concat(source)
+    );
+    expect(
+      onBytesUploaded.mock.calls.reduce((sum, call) => sum + call[0], 0)
+    ).toBe(concat(source).byteLength);
+    expect(requestedPartNumbers.flat().sort((a, b) => a - b)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("direct mode: retries a failed R2 PUT without double-counting bytes", async () => {
+    let putAttempts = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === "/api/upload/part-urls") {
+          const body = JSON.parse(String(init.body)) as {
+            parts: Array<{ partNumber: number; contentLength: number }>;
+          };
+          return Response.json({
+            success: true,
+            urls: body.parts.map((part) => ({
+              partNumber: part.partNumber,
+              url: `https://r2.example/part/${part.partNumber}`,
+            })),
+          });
+        }
+
+        if (typeof url === "string" && url.startsWith("https://r2.example/part/")) {
+          putAttempts++;
+          if (putAttempts < 3) {
+            return new Response(null, { status: 503 });
+          }
+          return new Response(null, {
+            status: 200,
+            headers: { ETag: "etag-1" },
+          });
+        }
+
+        if (url === "/api/upload/part-ack") {
+          return Response.json({ success: true });
+        }
+
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+
+    const onBytesUploaded = vi.fn();
+
+    await uploadChunksFromStream(
+      fromArray([ramp(100)]),
+      "session-1",
+      "token-1",
+      "flaky-direct.bin",
+      1,
+      onBytesUploaded,
+      { uploadMode: "direct", ...noBackoff }
+    );
+
+    expect(putAttempts).toBe(3);
+    expect(onBytesUploaded).toHaveBeenCalledTimes(1);
+    expect(onBytesUploaded).toHaveBeenCalledWith(100);
+  });
 });

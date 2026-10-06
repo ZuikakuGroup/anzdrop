@@ -62,6 +62,9 @@ export type UploadStartResponse = ApiResponse<{
   uploadToken: string;
   uploadSessionId: string;
   expiresAt: string;
+  // R2 直アップロード(Secrets あり)か Worker プロキシか。クライアントはこれに
+  // 従ってパート送信経路を切り替える(lib/upload/chunkUploader.ts)。
+  uploadMode: "direct" | "proxy";
   // 計測基盤(要件定義書v1.0)がupload/downloadイベントを相関するための
   // shareIdの一方向ハッシュ(lib/analytics/transferId.ts)。shareId自体は
   // 既にこのレスポンスに含まれているため、追加の情報漏洩にはならない。
