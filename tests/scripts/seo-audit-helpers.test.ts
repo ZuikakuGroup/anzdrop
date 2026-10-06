@@ -14,10 +14,12 @@ describe("seo-audit-helpers", () => {
     expect(isHttpUrl("not a url")).toBe(false);
   });
 
-  it("skips mailto/tel/hash/javascript links", () => {
+  it("skips mailto/tel/hash/javascript/vbscript links", () => {
     expect(isSkippableHref("#section")).toBe(true);
     expect(isSkippableHref("mailto:support@example.com")).toBe(true);
     expect(isSkippableHref("tel:+810000000000")).toBe(true);
+    expect(isSkippableHref("javascript:void(0)")).toBe(true);
+    expect(isSkippableHref("vbscript:msgbox")).toBe(true);
     expect(isSkippableHref("/about")).toBe(false);
   });
 

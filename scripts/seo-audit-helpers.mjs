@@ -18,6 +18,7 @@ export function isSkippableHref(href) {
     lower.startsWith("mailto:") ||
     lower.startsWith("tel:") ||
     lower.startsWith("javascript:") ||
+    lower.startsWith("vbscript:") ||
     lower.startsWith("data:") ||
     lower.startsWith("blob:")
   );

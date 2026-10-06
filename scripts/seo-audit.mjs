@@ -362,7 +362,11 @@ function renderMarkdown() {
     "| --- | --- | --- | --- |",
   ];
   for (const f of findings) {
-    const details = f.details.replace(/\|/g, "\\|").replace(/\n/g, " ");
+    // バックスラッシュを先に逃がさないと `\|` 自体が壊れる(CodeQL incomplete escaping)。
+    const details = f.details
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .replace(/\n/g, " ");
     lines.push(`| ${f.page} | ${f.check} | ${f.result} | ${details} |`);
   }
   const fails = findings.filter((f) => f.result === "FAIL" && f.hard !== false).length;
