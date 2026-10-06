@@ -1,9 +1,17 @@
 import type { Metadata } from "next";
+import { siteUrl } from "@/lib/blog/site";
+import { pageMetadata } from "@/lib/seo/pageMetadata";
 import "./globals.css";
 
+const siteDescription = "プライベートなファイル共有サービス";
+
 export const metadata: Metadata = {
-  title: "Anzdrop",
-  description: "プライベートなファイル共有サービス",
+  metadataBase: siteUrl(),
+  ...pageMetadata({
+    title: "Anzdrop",
+    description: siteDescription,
+    path: "/",
+  }),
 };
 
 // nonce ベースの CSP(proxy.ts)は、SSR 時にリクエストヘッダの nonce を参照して

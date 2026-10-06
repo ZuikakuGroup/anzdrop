@@ -55,7 +55,15 @@ function buildStaticSecurityHeaders(
   return headers;
 }
 
-function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+function buildContentSecurityPolicy(
+  nonce: string,
+  isDev: boolean,
+  { skipUpgradeInsecureRequests = false }: { skipUpgradeInsecureRequests?: boolean } = {},
+): string {
   // strict-dynamic により、nonce を持つスクリプト(Next のバンドル、next/script
   // 経由の Turnstile ローダ、@stripe/stripe-js のローダ)が動的に読み込む子
   // スクリプトは、追加のホスト許可なしで実行できる。末尾のホスト列挙は
@@ -108,8 +116,14 @@ function buildContentSecurityPolicy(nonce: string, isDev: boolean): string {
     `base-uri 'none'`,
     `form-action 'self'`,
     `frame-ancestors 'none'`,
-    `upgrade-insecure-requests`,
   ];
+
+  // ローカル HTTP 上の SEO/Lighthouse 監査では、Chrome が HTTPS へアップグレード
+  // して interstitial になるため付けない。WEB_AUDIT=true かつループバック Host
+  // のときだけ外し、本番 Host では誤設定があっても維持する。
+  if (!skipUpgradeInsecureRequests) {
+    directives.push(`upgrade-insecure-requests`);
+  }
 
   return directives.join("; ");
 }
@@ -120,7 +134,9 @@ export function proxy(request: NextRequest): NextResponse {
   // Next.js 公式の nonce レシピと同じ生成方法(base64)。Next の CSP パーサが
   // 期待する `'nonce-<value>'` 形式に確実に合致させる。
   const nonce = btoa(crypto.randomUUID());
-  const csp = buildContentSecurityPolicy(nonce, isDev);
+  const skipUpgradeInsecureRequests =
+    process.env.WEB_AUDIT === "true" && isLoopbackHost(request.nextUrl.hostname);
+  const csp = buildContentSecurityPolicy(nonce, isDev, { skipUpgradeInsecureRequests });
   const responseCspHeader = isCspReportOnly()
     ? "Content-Security-Policy-Report-Only"
     : "Content-Security-Policy";

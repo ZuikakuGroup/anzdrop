@@ -1,0 +1,35 @@
+{
+  "baseUrlEnv": "SITE_URL",
+  "defaultBaseUrl": "http://127.0.0.1:3000",
+  "pages": [
+    "/",
+    "/about",
+    "/pricing",
+    "/lp/secure-file-sharing"
+  ],
+  "lighthouse": {
+    "numberOfRuns": 3,
+    "thresholds": {
+      "performance": 0.8,
+      "accessibility": 0.9,
+      "best-practices": 0.9,
+      "seo": 0.9
+    },
+    "targetThresholds": {
+      "performance": 0.8,
+      "accessibility": 0.9,
+      "best-practices": 0.9,
+      "seo": 0.9
+    },
+    "regression": {
+      "performance": 0.1,
+      "accessibility": 0.05,
+      "best-practices": 0.05,
+      "seo": 0.05
+    }
+  },
+  "seo": {
+    "externalLinkSoftFail": true,
+    "maxInternalLinksPerPage": 40
+  }
+}

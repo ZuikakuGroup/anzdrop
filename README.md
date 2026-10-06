@@ -46,6 +46,9 @@ npm run dev
 | `npm run build` | Next.jsの本番ビルド |
 | `npm run lint` | ESLint |
 | `npm run measure:home` | Lighthouseによるトップページの合成計測。`SITE_URL`で対象を指定可能 |
+| `npm run audit:seo` | 起動中のサイトに対する SEO 自動検査(詳細は [`docs/web-audit.md`](./docs/web-audit.md)) |
+| `npm run audit:lighthouse` | 起動中のサイトに対する Lighthouse CI(閾値・対象 URL は `config/web-audit.json`) |
+| `npm run audit:web` | SEO + Lighthouse をまとめて実行 |
 | `npm test` | Vitestによるユニットテスト実行 |
 | `npm run test:coverage` | カバレッジ付きテスト実行 |
 | `npm run preview` | Cloudflare Workers向けビルド後、ローカルでプレビュー |
@@ -69,6 +72,7 @@ npm run dev
 | [`docs/moderation.md`](./docs/moderation.md) | 通報・モデレーション機能の仕様 |
 | [`docs/legal.md`](./docs/legal.md) | 利用規約・プライバシーポリシー・特定商取引法に基づく表記の各ページ |
 | [`docs/media.md`](./docs/media.md) | microCMS を使った `/blog` オウンドメディアの運用 |
+| [`docs/web-audit.md`](./docs/web-audit.md) | PR 時の SEO / Lighthouse 自動検査・閾値・ローカル実行方法 |
 
 ## ライセンス
 

@@ -22,7 +22,7 @@ npm install
 
 ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは`NODE_ENV=development`かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・Preview・外部Hostでは有効にならない。確認後は設定を外す。
 
-ブログのページネーションをmicroCMSへ書き込まずに確認する場合は、`.env.local`に`BLOG_USE_SEED_DATA=true`を設定する。ローカル開発時だけ15件の確認用記事へ切り替わり、`/blog`の2ページ目、記事詳細、関連記事、カテゴリ・タグ・著者ページを確認できる。本番・Previewでは同じ値が設定されても有効にならない。確認後はこの設定を外して開発サーバーを再起動する。
+ブログのページネーションをmicroCMSへ書き込まずに確認する場合は、`.env.local`に`BLOG_USE_SEED_DATA=true`を設定する。ローカル開発時だけ15件の確認用記事へ切り替わり、`/blog`の2ページ目、記事詳細、関連記事、カテゴリ・タグ・著者ページを確認できる。本番・Previewでは同じ値が設定されても有効にならない。例外として、SEO/Lighthouse 監査用に `WEB_AUDIT=true` と併用した場合だけ production 起動でも seed が有効になる(手順は [`docs/web-audit.md`](./web-audit.md))。確認後はこの設定を外して開発サーバーを再起動する。
 
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 
@@ -84,6 +84,17 @@ SITE_URL=https://anzdrop.com npm run measure:home
 ```
 
 ローカルを計測する場合は、別のターミナルで `npm run dev` を起動してから `npm run measure:home` を実行する。
+
+## SEO / Lighthouse 監査
+
+PR 時の自動検査とローカル実行手順は [`docs/web-audit.md`](./web-audit.md) を参照する。要約:
+
+```bash
+WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run build
+WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run start -- --hostname 127.0.0.1 --port 3000
+# 別ターミナル
+SITE_URL=http://127.0.0.1:3000 npm run audit:web
+```
 
 ## 動作確認のコツ
 
