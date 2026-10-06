@@ -4,6 +4,8 @@
 
 `main` ブランチへのpushをトリガーに [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) が実行され、以下を順に行う。
 
+デプロイ成功後は [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) が本番 URL(`https://anzdrop.com`)へ Playwright を実行する。リンク切れチェック・週次レポートなど他の自動化は [`ci-automations.md`](./ci-automations.md) を参照。
+
 1. 依存関係インストール(`npm ci`)
 2. `npm run lint`
 3. `npx tsc --noEmit`

@@ -51,6 +51,7 @@ npm run dev
 | `npm run audit:web` | SEO + Lighthouse をまとめて実行 |
 | `npm test` | Vitestによるユニットテスト実行 |
 | `npm run test:coverage` | カバレッジ付きテスト実行 |
+| `npm run test:e2e` | Playwright による本番/指定URL向け E2E(`E2E_BASE_URL`で対象変更可) |
 | `npm run preview` | Cloudflare Workers向けビルド後、ローカルでプレビュー |
 | `npm run deploy` | Cloudflare Workersへビルド・デプロイ |
 
@@ -73,6 +74,7 @@ npm run dev
 | [`docs/legal.md`](./docs/legal.md) | 利用規約・プライバシーポリシー・特定商取引法に基づく表記の各ページ |
 | [`docs/media.md`](./docs/media.md) | microCMS を使った `/blog` オウンドメディアの運用 |
 | [`docs/web-audit.md`](./docs/web-audit.md) | PR 時の SEO / Lighthouse 自動検査・閾値・ローカル実行方法 |
+| [`docs/ci-automations.md`](./docs/ci-automations.md) | リンク切れチェック・デプロイ後 E2E・週次開発レポートの自動化 |
 
 ## ライセンス
 

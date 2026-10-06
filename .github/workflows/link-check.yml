@@ -1,0 +1,115 @@
+name: Link Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 毎週月曜 03:00 UTC(= 月曜 12:00 JST)
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: link-check-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  link-check:
+    name: Broken links
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check README and docs links
+        id: lychee-repo
+        uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          # リポジトリ内の README / docs(Markdown)を対象にする。
+          # fail は後段で明示的に判定する(サマリ出力のため)。
+          format: markdown
+          args: >-
+            --config .lychee.toml
+            --verbose
+            --no-progress
+            README.md
+            docs
+          output: lychee-repo-report.md
+          fail: false
+          failIfEmpty: true
+          jobSummary: true
+
+      - name: Check live site (production URLs)
+        id: lychee-live
+        if: github.event_name != 'pull_request'
+        uses: lycheeverse/lychee-action@v2.9.0
+        with:
+          # 本番 Workers(https://anzdrop.com)の主要入口と sitemap。
+          # Cloudflare Pages は使っていないため、Pages Preview は対象外。
+          format: markdown
+          args: >-
+            --config .lychee.toml
+            --verbose
+            --no-progress
+            https://anzdrop.com/
+            https://anzdrop.com/about
+            https://anzdrop.com/pricing
+            https://anzdrop.com/blog
+            https://anzdrop.com/contact
+            https://anzdrop.com/report
+            https://anzdrop.com/legal/terms
+            https://anzdrop.com/legal/privacy
+            https://anzdrop.com/legal/tokushoho
+            https://anzdrop.com/mypage/login
+            https://anzdrop.com/lp/secure-file-sharing
+            https://anzdrop.com/sitemap.xml
+            https://anzdrop.com/robots.txt
+          output: lychee-live-report.md
+          fail: false
+          failIfEmpty: true
+          jobSummary: true
+
+      - name: Upload link-check reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: link-check-report
+          path: |
+            lychee-repo-report.md
+            lychee-live-report.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail on broken links
+        if: always()
+        run: |
+          set -euo pipefail
+          repo_exit="${{ steps.lychee-repo.outputs.exit_code }}"
+          live_exit="${{ steps.lychee-live.outputs.exit_code }}"
+          echo "lychee repo exit: ${repo_exit:-n/a}"
+          echo "lychee live exit: ${live_exit:-n/a}"
+
+          failed=0
+          if [ -n "${repo_exit:-}" ] && [ "$repo_exit" != "0" ]; then
+            echo "::error::Repository link check failed (exit ${repo_exit})"
+            if [ -f lychee-repo-report.md ]; then
+              echo "----- Repository report -----"
+              cat lychee-repo-report.md
+            fi
+            failed=1
+          fi
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            if [ -n "${live_exit:-}" ] && [ "$live_exit" != "0" ]; then
+              echo "::error::Live site link check failed (exit ${live_exit})"
+              if [ -f lychee-live-report.md ]; then
+                echo "----- Live site report -----"
+                cat lychee-live-report.md
+              fi
+              failed=1
+            fi
+          fi
+          exit "$failed"

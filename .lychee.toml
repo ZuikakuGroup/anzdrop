@@ -1,0 +1,64 @@
+#############################
+# Anzdrop lychee 設定 (lychee v0.24+)
+# ドキュメントと公開サイトのリンク切れ検出用。
+#############################
+
+verbose = "info"
+no_progress = true
+format = "markdown"
+
+# キャッシュで同一リンクの連打を避け、外部サイトの rate limit を抑える
+cache = true
+max_cache_age = "1d"
+
+timeout = 20
+max_retries = 3
+retry_wait_time = 5
+max_concurrency = 8
+max_redirects = 10
+
+user_agent = "Mozilla/5.0 (compatible; AnzdropLinkCheck/1.0; +https://github.com/ZuikakuGroup/anzdrop)"
+
+# 成功とみなすステータス。
+# - 429: リトライ後も残る一時制限
+# - 403: Cloudflare 等の bot 対策で「到達はしているが拒否」されるケース
+#   (404 等の確定的なリンク切れは失敗のまま)
+accept = ["200..=299", "403", "429"]
+
+scheme = ["https", "http", "file"]
+include_mail = false
+insecure = false
+# HTTP のループバックは除外するが、Markdown の相対リンク(file:)は検証する。
+exclude_loopback = true
+exclude_private = true
+exclude_link_local = true
+exclude_all_private = false
+
+# ホスト単位のレート制限
+host_concurrency = 2
+host_request_interval = "200ms"
+
+exclude = [
+  '^mailto:',
+  '^https?://localhost(:[0-9]+)?(/|$)',
+  '^https?://127\.0\.0\.1(:[0-9]+)?(/|$)',
+  '^https?://0\.0\.0\.0(:[0-9]+)?(/|$)',
+  '^https?://\[::1\](:[0-9]+)?(/|$)',
+  '^https?://example\.(com|org|net)(/|$)',
+  '^https://github\.com/.*/settings',
+  '^https://github\.com/.*/actions/runs/',
+]
+
+exclude_path = [
+  '(^|/)node_modules(/|$)',
+  '(^|/)\.next(/|$)',
+  '(^|/)\.open-next(/|$)',
+  '(^|/)coverage(/|$)',
+  '(^|/)tmp(/|$)',
+  '(^|/)playwright-report(/|$)',
+  '(^|/)test-results(/|$)',
+  '(^|/)\.web-audit(/|$)',
+  '(^|/)\.lighthouseci(/|$)',
+]
+
+extensions = ["md", "html", "htm"]
