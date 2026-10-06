@@ -23,6 +23,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 const mockSubscriptionsRetrieve = vi.fn();
+const mockInvoicesRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -30,6 +31,7 @@ vi.mock("stripe", () => {
       return {};
     }
     subscriptions = { retrieve: mockSubscriptionsRetrieve };
+    invoices = { retrieve: mockInvoicesRetrieve };
     constructor() {}
   }
 
@@ -49,9 +51,12 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllTables(env);
   mockSubscriptionsRetrieve.mockReset();
+  mockInvoicesRetrieve.mockReset();
   // metadataフォールバック対象のイベントは通常、Stripe上でもactiveのまま。
   // 終端状態や別Subscriptionとの衝突を検証するテストでは上書きする。
   mockSubscriptionsRetrieve.mockResolvedValue({ status: "active" });
+  // canceled の「かつて有効だった契約」判定用。never-activated テストでは上書きする。
+  mockInvoicesRetrieve.mockResolvedValue({ status: "paid", amount_paid: 500 });
 });
 
 async function signStripeWebhook(
@@ -648,6 +653,7 @@ await postWebhook(fakeEvent("evt_4", "customer.subscription.updated", {
 await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updated", {
         id: "sub_canceled_updated",
         status: "canceled",
+        latest_invoice: "in_paid_canceled_updated",
         ...subscriptionWithPrice(
           env.STRIPE_PRICE_ID_PREMIUM,
           Math.floor(Date.now() / 1000)
@@ -658,6 +664,45 @@ await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updat
     expect(account?.stripe_subscription_id).toBeNull();
     expect(account?.plan_expires_at).toBe(btcPaidUntil);
     expect(account?.plan).toBe("premium");
+  });
+
+  it("keeps an admin-granted plan when customer.subscription.updated reports canceled-from-incomplete", async () => {
+    const paidUntil = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_canceled_incomplete",
+    });
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "void",
+      amount_paid: 0,
+      billing_reason: "subscription_create",
+    });
+
+    const response = await postWebhook(
+      fakeEvent(
+        "evt_canceled_incomplete",
+        "customer.subscription.updated",
+        {
+          id: "sub_canceled_incomplete",
+          status: "canceled",
+          trial_start: null,
+          latest_invoice: "in_void_incomplete",
+          ...subscriptionWithPrice(
+            env.STRIPE_PRICE_ID_PREMIUM,
+            Math.floor(Date.now() / 1000)
+          ),
+        }
+      )
+    );
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
   });
 
   it.each([
@@ -690,6 +735,8 @@ await postWebhook(fakeEvent("evt_canceled_updated", "customer.subscription.updat
           : {
               id: subscriptionId,
               status: terminalStatus,
+              latest_invoice:
+                terminalStatus === "canceled" ? "in_paid_terminal" : null,
               ...subscriptionWithPrice(
                 env.STRIPE_PRICE_ID_PREMIUM,
                 Math.floor(Date.now() / 1000)
@@ -813,6 +860,41 @@ const before = Date.now();
         id: "sub_deleted_incomplete_expired",
         status: "incomplete_expired",
       })
+    );
+
+    expect(response.status).toBe(200);
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
+  });
+
+  it("keeps an admin-granted plan when customer.subscription.deleted reports canceled-from-incomplete", async () => {
+    const paidUntil = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_deleted_canceled_incomplete",
+    });
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "void",
+      amount_paid: 0,
+      billing_reason: "subscription_create",
+    });
+
+    const response = await postWebhook(
+      fakeEvent(
+        "evt_deleted_canceled_incomplete",
+        "customer.subscription.deleted",
+        {
+          id: "sub_deleted_canceled_incomplete",
+          status: "canceled",
+          trial_start: null,
+          latest_invoice: "in_void_deleted",
+        }
+      )
     );
 
     expect(response.status).toBe(200);

@@ -14,6 +14,7 @@ import {
   isDeadSubscriptionStatus,
   isNeverActivatedSubscriptionStatus,
   planFromSubscription,
+  shouldOnlyClearSubscriptionPointer,
   unixSecondsToIso,
 } from "@/lib/stripe-subscription";
 
@@ -224,21 +225,31 @@ async function applyEvent(
             }
           }
         }
-      } else if (isNeverActivatedSubscriptionStatus(subscription.status)) {
-        // 初回支払い未確定のまま失効。ゴミポインタだけ外し、plan /
-        // plan_expires_at は触らない(/admin 付与を消さない)。sync と同じ。
-        await clearNeverActivatedSubscriptionPointer(env, {
-          subscriptionId: subscription.id,
-        });
-      } else if (isDeadSubscriptionStatus(subscription.status)) {
-        // canceled / unpaid へ遷移したが customer.subscription.deleted が
-        // 届かない場合の掃除。sync 側の reconcileFromStripe と同じく
-        // downgradeExpiredCardPlan で即時ダウングレードする。該当ポインタを
-        // 持つ行が無ければ何もしない(deleted ハンドラと同じ)。
-        // ここでポインタを外したあとに順不同で古い active イベントが届いても、
-        // 上の metadata.accountId フォールバックは Stripe 上の現在状態を再取得し、
-        // 終端状態なら再関連付けしない。
-        await downgradeExpiredCardPlan(env, { subscriptionId: subscription.id });
+      } else if (
+        subscription.status === "incomplete_expired" ||
+        isDeadSubscriptionStatus(subscription.status)
+      ) {
+        // 初回未確定のゴミ(incomplete_expired / incomplete を cancel した
+        // canceled)はポインタだけ外す。かつて有効だった canceled / unpaid は
+        // deleted が届かない場合の掃除として即時ダウングレードする。
+        // 判定のための invoice 取得失敗は throw して完了マークを付けず再送に賭ける。
+        const onlyClear = await shouldOnlyClearSubscriptionPointer(
+          stripe,
+          subscription
+        );
+
+        if (onlyClear) {
+          await clearNeverActivatedSubscriptionPointer(env, {
+            subscriptionId: subscription.id,
+          });
+        } else {
+          // ここでポインタを外したあとに順不同で古い active イベントが届いても、
+          // 上の metadata.accountId フォールバックは Stripe 上の現在状態を再取得し、
+          // 終端状態なら再関連付けしない。
+          await downgradeExpiredCardPlan(env, {
+            subscriptionId: subscription.id,
+          });
+        }
       }
 
       break;
@@ -248,12 +259,15 @@ async function applyEvent(
       const subscription = event.data.object as Stripe.Subscription;
 
       // 初回未確定のまま消えた Subscription はプランを落とさない
-      // (/admin 付与を消さない)。status が無い古い/不完全な payload は
-      // 従来どおり即時ダウングレードする。
-      if (
-        subscription.status === "incomplete" ||
-        isNeverActivatedSubscriptionStatus(subscription.status)
-      ) {
+      // (/admin 付与を消さない)。status が無い古い/不完全な payload や、
+      // かつて有効だった契約の削除は即時ダウングレードする。
+      // invoice 取得失敗は throw して完了マークを付けず再送に賭ける。
+      const onlyClear = await shouldOnlyClearSubscriptionPointer(
+        stripe,
+        subscription
+      );
+
+      if (onlyClear) {
         await clearNeverActivatedSubscriptionPointer(env, {
           subscriptionId: subscription.id,
         });

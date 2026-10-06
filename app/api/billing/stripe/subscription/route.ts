@@ -9,7 +9,10 @@ import {
   isDeadSubscriptionStatus,
   isNeverActivatedSubscriptionStatus,
 } from "@/lib/stripe-subscription";
-import { isAdminGrantedPaidPlan } from "@/lib/billing/cardPlan";
+import {
+  clearNeverActivatedSubscriptionPointer,
+  isAdminGrantedPaidPlan,
+} from "@/lib/billing/cardPlan";
 import { isPurchasablePlan } from "@/lib/plan";
 import {
   SubscriptionRequestSchema,
@@ -145,8 +148,10 @@ export const POST = withApiHandler(
           existing.status === "incomplete" ||
           existing.status === "unpaid"
         ) {
+          const staleSubscriptionId = account.stripe_subscription_id;
+
           try {
-            await stripe.subscriptions.cancel(account.stripe_subscription_id);
+            await stripe.subscriptions.cancel(staleSubscriptionId);
           } catch (cancelError) {
             // キャンセルが失敗しても新規作成へ進んでよいのは、旧Subscriptionが
             // もう課金対象になり得ないことを確認できた場合だけ。
@@ -161,7 +166,7 @@ export const POST = withApiHandler(
               let stillBillable = true;
               try {
                 const recheck = await stripe.subscriptions.retrieve(
-                  account.stripe_subscription_id
+                  staleSubscriptionId
                 );
                 stillBillable =
                   !isDeadSubscriptionStatus(recheck.status) &&
@@ -178,6 +183,19 @@ export const POST = withApiHandler(
                 throw cancelError;
               }
             }
+          }
+
+          // incomplete の cancel は Stripe 上 canceled になり、Webhook が
+          // downgrade してしまうレースを防ぐため、ポインタを先に外す。
+          // unpaid は実契約の終端なので plan も落とす必要があるが、それは
+          // Webhook / sync の downgradeExpiredCardPlan に委ねる(ここでは
+          // ポインタだけ外すと deleted がアカウントを引けなくなるため、
+          // unpaid ではポインタを残す)。
+          if (existing.status === "incomplete") {
+            await clearNeverActivatedSubscriptionPointer(env, {
+              accountId: session.accountId,
+              subscriptionId: staleSubscriptionId,
+            });
           }
         }
       } catch (error) {

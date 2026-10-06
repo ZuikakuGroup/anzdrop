@@ -47,13 +47,69 @@ export function isActiveSubscriptionStatus(
   return status === "active" || status === "trialing";
 }
 
-// 初回支払いが一度も確定しないまま失効した Subscription か。
+// 初回支払いが一度も確定しないまま失効した Subscription か(status だけ見られる場合)。
 // 「決済フォームを開いただけ」のゴミポインタ掃除には使うが、
 // plan / plan_expires_at は触らない(admin 付与や Bitcoin 前払いを消さない)。
+//
+// incomplete を明示 cancel したときの status は canceled になるため、status だけでは
+// 判別できない。そのケースは shouldOnlyClearSubscriptionPointer() を使う。
 export function isNeverActivatedSubscriptionStatus(
   status: Stripe.Subscription.Status
 ): boolean {
   return status === "incomplete_expired";
+}
+
+// ゴミポインタ掃除だけで plan / plan_expires_at を維持すべき Subscription か。
+//  - incomplete / incomplete_expired: 初回支払い未確定
+//  - canceled かつ trial も支払いも一度も無い: incomplete を cancel したゴミ
+//    (subscription ルートが新規作成前に cancel したとき等)。canceled でも
+//    かつて active/trialing だった契約の終端は false(＝即時ダウングレード対象)。
+//  - unpaid: 更新 dunning を尽くした終端なので常に false
+//
+// latest_invoice が ID だけのときは Stripe から取り直す。取得に失敗したら throw
+// し、呼び出し側で「今回は触らない / 再送に賭ける」を選ばせる。
+export async function shouldOnlyClearSubscriptionPointer(
+  stripe: Stripe,
+  subscription: Stripe.Subscription
+): Promise<boolean> {
+  if (
+    subscription.status === "incomplete" ||
+    subscription.status === "incomplete_expired"
+  ) {
+    return true;
+  }
+
+  if (subscription.status !== "canceled") {
+    return false;
+  }
+
+  // trial 開始済みなら一度は有効化されている(無料トライアル終了後の cancel 含む)。
+  if (subscription.trial_start != null) {
+    return false;
+  }
+
+  const latest = subscription.latest_invoice;
+
+  if (latest == null) {
+    // 請求書が無い canceled は、支払い確定前に消えたゴミとみなす。
+    return true;
+  }
+
+  const invoice =
+    typeof latest === "string"
+      ? await stripe.invoices.retrieve(latest)
+      : latest;
+
+  if (invoice.status === "paid" || (invoice.amount_paid ?? 0) > 0) {
+    return false;
+  }
+
+  // 初回作成インボイスが未払いのまま終端 → incomplete を cancel したゴミ。
+  // 更新サイクル等(subscription_cycle / subscription_update など)の未払い
+  // インボイスがある場合は、かつて有効だった契約の終端なのでダウングレード対象。
+  // (unpaid を cancel したあとの canceled や、past_due 後の canceled を
+  // ポインタ掃除だけにして plan を残さないため。)
+  return invoice.billing_reason === "subscription_create";
 }
 
 // もう二度と有効化されない終端ステータスか(呼び出し元で
