@@ -164,7 +164,7 @@
 
 ### `POST /api/billing/stripe/webhook`
 
-Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、`incomplete_expired`ではゴミポインタだけ外して`plan`は維持、終端ステータス(`canceled`/`unpaid`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す。`customer.subscription.deleted`も即時ダウングレード。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、初回未確定のまま終端になった場合(`incomplete_expired`、または支払い実績の無い`canceled`)ではゴミポインタだけ外して`plan`は維持、かつて有効だった終端(`canceled`で支払い済み / `unpaid`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す。`customer.subscription.deleted`も同じ判定。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
 
 ### `POST /api/billing/stripe/sync`
 
@@ -173,7 +173,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証
 - アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe APIを呼ばず429(`Retry-After: 60`)。
 - レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription, adminGranted }`。`subscription`は`{ state: "active"|"canceling"|"past_due", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)、`"past_due"`は更新の決済に失敗しdunningリトライ中(お支払い方法の更新か自動更新の停止が必要)を表し、このとき`currentPeriodEnd`は常に`null`(Stripeの`current_period_end`が未払いの次期を指しうるため、支払い済みの期限としては使わない)。`adminGranted`は`/admin`付与中(実効有料・生きているカード契約なし・有効なBitcoin前払いなし)かどうか。
   - `subscription`が`null`になるのは、契約が無い / Subscriptionが`active`・`trialing`・`past_due`のいずれでもない(`incomplete`・`canceled`等) / retrieveが失敗し`plan_expires_at`も過去のとき。
-  - `incomplete_expired`のときはゴミポインタだけ外し、`plan` / `plan_expires_at`は維持する。
+  - 初回未確定のまま終端になった場合(`incomplete_expired`、支払い実績の無い`canceled`)はゴミポインタだけ外し、`plan` / `plan_expires_at`は維持する。
   - Stripe取得が**404**(Stripe側にSubscriptionが無い)の場合は、`accounts`を一切書き換えない。404はモード/APIキーの取り違えや破損IDでも起きるうえ、`stripe_subscription_id`まで外すと本物の削除時に後続の`customer.subscription.deleted`が突き合わせ先を失うため。実際のダウングレードは署名検証済みの`deleted`と`effectivePlan()`に委ねる。要約は次項と同じ暫定フォールバック。
   - Stripe取得が**404含め失敗**(モード不一致・レート制限・タイムアウト・Stripe障害)した場合は`accounts`を書き換えず、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。
 

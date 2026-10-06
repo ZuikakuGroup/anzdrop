@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 import {
   getSubscriptionPeriodEnd,
@@ -7,6 +7,7 @@ import {
   isManageableSubscriptionStatus,
   isNeverActivatedSubscriptionStatus,
   planFromSubscription,
+  shouldOnlyClearSubscriptionPointer,
   toSubscriptionSummary,
   unixSecondsToIso,
 } from "@/lib/stripe-subscription";
@@ -162,6 +163,110 @@ describe("isNeverActivatedSubscriptionStatus", () => {
     expect(isNeverActivatedSubscriptionStatus("canceled")).toBe(false);
     expect(isNeverActivatedSubscriptionStatus("unpaid")).toBe(false);
     expect(isNeverActivatedSubscriptionStatus("incomplete")).toBe(false);
+  });
+});
+
+describe("shouldOnlyClearSubscriptionPointer", () => {
+  const stripe = {
+    invoices: {
+      retrieve: vi.fn(),
+    },
+  } as unknown as Stripe;
+
+  beforeEach(() => {
+    vi.mocked(stripe.invoices.retrieve).mockReset();
+  });
+
+  it("is true for incomplete and incomplete_expired without looking up invoices", async () => {
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "incomplete",
+      } as Stripe.Subscription)
+    ).resolves.toBe(true);
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "incomplete_expired",
+      } as Stripe.Subscription)
+    ).resolves.toBe(true);
+    expect(stripe.invoices.retrieve).not.toHaveBeenCalled();
+  });
+
+  it("is true for canceled subscriptions whose create invoice was never paid", async () => {
+    vi.mocked(stripe.invoices.retrieve).mockResolvedValue({
+      status: "void",
+      amount_paid: 0,
+      billing_reason: "subscription_create",
+    } as Awaited<ReturnType<Stripe["invoices"]["retrieve"]>>);
+
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "canceled",
+        trial_start: null,
+        latest_invoice: "in_void",
+      } as Stripe.Subscription)
+    ).resolves.toBe(true);
+  });
+
+  it("is true for canceled subscriptions with no invoice at all", async () => {
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "canceled",
+        trial_start: null,
+        latest_invoice: null,
+      } as Stripe.Subscription)
+    ).resolves.toBe(true);
+  });
+
+  it("is false for canceled subscriptions that were paid or trialed", async () => {
+    vi.mocked(stripe.invoices.retrieve).mockResolvedValue({
+      status: "paid",
+      amount_paid: 500,
+      billing_reason: "subscription_create",
+    } as Awaited<ReturnType<Stripe["invoices"]["retrieve"]>>);
+
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "canceled",
+        trial_start: null,
+        latest_invoice: "in_paid",
+      } as Stripe.Subscription)
+    ).resolves.toBe(false);
+
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "canceled",
+        trial_start: 1_700_000_000,
+        latest_invoice: null,
+      } as Stripe.Subscription)
+    ).resolves.toBe(false);
+  });
+
+  it("is false for canceled subscriptions whose latest unpaid invoice is a renewal", async () => {
+    // unpaid / past_due のあと cancel されると status は canceled になり、
+    // latest は失敗した更新インボイスのまま。ここを onlyClear にすると
+    // 即時ダウングレードがスキップされる。
+    vi.mocked(stripe.invoices.retrieve).mockResolvedValue({
+      status: "open",
+      amount_paid: 0,
+      billing_reason: "subscription_cycle",
+    } as Awaited<ReturnType<Stripe["invoices"]["retrieve"]>>);
+
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "canceled",
+        trial_start: null,
+        latest_invoice: "in_open_cycle",
+      } as Stripe.Subscription)
+    ).resolves.toBe(false);
+  });
+
+  it("is false for unpaid (activated then dunning-exhausted)", async () => {
+    await expect(
+      shouldOnlyClearSubscriptionPointer(stripe, {
+        status: "unpaid",
+        latest_invoice: "in_open",
+      } as Stripe.Subscription)
+    ).resolves.toBe(false);
   });
 });
 

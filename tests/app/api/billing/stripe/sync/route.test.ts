@@ -25,6 +25,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 }));
 
 const mockSubscriptionsRetrieve = vi.fn();
+const mockInvoicesRetrieve = vi.fn();
 
 vi.mock("stripe", () => {
   class MockStripe {
@@ -32,6 +33,7 @@ vi.mock("stripe", () => {
       return {};
     }
     subscriptions = { retrieve: mockSubscriptionsRetrieve };
+    invoices = { retrieve: mockInvoicesRetrieve };
     constructor() {}
   }
 
@@ -52,6 +54,7 @@ beforeEach(async () => {
   await clearAllTables(env);
   resetRateLimiters(env);
   mockSubscriptionsRetrieve.mockReset();
+  mockInvoicesRetrieve.mockReset();
 });
 
 function daysFromNowUnix(days: number): number {
@@ -62,11 +65,18 @@ function subscription(
   status: string,
   priceId: string,
   periodEndUnix: number,
-  cancelAtPeriodEnd = false
+  cancelAtPeriodEnd = false,
+  extras: {
+    latestInvoice?: string | null;
+    trialStart?: number | null;
+  } = {}
 ) {
   return {
     status,
     cancel_at_period_end: cancelAtPeriodEnd,
+    trial_start: extras.trialStart ?? null,
+    latest_invoice:
+      extras.latestInvoice === undefined ? null : extras.latestInvoice,
     items: {
       data: [{ current_period_end: periodEndUnix, price: { id: priceId } }],
     },
@@ -310,8 +320,18 @@ describe("POST /api/billing/stripe/sync", () => {
     });
     const cookie = await sessionCookieHeader(env, accountId);
     mockSubscriptionsRetrieve.mockResolvedValue(
-      subscription("canceled", env.STRIPE_PRICE_ID_STANDARD, daysFromNowUnix(-1))
+      subscription(
+        "canceled",
+        env.STRIPE_PRICE_ID_STANDARD,
+        daysFromNowUnix(-1),
+        false,
+        { latestInvoice: "in_paid_canceled" }
+      )
     );
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "paid",
+      amount_paid: 250,
+    });
 
     const before = Date.now();
     const response = await postSync(cookie);
@@ -356,8 +376,18 @@ describe("POST /api/billing/stripe/sync", () => {
       )
       .run();
     mockSubscriptionsRetrieve.mockResolvedValue(
-      subscription("canceled", env.STRIPE_PRICE_ID_PREMIUM, daysFromNowUnix(-1))
+      subscription(
+        "canceled",
+        env.STRIPE_PRICE_ID_PREMIUM,
+        daysFromNowUnix(-1),
+        false,
+        { latestInvoice: "in_paid_btc_switch" }
+      )
     );
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "paid",
+      amount_paid: 500,
+    });
 
     const response = await postSync(cookie);
 
@@ -606,6 +636,86 @@ describe("POST /api/billing/stripe/sync", () => {
     expect(body.plan).toBe("premium");
     expect(body.adminGranted).toBe(true);
     expect(body.subscription).toBeNull();
+  });
+
+  it("clears only the stale pointer on canceled-from-incomplete and keeps an admin-granted plan", async () => {
+    // incomplete を明示 cancel すると status は canceled になる。#205 は
+    // incomplete_expired だけを直しており、この経路だと admin 付与が消えていた。
+    const paidUntil = new Date(daysFromNowUnix(3) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_canceled_incomplete",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription(
+        "canceled",
+        env.STRIPE_PRICE_ID_PREMIUM,
+        daysFromNowUnix(-1),
+        false,
+        { latestInvoice: "in_void_stale" }
+      )
+    );
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "void",
+      amount_paid: 0,
+      billing_reason: "subscription_create",
+    });
+
+    const response = await postSync(cookie);
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    expect(account?.plan).toBe("premium");
+    expect(account?.plan_expires_at).toBe(paidUntil);
+    expect(mockInvoicesRetrieve).toHaveBeenCalledWith("in_void_stale");
+
+    const body = await readJson<{
+      plan: string;
+      adminGranted: boolean;
+      subscription: unknown;
+    }>(response);
+    expect(body.plan).toBe("premium");
+    expect(body.adminGranted).toBe(true);
+    expect(body.subscription).toBeNull();
+  });
+
+  it("still downgrades when canceled after a failed renewal invoice (not only-clear)", async () => {
+    const paidUntil = new Date(daysFromNowUnix(12) * 1000).toISOString();
+    const { accountId } = await insertTestAccount(env, {
+      plan: "premium",
+      planExpiresAt: paidUntil,
+      stripeSubscriptionId: "sub_canceled_after_past_due",
+    });
+    const cookie = await sessionCookieHeader(env, accountId);
+    mockSubscriptionsRetrieve.mockResolvedValue(
+      subscription(
+        "canceled",
+        env.STRIPE_PRICE_ID_PREMIUM,
+        daysFromNowUnix(-1),
+        false,
+        { latestInvoice: "in_open_cycle" }
+      )
+    );
+    mockInvoicesRetrieve.mockResolvedValue({
+      status: "open",
+      amount_paid: 0,
+      billing_reason: "subscription_cycle",
+    });
+
+    const before = Date.now();
+    const response = await postSync(cookie);
+    const after = Date.now();
+
+    const account = await getAccount(accountId);
+    expect(account?.stripe_subscription_id).toBeNull();
+    const newExpiry = new Date(account?.plan_expires_at ?? 0).getTime();
+    expect(newExpiry).toBeGreaterThanOrEqual(before - 1000);
+    expect(newExpiry).toBeLessThanOrEqual(after + 1000);
+
+    const body = await readJson<{ plan: string }>(response);
+    expect(body.plan).toBe("free");
   });
 
   it("reports 'canceling' for a trialing subscription that is set to cancel at period end", async () => {
