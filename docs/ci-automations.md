@@ -46,6 +46,8 @@ GitHub → Actions → **Link Check** → Run workflow
 
 デプロイ完了後、`scripts/wait-for-url.sh` でトップが 2xx/3xx を返すまで最大180秒待つ。
 
+`workflow_run` ではデフォルトブランチのテストコードを checkout し、検証対象は常に本番 URL とする(`workflow_run.head_sha` の privileged checkout は cache poisoning 回避のため使わない)。
+
 ### 実装しているテスト
 
 - Smoke: トップの「Anzdrop」見出しと「アップロードする」ボタン、致命的な pageerror がないこと

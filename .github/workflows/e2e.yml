@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: e2e-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: e2e-${{ github.event.workflow_run.id || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -34,11 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # workflow_run はデフォルトブランチ文脈で動く。ここでは信頼済みの
+      # デフォルトブランチ(テストコード)を checkout し、検証対象は本番 URL とする。
+      # workflow_run.head_sha を privilege 付きで checkout すると、CodeQL の
+      # cache poisoning 警告(actions/cache-poisoning)の対象になるため避ける。
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          # workflow_run ではデプロイしたコミットを対象にする。
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
