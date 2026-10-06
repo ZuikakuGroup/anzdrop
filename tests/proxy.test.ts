@@ -65,12 +65,16 @@ describe("proxy — CSP", () => {
     ).toContain(`'nonce-${cspNonce}'`);
   });
 
-  it("Turnstile / Stripe / 一括ZIP(blob worker)に必要な origin を許可する", () => {
+  it("Turnstile / Stripe / R2 直アップロード / 一括ZIPに必要な origin を許可する", () => {
     const csp = cspOf(runProxy());
 
     expect(csp).toMatch(/frame-src[^;]*https:\/\/challenges\.cloudflare\.com/);
     expect(csp).toMatch(/frame-src[^;]*https:\/\/js\.stripe\.com/);
     expect(csp).toMatch(/connect-src[^;]*https:\/\/api\.stripe\.com/);
+    expect(csp).toMatch(
+      /connect-src[^;]*https:\/\/2a1ab8b6a9b36f7f0c4292dce044e0c4\.r2\.cloudflarestorage\.com(?:\s|;)/
+    );
+    expect(csp).not.toContain("*.r2.cloudflarestorage.com");
     expect(csp).toMatch(/worker-src[^;]*blob:/);
     expect(csp).toMatch(/media-src[^;]*blob:/);
   });

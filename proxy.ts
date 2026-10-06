@@ -87,6 +87,9 @@ function buildContentSecurityPolicy(
     "https://api.stripe.com",
     "https://m.stripe.network",
     "https://r.stripe.com",
+    // 署名付き UploadPart URL の送信先。アカウント ID は wrangler.jsonc と同じ
+    // 公開値を指定し、R2 の他アカウントには接続を許可しない。
+    "https://2a1ab8b6a9b36f7f0c4292dce044e0c4.r2.cloudflarestorage.com",
     // 開発時の HMR(Turbopack の WebSocket)。
     isDev ? "ws:" : "",
     isDev ? "wss:" : "",
