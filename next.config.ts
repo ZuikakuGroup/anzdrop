@@ -17,6 +17,10 @@ initOpenNextCloudflareForDev({
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [new URL("https://images.microcms-assets.io/**")],
+    // Cloudflare Images バインディング未設定のため、/_next/image による
+    // 最適化は使えない(未設定だと 404 になる)。静的アセットと microCMS
+    // の URL をそのまま配信する。
+    unoptimized: true,
   },
   // `X-Powered-By: Next.js` を返さない(不要な実装情報の露出を避ける。issue #64)。
   poweredByHeader: false,
