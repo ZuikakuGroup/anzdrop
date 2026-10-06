@@ -22,7 +22,7 @@
 - リポジトリ内の `README.md` と `docs/`(相対リンク含む)
 - PR 以外では本番 `https://anzdrop.com` の主要ページと `sitemap.xml` / `robots.txt` も追加でチェック
 
-設定は [`.lychee.toml`](../.lychee.toml)。`lychee` を利用し、タイムアウト・リトライ・ホスト単位レート制限・キャッシュでフレークを抑える。README/docs 検査だけ外部サイト向けに CLI で 403/429 を追加許容し、本番 URL 検査では 2xx 以外(403/429 含む)を失敗とする。404 など確定的な切れはどちらでも失敗。
+設定は [`.lychee.toml`](../.lychee.toml)。`lychee` を利用し、タイムアウト・リトライ・ホスト単位レート制限・キャッシュでフレークを抑える。README/docs 検査だけ外部サイト向けに CLI で 403/429 を追加許容し、本番 URL 検査では 2xx 以外(403/429 含む)を失敗とする。404 など確定的な切れはどちらでも失敗。`/_next/image` エンドポイントのみ(クエリ付き URL を含む)は Cloudflare Images 未設定時に 404 になりやすく、かつ HTML の `srcset` から大量に抽出されるため除外する(Deploy 完了前の古い HTML が残る場合のフレーク防止も兼ねる)。`/_next/image-preview` のような別パスや、画像の実体 URL は除外しない。
 
 ### 失敗時
 

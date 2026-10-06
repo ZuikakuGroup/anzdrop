@@ -46,6 +46,10 @@ exclude = [
   '^https?://example\.(com|org|net)(/|$)',
   '^https://github\.com/.*/settings',
   '^https://github\.com/.*/actions/runs/',
+  # Next.js 画像最適化エンドポイント。Cloudflare Images 未設定時は 404 になり、
+  # かつ HTML の srcset から大量に抽出されるためリンク切れ検査の対象外にする。
+  # 実体の画像パス(/images/... や外部 CDN)は別途検査される。
+  '^https?://[^/]+/_next/image(\?|$)',
 ]
 
 exclude_path = [
