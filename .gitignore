@@ -10,6 +10,11 @@ node_modules/
 
 # testing
 coverage/
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+.lycheecache
 
 # SEO / Lighthouse local & CI reports
 .web-audit/

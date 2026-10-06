@@ -15,6 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "preview": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production",
     "deploy:home": "cd apps/home && ../../node_modules/.bin/opennextjs-cloudflare build --config wrangler.jsonc && node ../../scripts/strip-vercel-og.mts && ../../node_modules/.bin/opennextjs-cloudflare deploy --config wrangler.jsonc --var DEPLOYMENT_ENV:production",
@@ -43,6 +45,7 @@
   },
   "devDependencies": {
     "@lhci/cli": "^0.15.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^26",
     "@types/qrcode": "^1.5.6",
