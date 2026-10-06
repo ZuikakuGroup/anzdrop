@@ -17,6 +17,7 @@ import { track } from "@/lib/analytics/client";
 import { getSizeBucket } from "@/lib/analytics/sizeBucket";
 import { classifyUploadError } from "@/lib/analytics/errorCodes";
 import type { PendingFile } from "@/lib/upload/dragDropFiles";
+import { shouldDismissShareResultForAdditionalUpload } from "@/lib/upload/shareResultSession";
 import {
   checkSharePasswordBeforeUpload,
 } from "@/lib/passwordPolicy";
@@ -244,8 +245,19 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     });
   };
 
+  // 共有結果パネルを閉じても、同じ共有への相乗りのため shareId / uploadToken /
+  // 鍵 / hasCreatedShare は残す(resetForm とは違う)。
+  const dismissShareResultKeepSession = () => {
+    setShareUrl("");
+    setCopyState("idle");
+    setError("");
+    setProgress(0);
+    setIsQrOpen(false);
+  };
+
   const addFiles = (newFiles: PendingFile[]) => {
-    if (shareUrl) {
+    // アップロード中だけ拒否する。共有結果表示中の DnD 追加は同じ共有へ相乗りさせる。
+    if (isUploading || newFiles.length === 0) {
       return;
     }
 
@@ -262,7 +274,19 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       return;
     }
 
-    setFiles((prev) => [...prev, ...newFiles]);
+    // 追加できるファイルが確定してから結果パネルを閉じる(失敗 DnD で鍵付き URL を消さない)。
+    if (
+      shouldDismissShareResultForAdditionalUpload({
+        shareUrl,
+        isUploading,
+        acceptedFileCount: newFiles.length,
+      })
+    ) {
+      dismissShareResultKeepSession();
+      setFiles(newFiles);
+    } else {
+      setFiles((prev) => [...prev, ...newFiles]);
+    }
 
     track("file_select", {
       properties: {
@@ -362,7 +386,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
   };
 
   const upload = async () => {
-    if (shareUrl || isUploading) {
+    if (isUploading) {
       return;
     }
 
@@ -562,6 +586,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     setPassword("");
     setRetention("7d");
     setShowAdvanced(false);
+    setIsQrOpen(false);
 
     keyPromiseRef.current = null;
     queueRef.current = [];
