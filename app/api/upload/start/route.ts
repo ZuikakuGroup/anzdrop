@@ -22,6 +22,7 @@ import {
   UploadStartRequestSchema,
   type UploadStartResponse,
 } from "@/app/api/upload/start/schema";
+import { resolveUploadMode } from "@/lib/upload/r2DirectCredentials";
 
 export const POST = withApiHandler(
   "POST /api/upload/start",
@@ -202,6 +203,7 @@ export const POST = withApiHandler(
       uploadToken,
       uploadSessionId,
       expiresAt,
+      uploadMode: resolveUploadMode(env),
       ...(analyticsTransferId ? { analyticsTransferId } : {}),
     };
 

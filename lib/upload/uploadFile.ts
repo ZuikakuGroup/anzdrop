@@ -1,12 +1,12 @@
 import type { Retention } from "@/lib/retention";
 import { uploadChunksFromStream } from "@/lib/upload/chunkUploader";
-
 type UploadStartResponse = {
   success: boolean;
   shareId?: string;
   uploadToken?: string;
   uploadSessionId?: string;
   expiresAt?: string;
+  uploadMode?: "direct" | "proxy";
   analyticsTransferId?: string;
   error?: string;
 };
@@ -105,7 +105,11 @@ export async function uploadEncryptedFile(
     startResult.uploadToken,
     params.path,
     params.concurrency,
-    params.onBytesUploaded
+    params.onBytesUploaded,
+    {
+      uploadMode:
+        startResult.uploadMode === "direct" ? "direct" : "proxy",
+    }
   );
 
   const completeResponse = await fetch("/api/upload/complete", {

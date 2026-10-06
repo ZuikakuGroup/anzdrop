@@ -27,6 +27,7 @@ type StartResponseBody = {
   shareId: string;
   uploadToken: string;
   uploadSessionId: string;
+  uploadMode: "direct" | "proxy";
   analyticsTransferId?: string;
 };
 
@@ -270,6 +271,8 @@ describe("POST /api/upload/start", () => {
     expect(typeof body.shareId).toBe("string");
     expect(typeof body.uploadToken).toBe("string");
     expect(typeof body.uploadSessionId).toBe("string");
+    // テスト環境では R2 S3 Secrets 未設定のため proxy にフォールバックする。
+    expect(body.uploadMode).toBe("proxy");
     expect(body.analyticsTransferId).toBe(
       await computeAnalyticsTransferId(body.shareId, env.ANALYTICS_SECRET)
     );

@@ -62,6 +62,21 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 | `STRIPE_WEBHOOK_SECRET` | `/api/billing/stripe/webhook` の署名検証用シークレット(Stripeダッシュボードで作成したWebhookエンドポイントごとに発行される) |
 | `OPENNODE_API_KEY` | OpenNode APIキー。charge作成とWebhook署名検証(HMAC鍵)の両方に使う |
 | `ANALYTICS_SECRET` | `shareId`から分析用の相関IDを生成するHMAC鍵 |
+| `R2_ACCESS_KEY_ID` | R2 S3互換API用アクセスキー。ブラウザ直アップロード(presigned UploadPart)の署名に使う |
+| `R2_SECRET_ACCESS_KEY` | 上記トークンのシークレットキー |
+| `CLOUDFLARE_ACCOUNT_ID` | S3エンドポイント(`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`)用のアカウントID |
+
+これら3つが揃っているときだけ `POST /api/upload/start` が `uploadMode: "direct"` を返す。未設定(ローカル Miniflare 等)では `"proxy"` にフォールバックし、従来の `/api/upload/chunk` 経路を使う。
+
+#### R2 直アップロード用トークンと CORS
+
+1. Cloudflareダッシュボードで R2 API トークンを作成する。権限は **Object Read & Write**、対象バケットは `anzdrop` にスコープする。
+2. 発行された Access Key ID / Secret Access Key とアカウントIDを、それぞれ `wrangler secret put R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `CLOUDFLARE_ACCOUNT_ID` で本番Workerへ入れる。
+3. バケット `anzdrop` の CORS を設定する(ブラウザから署名付きURLへ直接PUTするため必須)。
+   - Allowed Origins: `https://anzdrop.com`(必要なら preview オリジンも)
+   - Allowed Methods: `PUT`, `GET`, `HEAD`
+   - Allowed Headers: `Content-Type`(署名対象の `Content-Length` はブラウザがボディから自動設定する forbidden header のため、ここに含めなくてよい)
+   - Exposed Headers: `ETag`(クライアントがPUT応答のETagを読んで `part-ack` に送るため)
 
 ### 分析のセットアップ
 

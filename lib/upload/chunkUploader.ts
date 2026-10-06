@@ -1,5 +1,11 @@
 import { UPLOAD_PART_SIZE } from "./partSize";
 
+// サーバー側の MAX_PART_URLS_PER_REQUEST(lib/upload/uploadSessionAuth.ts)と揃える。
+// クライアントバンドルに D1 認可ヘルパを引き込まないよう、ここには定数だけ置く。
+const PART_URL_BATCH_SIZE = 32;
+
+type UploadMode = "direct" | "proxy";
+
 // 暗号化チャンクのストリームを、パケット境界とは無関係にpartSizeちょうどで
 // 切り出し直す。最後のパートだけがpartSize未満(0より大きい)になる。
 // R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
@@ -83,6 +89,11 @@ type RetryOptions = {
   sleep?: (ms: number) => Promise<void>;
 };
 
+type UploadChunksOptions = RetryOptions & {
+  // start が返す uploadMode。未指定時は従来どおり Worker プロキシ。
+  uploadMode?: UploadMode;
+};
+
 function defaultBackoffMs(attempt: number): number {
   // 0.5s, 1s, 2s, ... を上限8sでクランプし、最大±25%のジッターを足す。
   const base = Math.min(500 * 2 ** (attempt - 1), 8000);
@@ -92,12 +103,165 @@ function defaultBackoffMs(attempt: number): number {
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+function normalizeEtag(etag: string | null): string | null {
+  if (!etag) {
+    return null;
+  }
+  // S3/R2 の ETag ヘッダは引用符付きで返ることが多い。バインディング経路の
+  // uploadPart().etag と揃えるため外す。
+  return etag.replaceAll('"', "");
+}
+
+type PartUrlBatcher = {
+  getUrl: (partNumber: number, contentLength: number) => Promise<string>;
+};
+
+function createPartUrlBatcher(
+  uploadSessionId: string,
+  uploadToken: string
+): PartUrlBatcher {
+  type Waiter = {
+    partNumber: number;
+    contentLength: number;
+    resolve: (url: string) => void;
+    reject: (error: unknown) => void;
+  };
+
+  const queue: Waiter[] = [];
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let flushing: Promise<void> | null = null;
+
+  const runFlush = (): Promise<void> => {
+    if (flushing) {
+      return flushing;
+    }
+
+    flushing = (async () => {
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+
+      while (queue.length > 0) {
+        const batch = queue.splice(0, PART_URL_BATCH_SIZE);
+        // 同じパート番号は最後の contentLength を採用。
+        const parts = [
+          ...new Map(
+            batch.map((item) => [
+              item.partNumber,
+              {
+                partNumber: item.partNumber,
+                contentLength: item.contentLength,
+              },
+            ] as const)
+          ).values(),
+        ];
+
+        try {
+          const response = await fetch("/api/upload/part-urls", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              uploadSessionId,
+              uploadToken,
+              parts,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("パート用URLの取得に失敗しました");
+          }
+
+          const body = (await response.json()) as {
+            success?: boolean;
+            urls?: Array<{ partNumber: number; url: string }>;
+          };
+
+          if (!body.success || !body.urls) {
+            throw new Error("パート用URLの取得に失敗しました");
+          }
+
+          const byPart = new Map(
+            body.urls.map((entry) => [entry.partNumber, entry.url])
+          );
+
+          for (const waiter of batch) {
+            const url = byPart.get(waiter.partNumber);
+            if (!url) {
+              waiter.reject(new Error("パート用URLが見つかりません"));
+              continue;
+            }
+            waiter.resolve(url);
+          }
+        } catch (error) {
+          for (const waiter of batch) {
+            waiter.reject(error);
+          }
+        }
+      }
+    })().finally(() => {
+      flushing = null;
+      if (queue.length > 0) {
+        scheduleFlush();
+      }
+    });
+
+    return flushing;
+  };
+
+  const scheduleFlush = () => {
+    if (flushTimer !== null || flushing) {
+      return;
+    }
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void runFlush();
+    }, 0);
+  };
+
+  return {
+    getUrl: (partNumber: number, contentLength: number) =>
+      new Promise<string>((resolve, reject) => {
+        queue.push({ partNumber, contentLength, resolve, reject });
+        if (queue.length >= PART_URL_BATCH_SIZE) {
+          void runFlush();
+        } else {
+          scheduleFlush();
+        }
+      }),
+  };
+}
+
+async function ackUploadedPart(
+  uploadSessionId: string,
+  uploadToken: string,
+  partNumber: number,
+  etag: string
+): Promise<void> {
+  const response = await fetch("/api/upload/part-ack", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      uploadSessionId,
+      uploadToken,
+      parts: [{ partNumber, etag }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("パート完了の記録に失敗しました");
+  }
+}
+
 // 暗号化済みチャンクのストリームを受け取り、R2のマルチパートアップロードへ
 // パートとして送信する。ストリームはrepartitionでUPLOAD_PART_SIZE単位に
 // 詰め直してから送るため、パート番号はR2上で順不同に受け付けられる前提で
 // チャンクを並列アップロードして1ラウンドトリップあたりの待ち時間を隠す。
 // concurrencyはプラン別(lib/plan.tsのgetUploadConcurrencyForPlan)に呼び出し元が決める。
 // onBytesUploadedには、各パートの送信成功ごとにそのパートのバイト数を渡す。
+//
+// uploadMode=direct のときは署名付きURLでブラウザからR2へ直接PUTし、
+// ETagだけをWorkerへ記録する。proxyのときは従来どおり/api/upload/chunk経由。
 //
 // 各パートは一時エラー時に指数バックオフ付きでリトライする。リトライを
 // 使い切ったパートがあった時点で全ワーカーを止め、アップロード全体を失敗させる。
@@ -108,20 +272,24 @@ export async function uploadChunksFromStream(
   path: string,
   concurrency: number,
   onBytesUploaded: (bytes: number) => void,
-  retry: RetryOptions = {}
+  options: UploadChunksOptions = {}
 ): Promise<void> {
+  const uploadMode = options.uploadMode ?? "proxy";
   const parts = repartition(chunks, UPLOAD_PART_SIZE);
-  const maxAttempts = retry.maxAttempts ?? PART_UPLOAD_MAX_ATTEMPTS;
-  const backoffMs = retry.backoffMs ?? defaultBackoffMs;
-  const sleep = retry.sleep ?? defaultSleep;
+  const maxAttempts = options.maxAttempts ?? PART_UPLOAD_MAX_ATTEMPTS;
+  const backoffMs = options.backoffMs ?? defaultBackoffMs;
+  const sleep = options.sleep ?? defaultSleep;
+  const urlBatcher =
+    uploadMode === "direct"
+      ? createPartUrlBatcher(uploadSessionId, uploadToken)
+      : null;
 
   let firstError: Error | null = null;
 
   const partFailure = (partNumber: number): Error =>
     new Error(`${path} のパート ${partNumber} アップロードに失敗しました`);
 
-  // 1パートを送信する。一時エラーはバックオフを挟んで最大 maxAttempts 回試す。
-  const uploadPart = async (
+  const uploadPartProxy = async (
     partNumber: number,
     body: Uint8Array<ArrayBuffer>
   ): Promise<void> => {
@@ -145,7 +313,6 @@ export async function uploadChunksFromStream(
           body: body.buffer,
         });
       } catch (unknownErr) {
-        // fetch自体の失敗(通信断など)は常にリトライ対象。
         if (attempt >= maxAttempts || firstError !== null) {
           throw unknownErr instanceof Error
             ? unknownErr
@@ -176,6 +343,85 @@ export async function uploadChunksFromStream(
     }
   };
 
+  const uploadPartDirect = async (
+    partNumber: number,
+    body: Uint8Array<ArrayBuffer>
+  ): Promise<void> => {
+    if (!urlBatcher) {
+      throw new Error("direct upload is not configured");
+    }
+
+    let etag: string | null = null;
+
+    // PUT(とURL取得)のリトライ。成功してETagが取れたらループを抜け、
+    // 以降はACKだけを別途リトライする(8MiBパートの無駄な再送を避ける)。
+    for (let attempt = 1; etag === null; attempt++) {
+      if (firstError !== null) {
+        return;
+      }
+
+      try {
+        const url = await urlBatcher.getUrl(partNumber, body.byteLength);
+        // Content-Length は署名対象だが、ブラウザでは forbidden header のため
+        // ここでは付けない。fetch がボディ長から自動設定し、申告どおりなら署名と一致する。
+        const putResponse = await fetch(url, {
+          method: "PUT",
+          body: body.buffer,
+        });
+
+        if (firstError !== null) {
+          return;
+        }
+
+        if (!putResponse.ok) {
+          if (
+            !RETRYABLE_STATUS.has(putResponse.status) ||
+            attempt >= maxAttempts
+          ) {
+            throw partFailure(partNumber);
+          }
+          await sleep(backoffMs(attempt));
+          continue;
+        }
+
+        const normalizedEtag = normalizeEtag(putResponse.headers.get("ETag"));
+        if (!normalizedEtag) {
+          throw partFailure(partNumber);
+        }
+        etag = normalizedEtag;
+      } catch (unknownErr) {
+        if (attempt >= maxAttempts || firstError !== null) {
+          throw unknownErr instanceof Error
+            ? unknownErr
+            : partFailure(partNumber);
+        }
+        await sleep(backoffMs(attempt));
+      }
+    }
+
+    for (let ackAttempt = 1; ; ackAttempt++) {
+      if (firstError !== null) {
+        return;
+      }
+
+      try {
+        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag);
+        onBytesUploaded(body.byteLength);
+        return;
+      } catch (unknownErr) {
+        if (ackAttempt >= maxAttempts || firstError !== null) {
+          throw unknownErr instanceof Error
+            ? unknownErr
+            : partFailure(partNumber);
+        }
+        await sleep(backoffMs(ackAttempt));
+      }
+    }
+  };
+
+  const uploadPart =
+    uploadMode === "direct" ? uploadPartDirect : uploadPartProxy;
+
   const worker = async (): Promise<void> => {
     while (firstError === null) {
       let next: IteratorResult<{
@@ -188,8 +434,6 @@ export async function uploadChunksFromStream(
         // 複数ワーカーが同時にnext()を呼んでもパート番号とバイト列は1対1で対応する。
         next = await parts.next();
       } catch (unknownErr) {
-        // 最初に起きたエラーを保持する。別ワーカーが根本原因を設定済みなら
-        // 上書きしない(後続の派生的なエラーで原因を隠さない)。
         firstError ??=
           unknownErr instanceof Error
             ? unknownErr
