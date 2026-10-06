@@ -285,6 +285,7 @@ export async function uploadChunksFromStream(
       : null;
 
   let firstError: Error | null = null;
+  let directUnavailable = false;
 
   const partFailure = (partNumber: number): Error =>
     new Error(`${path} のパート ${partNumber} アップロードに失敗しました`);
@@ -360,35 +361,15 @@ export async function uploadChunksFromStream(
         return;
       }
 
+      let putResponse: Response;
       try {
         const url = await urlBatcher.getUrl(partNumber, body.byteLength);
         // Content-Length は署名対象だが、ブラウザでは forbidden header のため
         // ここでは付けない。fetch がボディ長から自動設定し、申告どおりなら署名と一致する。
-        const putResponse = await fetch(url, {
+        putResponse = await fetch(url, {
           method: "PUT",
           body: body.buffer,
         });
-
-        if (firstError !== null) {
-          return;
-        }
-
-        if (!putResponse.ok) {
-          if (
-            !RETRYABLE_STATUS.has(putResponse.status) ||
-            attempt >= maxAttempts
-          ) {
-            throw partFailure(partNumber);
-          }
-          await sleep(backoffMs(attempt));
-          continue;
-        }
-
-        const normalizedEtag = normalizeEtag(putResponse.headers.get("ETag"));
-        if (!normalizedEtag) {
-          throw partFailure(partNumber);
-        }
-        etag = normalizedEtag;
       } catch (unknownErr) {
         if (attempt >= maxAttempts || firstError !== null) {
           throw unknownErr instanceof Error
@@ -396,7 +377,26 @@ export async function uploadChunksFromStream(
             : partFailure(partNumber);
         }
         await sleep(backoffMs(attempt));
+        continue;
       }
+
+      if (firstError !== null) {
+        return;
+      }
+
+      if (!putResponse.ok) {
+        if (!RETRYABLE_STATUS.has(putResponse.status) || attempt >= maxAttempts) {
+          throw partFailure(partNumber);
+        }
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+
+      const normalizedEtag = normalizeEtag(putResponse.headers.get("ETag"));
+      if (!normalizedEtag) {
+        throw partFailure(partNumber);
+      }
+      etag = normalizedEtag;
     }
 
     for (let ackAttempt = 1; ; ackAttempt++) {
@@ -419,8 +419,27 @@ export async function uploadChunksFromStream(
     }
   };
 
-  const uploadPart =
-    uploadMode === "direct" ? uploadPartDirect : uploadPartProxy;
+  const uploadPart = async (
+    partNumber: number,
+    body: Uint8Array<ArrayBuffer>
+  ): Promise<void> => {
+    if (uploadMode === "proxy" || directUnavailable) {
+      return uploadPartProxy(partNumber, body);
+    }
+
+    try {
+      await uploadPartDirect(partNumber, body);
+    } catch {
+      // R2 の署名・CORS・直接接続に問題があっても、start で作成した同じ
+      // multipart セッションへ Worker 経由で送れる。暗号文だけを再送する。
+      // ACK の記録が失敗した場合も同じパート番号を上書きして整合させる。
+      if (firstError !== null) {
+        return;
+      }
+      directUnavailable = true;
+      await uploadPartProxy(partNumber, body);
+    }
+  };
 
   const worker = async (): Promise<void> => {
     while (firstError === null) {
