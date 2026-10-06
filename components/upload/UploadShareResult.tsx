@@ -43,20 +43,24 @@ export default function UploadShareResult({
 }: UploadShareResultProps) {
   const onResetRef = useRef(onReset);
   const onCloseQrRef = useRef(onCloseQr);
-  // 描画中に同期し、QR を開いた直後〜 effect 前の Escape で誤って reset しないようにする。
-  const isQrOpenRef = useRef(isQrOpen);
-  isQrOpenRef.current = isQrOpen;
-  onResetRef.current = onReset;
-  onCloseQrRef.current = onCloseQr;
+
+  useEffect(() => {
+    onResetRef.current = onReset;
+  }, [onReset]);
+
+  useEffect(() => {
+    onCloseQrRef.current = onCloseQr;
+  }, [onCloseQr]);
 
   // Escape で結果パネルを閉じる(×ボタンと同じ reset)。QR 表示中は先に QR だけ閉じる。
+  // isQrOpen は deps に入れ、開いた直後の Escape が誤って reset しないようにする。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
       }
 
-      if (isQrOpenRef.current) {
+      if (isQrOpen) {
         onCloseQrRef.current();
         return;
       }
@@ -66,7 +70,7 @@ export default function UploadShareResult({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [isQrOpen]);
 
   return (
     <div className="anz-scroll relative flex h-44 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
