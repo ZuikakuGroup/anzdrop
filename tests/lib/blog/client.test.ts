@@ -112,10 +112,13 @@ describe("microCMS client", () => {
     expect(error.status).toBe(404);
   });
 
-  it("enables local seed data only when the development-only flag is set", () => {
+  it("enables local seed data in development or WEB_AUDIT production", () => {
     expect(isBlogSeedDataEnabled("true", "development")).toBe(true);
     expect(isBlogSeedDataEnabled("true", "production")).toBe(false);
+    expect(isBlogSeedDataEnabled("true", "production", "true")).toBe(true);
+    expect(isBlogSeedDataEnabled("true", "production", "false")).toBe(false);
     expect(isBlogSeedDataEnabled(undefined, "development")).toBe(false);
+    expect(isBlogSeedDataEnabled(undefined, "production", "true")).toBe(false);
   });
 
   it("provides more than one page of local posts and respects pagination", () => {

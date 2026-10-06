@@ -1,0 +1,76 @@
+name: SEO Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  # Merge Queue 利用時に必須チェックが永久待ちにならないようにする(ci.yml と同様)。
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seo-audit-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  SITE_URL: http://127.0.0.1:3000
+  WEB_AUDIT: "true"
+  BLOG_USE_SEED_DATA: "true"
+
+jobs:
+  seo:
+    name: SEO Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (production)
+        run: npm run build
+
+      - name: Start production server
+        run: |
+          npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/anzdrop-web-audit.log 2>&1 &
+          echo $! > /tmp/anzdrop-web-audit.pid
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null "$SITE_URL/"; then
+              echo "Server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to start"
+          cat /tmp/anzdrop-web-audit.log
+          exit 1
+
+      - name: Run SEO audit
+        run: npm run audit:seo
+
+      - name: Upload SEO report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: seo-audit-report
+          path: .web-audit/seo-report.*
+          if-no-files-found: warn
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/anzdrop-web-audit.pid ]; then
+            kill "$(cat /tmp/anzdrop-web-audit.pid)" || true
+          fi

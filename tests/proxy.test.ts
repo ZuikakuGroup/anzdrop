@@ -83,6 +83,21 @@ describe("proxy — CSP", () => {
     expect(csp).not.toMatch(/connect-src[^;]*\bws:/);
   });
 
+  it("WEB_AUDIT でも本番 Host では upgrade-insecure-requests を維持し、ループバックだけ外す", () => {
+    vi.stubEnv("WEB_AUDIT", "");
+    expect(cspOf(runProxy())).toContain("upgrade-insecure-requests");
+
+    vi.stubEnv("WEB_AUDIT", "true");
+    // runProxy は anzdrop.example(非ループバック)
+    expect(cspOf(runProxy())).toContain("upgrade-insecure-requests");
+    expect(cspOf(proxy(new NextRequest("http://127.0.0.1:3000/")))).not.toContain(
+      "upgrade-insecure-requests",
+    );
+    expect(cspOf(proxy(new NextRequest("http://localhost:3000/")))).not.toContain(
+      "upgrade-insecure-requests",
+    );
+  });
+
   it("開発では unsafe-eval と HMR 用の ws: を許可する", () => {
     vi.stubEnv("NODE_ENV", "development");
     const csp = cspOf(runProxy());

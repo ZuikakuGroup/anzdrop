@@ -1,0 +1,4 @@
+{
+  "_comment": "Median category scores (0-1) for regression checks. Left empty until scores are collected on GitHub Actions runners (local medians are often higher and cause flakes). After a green Lighthouse Audit run, copy medians from the lighthouse-summary.json artifact into pages.",
+  "pages": {}
+}

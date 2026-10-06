@@ -11,6 +11,10 @@ node_modules/
 # testing
 coverage/
 
+# SEO / Lighthouse local & CI reports
+.web-audit/
+.lighthouseci/
+
 # next.js
 .next/
 **/.next/

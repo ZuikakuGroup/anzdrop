@@ -9,6 +9,9 @@
     "lint": "eslint",
     "check:router": "tsc --project workers/router/tsconfig.json --noEmit",
     "measure:home": "node scripts/measure-home.mjs",
+    "audit:seo": "node scripts/seo-audit.mjs",
+    "audit:lighthouse": "node scripts/lighthouse-audit.mjs",
+    "audit:web": "npm run audit:seo && npm run audit:lighthouse",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -38,6 +41,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^26",
     "@types/qrcode": "^1.5.6",

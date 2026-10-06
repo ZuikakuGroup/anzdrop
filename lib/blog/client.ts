@@ -37,8 +37,15 @@ export function isMicrocmsNotFoundError(error: unknown): boolean {
   return error instanceof MicrocmsApiError && error.status === 404;
 }
 
-export function isBlogSeedDataEnabled(seedDataValue = process.env.BLOG_USE_SEED_DATA, nodeEnv = process.env.NODE_ENV): boolean {
-  return nodeEnv === "development" && seedDataValue === "true";
+export function isBlogSeedDataEnabled(
+  seedDataValue = process.env.BLOG_USE_SEED_DATA,
+  nodeEnv = process.env.NODE_ENV,
+  webAuditValue = process.env.WEB_AUDIT,
+): boolean {
+  if (seedDataValue !== "true") return false;
+  // development のほか、SEO/Lighthouse CI 用の production 起動(WEB_AUDIT=true)でも
+  // microCMS 無しで sitemap / blog を検証できるようにする。本番デプロイでは WEB_AUDIT を付けない。
+  return nodeEnv === "development" || webAuditValue === "true";
 }
 
 function shouldUseBlogSeedData(): boolean {
