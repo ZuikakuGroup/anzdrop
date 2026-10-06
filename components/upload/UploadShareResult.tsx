@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   XIcon,
@@ -38,8 +41,39 @@ export default function UploadShareResult({
   onOpenQr,
   onCloseQr,
 }: UploadShareResultProps) {
+  const onResetRef = useRef(onReset);
+  const onCloseQrRef = useRef(onCloseQr);
+
+  useEffect(() => {
+    onResetRef.current = onReset;
+  }, [onReset]);
+
+  useEffect(() => {
+    onCloseQrRef.current = onCloseQr;
+  }, [onCloseQr]);
+
+  // Escape で結果パネルを閉じる(×ボタンと同じ reset)。QR 表示中は先に QR だけ閉じる。
+  // isQrOpen は deps に入れ、開いた直後の Escape が誤って reset しないようにする。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (isQrOpen) {
+        onCloseQrRef.current();
+        return;
+      }
+
+      onResetRef.current();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isQrOpen]);
+
   return (
-    <div className="anz-scroll relative flex h-40 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
+    <div className="anz-scroll relative flex h-44 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
       <button
         onClick={onReset}
         aria-label="閉じる"
@@ -90,7 +124,7 @@ export default function UploadShareResult({
 
       <button
         onClick={onCopy}
-        className="rounded bg-ink px-3 py-1 text-xs font-bold text-paper transition-colors hover:bg-ink/90"
+        className="rounded bg-ink px-5 py-2.5 text-sm font-bold text-paper transition-colors hover:bg-ink/90"
       >
         {copyState === "copied"
           ? "コピーしました"
