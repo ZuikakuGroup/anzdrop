@@ -109,7 +109,10 @@ describe("POST /api/upload/part-urls", () => {
     });
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()) as {
+      success: boolean;
+      urls: Array<{ partNumber: number; url: string }>;
+    };
     expect(body.success).toBe(true);
     expect(body.urls).toHaveLength(2);
     expect(body.urls[0].partNumber).toBe(1);

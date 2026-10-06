@@ -127,7 +127,7 @@ function createPartUrlBatcher(
     reject: (error: unknown) => void;
   };
 
-  let queue: Waiter[] = [];
+  const queue: Waiter[] = [];
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let flushing: Promise<void> | null = null;
 
