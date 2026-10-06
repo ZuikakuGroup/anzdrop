@@ -351,7 +351,11 @@ export async function uploadChunksFromStream(
       throw new Error("direct upload is not configured");
     }
 
-    for (let attempt = 1; ; attempt++) {
+    let etag: string | null = null;
+
+    // PUT(とURL取得)のリトライ。成功してETagが取れたらループを抜け、
+    // 以降はACKだけを別途リトライする(8MiBパートの無駄な再送を避ける)。
+    for (let attempt = 1; etag === null; attempt++) {
       if (firstError !== null) {
         return;
       }
@@ -380,14 +384,11 @@ export async function uploadChunksFromStream(
           continue;
         }
 
-        const etag = normalizeEtag(putResponse.headers.get("ETag"));
-        if (!etag) {
+        const normalizedEtag = normalizeEtag(putResponse.headers.get("ETag"));
+        if (!normalizedEtag) {
           throw partFailure(partNumber);
         }
-
-        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag);
-        onBytesUploaded(body.byteLength);
-        return;
+        etag = normalizedEtag;
       } catch (unknownErr) {
         if (attempt >= maxAttempts || firstError !== null) {
           throw unknownErr instanceof Error
@@ -395,6 +396,25 @@ export async function uploadChunksFromStream(
             : partFailure(partNumber);
         }
         await sleep(backoffMs(attempt));
+      }
+    }
+
+    for (let ackAttempt = 1; ; ackAttempt++) {
+      if (firstError !== null) {
+        return;
+      }
+
+      try {
+        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag);
+        onBytesUploaded(body.byteLength);
+        return;
+      } catch (unknownErr) {
+        if (ackAttempt >= maxAttempts || firstError !== null) {
+          throw unknownErr instanceof Error
+            ? unknownErr
+            : partFailure(partNumber);
+        }
+        await sleep(backoffMs(ackAttempt));
       }
     }
   };

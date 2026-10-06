@@ -618,4 +618,62 @@ describe("uploadChunksFromStream", () => {
     expect(onBytesUploaded).toHaveBeenCalledTimes(1);
     expect(onBytesUploaded).toHaveBeenCalledWith(100);
   });
+
+  it("direct mode: retries only part-ack after a successful PUT", async () => {
+    let putAttempts = 0;
+    let ackAttempts = 0;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        if (url === "/api/upload/part-urls") {
+          const body = JSON.parse(String(init.body)) as {
+            parts: Array<{ partNumber: number; contentLength: number }>;
+          };
+          return Response.json({
+            success: true,
+            urls: body.parts.map((part) => ({
+              partNumber: part.partNumber,
+              url: `https://r2.example/part/${part.partNumber}`,
+            })),
+          });
+        }
+
+        if (typeof url === "string" && url.startsWith("https://r2.example/part/")) {
+          putAttempts++;
+          return new Response(null, {
+            status: 200,
+            headers: { ETag: "etag-1" },
+          });
+        }
+
+        if (url === "/api/upload/part-ack") {
+          ackAttempts++;
+          if (ackAttempts < 3) {
+            throw new Error("ack network failed");
+          }
+          return Response.json({ success: true, accepted: 1 });
+        }
+
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+
+    const onBytesUploaded = vi.fn();
+
+    await uploadChunksFromStream(
+      fromArray([ramp(100)]),
+      "session-1",
+      "token-1",
+      "flaky-ack.bin",
+      1,
+      onBytesUploaded,
+      { uploadMode: "direct", ...noBackoff }
+    );
+
+    expect(putAttempts).toBe(1);
+    expect(ackAttempts).toBe(3);
+    expect(onBytesUploaded).toHaveBeenCalledTimes(1);
+    expect(onBytesUploaded).toHaveBeenCalledWith(100);
+  });
 });

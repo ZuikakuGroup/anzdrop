@@ -46,7 +46,7 @@
 - リクエスト: `{ uploadSessionId, uploadToken, parts: [{ partNumber, etag }] }`(最大32件)
 - 認可・パート番号上限は `part-urls` / `chunk` と同じ。
 - `upload_parts` へ `INSERT OR REPLACE`(同じパートの再送・リトライに冪等)。
-- レスポンス: `{ success: true }`
+- レスポンス: `{ success: true, accepted }`(記録したパートの件数。重複したパート番号は1件として数える)
 
 ### `POST /api/upload/chunk`
 
