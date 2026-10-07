@@ -1,30 +1,4 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
-import type { RouteContext } from "@/lib/api/types";
+import { nextAdapter } from "@/lib/api/nextAdapter";
+import * as handlers from "@/server/routes/admin/shares/[shareId]/suspend/route";
 
-export const POST = withApiHandler(
-  "POST /api/admin/shares/[shareId]/suspend",
-  async (
-    request: Request,
-    context: RouteContext<{ shareId: string }>
-  ): Promise<Response> => {
-    const { env } = getCloudflareContext();
-
-    const auth = await requireAdmin(request, env);
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
-    const { shareId } = await context.params;
-
-    await env.DB.prepare(
-      `UPDATE shares SET suspended_at = ? WHERE id = ? AND suspended_at IS NULL`
-    )
-      .bind(new Date().toISOString(), shareId)
-      .run();
-
-    return Response.json({ success: true });
-  }
-);
+export const POST = nextAdapter(handlers.POST);

@@ -1,8 +1,10 @@
 # API リファレンス
 
-すべてのAPIは `app/api/**/route.ts` に実装されたNext.js App RouterのRoute Handlerで、Cloudflare Workers上で動作します。特記のない限り認証不要です。
+すべてのAPIはHono（`server/app.ts`）で振り分け、`server/routes/**/route.ts`のWeb標準Request/Responseハンドラーを既存Cloudflare Worker上で実行します。`app/api/**/route.ts`はNext.jsの互換アダプターです。URL・本文・Cookie・署名検証の仕様は維持します。既知のURLへの未対応メソッドは405、OPTIONSはAllow付き204、未定義URLはJSONの404を返し、APIレスポンスはno-storeです。特記のない限り認証不要です。
 
 エラーレスポンスの `error` フィールドはクライアント側でそのまま表示されうるため、原則として日本語のメッセージを返す(zodスキーマの`{ error: "..." }`も含む)。
+
+APIを追加するときは`server/routes`のハンドラーと`server/app.ts`のメソッド/URL登録を追加し、互換経路が必要なら`app/api`にアダプターを置きます。
 
 各ルートの実装は以下の共通ヘルパーを利用し、定型的なエラーハンドリング・検証・認可チェックを重複させない構成になっています。
 

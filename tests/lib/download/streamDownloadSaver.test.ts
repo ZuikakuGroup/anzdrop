@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // このモジュールは登録状態をモジュールスコープに持つため、テストごとに読み直す。
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -311,7 +312,8 @@ describe("saveViaServiceWorker", () => {
     vi.useRealTimers();
   });
 
-  it("SW から done 通知が来たら隠し iframe を撤去する", async () => {
+  it("SW のEOF通知直後はiframeを維持し、ダウンロード登録の猶予後に撤去する", async () => {
+    vi.useFakeTimers();
     vi.stubGlobal("navigator", {
       serviceWorker: { controller: { postMessage: vi.fn() } },
     });
@@ -337,7 +339,12 @@ describe("saveViaServiceWorker", () => {
 
     expect(removed).not.toHaveBeenCalled();
     channel.port1.onmessage!({ data: { done: true } } as MessageEvent);
-    expect(removed).toHaveBeenCalled();
+    expect(removed).not.toHaveBeenCalled();
     expect(channel.port1.close).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(removed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(removed).toHaveBeenCalledOnce();
+    vi.useRealTimers();
   });
 });

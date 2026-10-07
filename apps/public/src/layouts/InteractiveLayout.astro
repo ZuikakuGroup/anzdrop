@@ -1,0 +1,29 @@
+---
+import '../styles.css';
+interface Props { title: string; noindex?: boolean; }
+const { title, noindex = true } = Astro.props;
+---
+<!doctype html>
+<html lang="ja" class="h-full antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content="プライベートなファイル共有サービス" />
+    {!noindex && <>
+      <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+      <meta property="og:type" content="website" />
+      <meta property="og:locale" content="ja_JP" />
+      <meta property="og:site_name" content="Anzdrop" />
+      <meta property="og:title" content={title} />
+      <meta property="og:description" content="プライベートなファイル共有サービス" />
+      <meta property="og:url" content={new URL(Astro.url.pathname, Astro.site)} />
+      <meta property="og:image" content={new URL('/apple-icon.png', Astro.site)} />
+      <meta name="twitter:card" content="summary" />
+    </>}
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+  </head>
+  <body class="min-h-screen bg-paper text-ink font-sans"><slot /></body>
+</html>

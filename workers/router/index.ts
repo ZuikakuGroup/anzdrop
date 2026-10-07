@@ -19,7 +19,7 @@ export default {
     const pathname = new URL(request.url).pathname;
 
     // Requestをそのまま渡し、Cookie・本文・レスポンスストリームを加工しない。
-    // /api を含む既存の全経路は従来Workerへ送るため、認証とE2EEの境界は変わらない。
+    // /api は既存APPのHonoへ、対話画面はPUBLICのAstro/Reactへ送る。
     return isHomeRequest(pathname)
       ? env.HOME.fetch(request)
       : isPublicRequest(pathname) ? env.PUBLIC.fetch(request) : env.APP.fetch(request);

@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import RecoverPage from '@/components/account/RecoverPage';
+---
+<InteractiveLayout title="パスワードの再設定 | Anzdrop" noindex={true}>
+  <RecoverPage client:load />
+</InteractiveLayout>

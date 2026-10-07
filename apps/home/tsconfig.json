@@ -31,6 +31,7 @@
   "include": [
     "next-env.d.ts",
     "../../worker-configuration.d.ts",
+    "../../lib/account/wasm-argon2/wasm-module.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",

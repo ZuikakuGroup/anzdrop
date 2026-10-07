@@ -225,3 +225,11 @@ OTP有効化後は、OTPを要求しない旧コードへロールバックし�
 初回は公開Workerを作成してmicroCMS Secretを設定・確認した後、PUBLIC service bindingを持つルーターを切り替える。未設定のままルーターを切り替えるとブログ取得は失敗する。ローカル実装は本番設定を変更しない。
 
 監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。4WorkerをAPP、HOME、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。公開ページだけのロールバックはPUBLICを直前版に戻すか、ルーターの公開ページ振り分けを戻してNextの互換経路へ送る。
+
+### 操作画面とAPIのAstro/React・Hono移行
+
+既存`anzdrop` Workerの`custom-worker.ts`が`/api`をHonoに渡し、それ以外の互換画面をOpenNextへ渡します。D1/R2・全認証/決済Secret・Cronは同じWorkerに残り、再登録・コピーは不要です。`anzdrop-public`は公開ページに加えアップロード・ダウンロード・マイページをSSRし、React islandsを配信します。認証SecretやD1/R2は持ちません。追加Workerや追加マイグレーションはありません。
+
+既存の4Worker監査アーカイブとデプロイ手順を維持します。APPのHonoとPUBLICの新画面を先に反映し、最後にルーターを更新して`/`・`/d/*`・`/mypage/*`をPUBLICへ切り替えます。HOMEは旧アセット互換のため残します。`wrangler.api.jsonc`はローカル専用で、本番へデプロイしないでください。CIが渡す既存`NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`はAstroのビルドにも引き継がれます。
+
+切り替え前に`npm run test:astro-hono`で、実workerdの認証・ファイル共有・CSPを確認します。旧画面に戻す場合はルーターの操作画面をAPP/HOMEへ戻せますが、OTP有効ユーザーがいるため認証APIをOTP未対応の旧版へ戻してはいけません。

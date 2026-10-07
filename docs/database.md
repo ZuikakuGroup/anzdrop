@@ -1,5 +1,8 @@
 # データベース(Cloudflare D1)
 
+Astro/React・Honoへの移行ではスキーマ・保存する情報・保持期間を変更しません。Honoは既存WorkerのD1/R2バインディングを利用し、Astro側にDB・ストレージ・認証Secretは追加しません。
+
+
 スキーマは [`migrations/`](../migrations) 配下のSQLファイルで管理されている。ローカル・本番いずれも `wrangler d1 migrations apply` で適用する(手順は [`development.md`](./development.md) / [`deployment.md`](./deployment.md))。
 
 ## テーブル一覧
@@ -108,7 +111,7 @@
 | `stripe_customer_id` | TEXT (nullable) | Stripe Customer ID |
 | `stripe_subscription_id` | TEXT (nullable) | Stripe Subscription ID |
 | `created_at` | TEXT | 作成日時 |
-| `session_version` | INTEGER NOT NULL DEFAULT 0 | セッションCookie(JWT)に埋め込まれる世代番号。パスワード再設定([`recover`](../app/api/account/recover/route.ts))のたびにインクリメントされ、それより前に発行済みのセッションを全て失効させる(migration 0010) |
+| `session_version` | INTEGER NOT NULL DEFAULT 0 | セッションCookie(JWT)に埋め込まれる世代番号。パスワード再設定([`recover`](../server/routes/account/recover/route.ts))のたびにインクリメントされ、それより前に発行済みのセッションを全て失効させる(migration 0010) |
 | `failed_login_attempts` | INTEGER NOT NULL DEFAULT 0 | ログイン連続失敗回数。アカウントIDが本人設定になり予測不可能性に頼れなくなったための総当たり対策(migration 0012)。成功時・パスワード再設定時に0へリセットされる |
 | `locked_until` | TEXT (nullable) | この時刻まではログインを一時制限する(`failed_login_attempts`が5に達すると5分後の時刻をセット、同時に0へリセット。migration 0012)。制限中でも正しいパスワードなら本人は通すが、制限期間内の試行が20回を超えたら以降はダミー照合+403にする(標的型ロックアウト嫌がらせ対策と総当たり抑制の両立。詳細は[`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)) |
 

@@ -1,5 +1,5 @@
+/* eslint-disable @next/next/no-html-link-for-pages -- Astro islands navigate using full documents. */
 import { useEffect, useRef } from "react";
-import Link from "next/link";
 import { XIcon } from "@/components/brand/ShareIcons";
 
 type SendCtaModalProps = {
@@ -96,13 +96,13 @@ export default function SendCtaModal({
         <p className="mt-3 text-sm leading-relaxed text-ink/60">
           Anzdropなら、あなたもかんたんにファイルを送れます。
         </p>
-        <Link
+        <a
           href="/"
           onClick={onCtaClick}
           className="mt-7 inline-flex items-center justify-center rounded bg-brand px-5 py-2.5 text-xs font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
         >
           Anzdropでファイルを送る
-        </Link>
+        </a>
         <label className="mt-5 flex items-center justify-center gap-2 text-xs text-ink/60">
           <input
             ref={sendCtaDisableCheckboxRef}

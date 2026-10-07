@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SecurityPage from "@/components/account/SecurityPage";
 
 const { replace, canUsePasskey, qr } = vi.hoisted(() => ({ replace: vi.fn(), canUsePasskey: vi.fn().mockReturnValue(true), qr: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("next/navigation", () => {
+vi.mock("@/lib/browserNavigation", () => {
   const router = { replace };
   return { useRouter: () => router };
 });

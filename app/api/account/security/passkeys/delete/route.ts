@@ -1,1 +1,4 @@
-export { passkeyDelete as POST } from "@/lib/account/securityHandlers";
+import { nextAdapter } from "@/lib/api/nextAdapter";
+import * as handlers from "@/server/routes/account/security/passkeys/delete/route";
+
+export const POST = nextAdapter(handlers.POST);

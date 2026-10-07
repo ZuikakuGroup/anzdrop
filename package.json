@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --hostname 127.0.0.1",
+    "dev": "node scripts/dev-app.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -21,10 +21,15 @@
     "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production",
     "deploy:home": "cd apps/home && ../../node_modules/.bin/opennextjs-cloudflare build --config wrangler.jsonc && node ../../scripts/strip-vercel-og.mts && ../../node_modules/.bin/opennextjs-cloudflare deploy --config wrangler.jsonc --var DEPLOYMENT_ENV:production",
     "deploy:router": "wrangler deploy --config wrangler.router.jsonc",
-    "dev:public": "npm --prefix apps/public run dev",
-    "build:public": "npm --prefix apps/public run build",
-    "check:public": "npm --prefix apps/public run check",
-    "test:public": "bash scripts/test-public-astro.sh"
+    "dev:public": "node --env-file-if-exists=.env.local scripts/run-public.mjs dev",
+    "build:public": "node --env-file-if-exists=.env.local scripts/run-public.mjs build",
+    "check:public": "node --env-file-if-exists=.env.local scripts/run-public.mjs check",
+    "test:public": "bash scripts/test-public-astro.sh",
+    "dev:api": "wrangler dev --config wrangler.api.jsonc --ip 127.0.0.1 --port 8788 --inspector-port 9230 --var ACCOUNT_AUTH_LOCAL_ORIGIN:http://localhost:3000",
+    "dev:app": "npm run dev:public -- --host localhost --port 3000",
+    "build:api": "wrangler deploy --config wrangler.api.jsonc --dry-run --outdir tmp/hono-build",
+    "test:astro-hono": "bash scripts/test-astro-hono.sh",
+    "dev:legacy": "next dev --webpack --hostname 127.0.0.1"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",
@@ -42,6 +47,7 @@
     "aws4fetch": "^1.0.20",
     "chart.js": "^4.5.1",
     "fflate": "^0.8.3",
+    "hono": "^4.13.13",
     "jose": "^6.2.12",
     "nanoid": "^6.0.1",
     "next": "16.3.8",

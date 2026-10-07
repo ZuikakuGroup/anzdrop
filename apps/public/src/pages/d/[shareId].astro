@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import DownloadPage from '@/components/download/DownloadPage';
+---
+<InteractiveLayout title="ファイルを受け取る | Anzdrop" noindex={true}>
+  <DownloadPage shareId={Astro.params.shareId!} client:load />
+</InteractiveLayout>

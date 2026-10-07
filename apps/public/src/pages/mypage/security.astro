@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import SecurityPage from '@/components/account/SecurityPage';
+---
+<InteractiveLayout title="ログイン・セキュリティ | Anzdrop" noindex={true}>
+  <SecurityPage client:load />
+</InteractiveLayout>

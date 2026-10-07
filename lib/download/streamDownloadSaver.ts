@@ -22,6 +22,8 @@ const DOWNLOAD_URL_TIMEOUT_MS = 5_000;
 // ダウンロード完了通知が来なかった場合に隠し iframe を撤去するまでの上限。
 // 大容量ファイルのダウンロードは数十分かかりうるので長めに取る。
 const HIDDEN_IFRAME_FALLBACK_TTL_MS = 60 * 60 * 1000;
+// The browser must finish registering the attachment navigation after EOF.
+const HIDDEN_IFRAME_COMPLETION_GRACE_MS = 1_000;
 
 let registrationPromise: Promise<ServiceWorkerRegistration | null> | null = null;
 
@@ -173,7 +175,10 @@ function appendHiddenDownloadFrame(url: string): { done: () => void } {
   return {
     done: () => {
       clearTimeout(timer);
-      remove();
+      // EOF can arrive before the browser registers the attachment download.
+      // Keep its navigation alive briefly instead of cancelling it at EOF.
+      const cleanup = setTimeout(remove, HIDDEN_IFRAME_COMPLETION_GRACE_MS);
+      (cleanup as unknown as { unref?: () => void }).unref?.();
     },
   };
 }
