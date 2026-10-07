@@ -47,6 +47,7 @@ export default function AdvancedSettings({
               key={option.value}
               type="button"
               onClick={() => onRetentionChange(option.value)}
+              aria-pressed={retention === option.value}
               className={`flex-1 rounded border-2 py-2 text-xs font-bold transition-colors ${
                 retention === option.value
                   ? "border-brand bg-brand text-paper"

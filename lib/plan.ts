@@ -38,6 +38,13 @@ export const PLAN_LIMITS: Record<
   },
 };
 
+// 新しい共有の保存期間の初期値。詳細設定でユーザーが変更できる。
+export const PLAN_DEFAULT_RETENTION: Record<Plan, Retention> = {
+  free: "7d",
+  standard: "15d",
+  premium: "30d",
+};
+
 // BillingPage・(将来の)PricingPageで使い回す表示用の単一の情報源。
 export const PLAN_LABELS: Record<Plan, string> = {
   free: "無料プラン",
