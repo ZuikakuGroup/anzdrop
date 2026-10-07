@@ -10,17 +10,29 @@ type FaqItem = {
 
 type FaqAccordionProps = {
   items: FaqItem[];
+  native?: boolean;
   marker?: "chevron" | "plus";
   className?: string;
 };
 
 export default function FaqAccordion({
   items,
+  native = false,
   marker = "chevron",
   className = "divide-y divide-ink/10 border-t border-ink/10",
 }: FaqAccordionProps) {
   const baseId = useId();
   const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  // Astro's public pages keep FAQ interaction native, without hydrating the page.
+  if (native) return <div className={className}>{items.map((item) =>
+    <details key={item.question} name={baseId} className="group py-5">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand sm:text-base [&::-webkit-details-marker]:hidden">
+        {item.question}
+        {marker === "plus" ? <PlusIcon className="h-5 w-5 shrink-0 text-brand-text transition-transform motion-reduce:transition-none group-open:rotate-45" /> : <ChevronIcon className="h-4 w-4 shrink-0 text-ink/40 transition-transform motion-reduce:transition-none group-open:rotate-180" />}
+      </summary>
+      <div className="pr-8 pt-3 text-sm leading-7 text-ink/70">{item.answer}</div>
+    </details>)}</div>;
 
   return (
     <div className={className}>

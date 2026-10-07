@@ -1,0 +1,42 @@
+---
+import SiteHeader from '@/components/brand/SiteHeader';
+import SiteFooter from '@/components/brand/SiteFooter';
+import '../styles.css';
+interface Props { title: string; description?: string; canonical?: string; image?: string; article?: { publishedAt: string; updatedAt: string }; landing?: boolean; noindex?: boolean; }
+const { title, description = 'プライベートなファイル共有サービス', canonical = Astro.url.pathname, image = '/apple-icon.png', article, landing = false, noindex = false } = Astro.props;
+const canonicalUrl = new URL(canonical, Astro.site);
+const imageUrl = new URL(image, Astro.site);
+---
+<!doctype html>
+<html lang="ja" class="h-full antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonicalUrl} />
+    <meta property="og:type" content={article ? 'article' : 'website'} />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:site_name" content="Anzdrop" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={imageUrl} />
+    <meta property="og:image:alt" content={title} />
+    <meta name="twitter:card" content={article ? 'summary_large_image' : 'summary'} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageUrl} />
+    {article && <><meta property="article:published_time" content={article.publishedAt} /><meta property="article:modified_time" content={article.updatedAt} /></>}
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+  </head>
+  <body class:list={['min-h-screen bg-paper text-ink font-sans', { 'landing-page-font': landing }]}>
+    <div class="flex min-h-screen flex-col">
+      <SiteHeader client:load />
+      <slot />
+      <SiteFooter />
+    </div>
+  </body>
+</html>

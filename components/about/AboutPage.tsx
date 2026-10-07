@@ -60,10 +60,10 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function AboutPage() {
+export default function AboutPage({ showChrome = true, nativeFaq = false }: { showChrome?: boolean; nativeFaq?: boolean } = {}) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
+    <div className={showChrome ? "flex min-h-screen flex-col" : "flex flex-1 flex-col"}>
+      {showChrome && <SiteHeader />}
 
       <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-2xl space-y-8">
@@ -121,12 +121,12 @@ export default function AboutPage() {
 
           <section className="space-y-4 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
             <SectionHeading>よくある質問</SectionHeading>
-            <FaqAccordion items={FAQ_ITEMS} />
+            <FaqAccordion native={nativeFaq} items={FAQ_ITEMS} />
           </section>
         </div>
       </main>
 
-      <SiteFooter />
+      {showChrome && <SiteFooter />}
     </div>
   );
 }

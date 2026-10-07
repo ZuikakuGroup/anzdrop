@@ -2,15 +2,16 @@
 
 ## 全体構成
 
-Anzdropは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) でCloudflare Workers上にデプロイして動かしています。トップページだけは初期応答のばらつきを抑えるため別Workerへ分離し、API Routes(`app/api/**/route.ts`)とそれ以外の画面は既存Workerで動作します。状態は以下のCloudflareリソースに保存されます。
+アカウント・共有・APIは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) でCloudflare Workers上にデプロイして動かしています。トップページだけは初期応答のばらつきを抑えるため別Workerへ分離し、公開コンテンツはAstroの別WorkerでSSRし、API Routes(`app/api/**/route.ts`)とアカウント・共有画面は既存Workerで動作します。状態は以下のCloudflareリソースに保存されます。
 
 ```
 ブラウザ (E2EE暗号化/復号はすべてここで行う)
    │
    ▼
 Cloudflare Workers
-   ├─ anzdrop-router … `/` と `/_home-next/*` をトップページWorkerへ、それ以外を既存Workerへ転送
+   ├─ anzdrop-router … `/` と `/_home-next/*` をHOMEへ、公開コンテンツをPUBLICへ、それ以外をAPPへ転送
    ├─ anzdrop-home … トップページのSSR・nonce CSP・アップロードUI（永続ストレージなし）
+   ├─ anzdrop-public … Astroの公開ページ・ブログSSR（永続ストレージなし）
    └─ anzdrop … Next.js API・各画面・D1/R2・Cron Trigger
        ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
        ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
@@ -45,7 +46,7 @@ Cloudflare Workers
 | パス | 役割 |
 | --- | --- |
 | `/`(`app/page.tsx`) | アップロード画面(`components/upload/uploadForm.tsx`) |
-| `/lp/secure-file-sharing`(`app/lp/secure-file-sharing/page.tsx`) | Google検索広告向けのファイル共有LP。共通ヘッダーを使い、登録不要・送信前のブラウザ内暗号化・無料プランの条件を冒頭で示す。3段階の利用手順、通常の共有URLの鍵の位置、FAQを掲載して`/`へ案内する。最初の着地パスは既存のAnalyticsで計測。ヒーローのLoose Drawingイラスト1点をローカル同梱する。見出しアクセントとCTAは共通のブランド色(`#f15a22`)を使う |
+| `/lp/secure-file-sharing`(`apps/public/src/pages/lp/secure-file-sharing.astro`) | Google検索広告向けのファイル共有LP。共通ヘッダーを使い、登録不要・送信前のブラウザ内暗号化・無料プランの条件を冒頭で示す。3段階の利用手順、通常の共有URLの鍵の位置、FAQを掲載して`/`へ案内する。最初の着地パスは既存のAnalyticsで計測。ヒーローのLoose Drawingイラスト1点をローカル同梱する。見出しアクセントとCTAは共通のブランド色(`#f15a22`)を使う |
 | `/d/[shareId]`(`app/d/[shareId]/page.tsx`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
@@ -53,8 +54,8 @@ Cloudflare Workers
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
 | `/mypage`(`app/mypage/page.tsx`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
 | `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
-| `/pricing`(`app/pricing/page.tsx`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
-| `/about`(`app/about/page.tsx`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
+| `/pricing`(`apps/public/src/pages/pricing.astro`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
+| `/about`(`apps/public/src/pages/about.astro`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
 | `/contact`(`app/contact/page.tsx`) | 一般向けお問い合わせフォーム(`components/contact/ContactForm.tsx`)。共通ヘッダー・フッターから遷移 |
 | `/legal/terms`・`/legal/privacy`・`/legal/tokushoho` | 利用規約・プライバシーポリシー・特定商取引法に基づく表記([`legal.md`](./legal.md)) |
 
@@ -181,3 +182,11 @@ CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定�
 パスキーはSimpleWebAuthnでOrigin・RP ID・署名・本人確認を検証する。登録はdiscoverable credential必須・attestationなし。OTPは独立したアカウント単位の試行枠を持ち、コード再利用を時間ステップの条件付き更新で拒否する。設定変更の再認証証明は対象操作に限定し、異なる変更に流用しない。ログには秘密・認証応答・検証例外を含めない。
 
 認証情報の保存は許可済みのD1内に限定し、ファイル暗号化処理と復号鍵の管理には変更を加えない。保存内容は [database.md](./database.md)、画面・復旧仕様は [accounts.md](./accounts.md) を参照。
+
+## Astroの公開ページ
+
+`apps/public` が `/about`、`/pricing`、`/legal/{terms,privacy,tokushoho}`、`/lp/secure-file-sharing`、`/blog` と記事・分類・タグ・著者ページ、`/robots.txt`、`/sitemap.xml` を提供する。生成アセットは `/_public-astro/`。URLは維持し、共通React部品をSSRする。ヘッダー、画像拡大、LPの既存計測だけをReact islandとして実行し、FAQとブログのページ送りはHTML標準機能を使う。
+
+ブログ取得・検証は `lib/blog/core.ts` をNext/Astroで共有する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
+
+Nextの同名公開ルートは開発用とルーターを戻す際の互換経路として残す。公開ページへのリンクは通常のドキュメント遷移を使い、NextのRSCリクエストをWorker間に持ち越さない。

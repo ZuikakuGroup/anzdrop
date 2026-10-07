@@ -1,5 +1,5 @@
-import Image from "next/image";
-import Link from "next/link";
+/* eslint-disable @next/next/no-html-link-for-pages -- Shared with Astro; cross-Worker navigation requires a full document request. */
+/* eslint-disable @next/next/no-img-element -- Shared with Astro; serve this local illustration directly. */
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { ArrowRightIcon } from "@/components/brand/ShareIcons";
@@ -8,12 +8,12 @@ import LandingViewTracker from "./LandingViewTracker";
 
 function PrimaryCta({ className = "" }: { className?: string }) {
   return (
-    <Link
+    <a
       href="/"
       className={"inline-flex min-h-12 items-center justify-center gap-3 rounded bg-brand-action px-6 py-3 text-sm font-black text-paper transition-colors hover:bg-brand-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand " + className}
     >
       無料でファイルを送る <ArrowRightIcon className="h-4 w-4 shrink-0" />
-    </Link>
+    </a>
   );
 }
 
@@ -31,11 +31,11 @@ const FAQS = [
   { question: "共有URLをなくした場合、あとから復元できますか?", answer: "通常の共有では復号鍵がURLに含まれ、サーバーには保存されません。URLをなくすと運営者でも復元できません。URLは受取人へ安全な方法で共有してください。" },
 ];
 
-export default function SecureFileSharingLandingPage() {
+export default function SecureFileSharingLandingPage({ showChrome = true, nativeFaq = false }: { showChrome?: boolean; nativeFaq?: boolean } = {}) {
   return (
-    <div className="landing-page-font min-h-screen bg-paper text-ink">
-      <LandingViewTracker />
-      <SiteHeader />
+    <div className={showChrome ? "landing-page-font min-h-screen bg-paper text-ink" : "flex-1"}>
+      {showChrome && <LandingViewTracker />}
+      {showChrome && <SiteHeader />}
 
       <main>
         <section aria-labelledby="hero-heading" className="px-5 pb-14 pt-12 sm:px-8 sm:pb-20 sm:pt-16 lg:py-20">
@@ -50,14 +50,14 @@ export default function SecureFileSharingLandingPage() {
               </p>
               <div className="mt-8 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
                 <PrimaryCta className="w-full sm:w-auto" />
-                <Link href="/about" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink/70 transition-colors hover:text-brand-text">
+                <a href="/about" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink/70 transition-colors hover:text-brand-text">
                   安全性について <ArrowRightIcon className="h-4 w-4 shrink-0" />
-                </Link>
+                </a>
               </div>
               <p className="mt-4 text-sm text-ink/60">無料プランは1ファイル最大5GB・広告なし</p>
             </div>
             <div className="flex items-center justify-center overflow-hidden rounded-lg bg-ink/[0.03] px-4 py-3 sm:px-8 sm:py-6 md:min-h-[23rem]">
-              <Image src="/images/loosedrawing/file-sharing.png" alt="2人の間でファイルを共有するイラスト" width={799} height={799} preload sizes="(min-width: 1024px) 440px, (min-width: 768px) 360px, (min-width: 640px) 480px, 340px" className="h-52 w-full max-w-[27rem] scale-[1.15] object-contain sm:h-72 md:h-80" />
+              <img src="/images/loosedrawing/file-sharing.png" alt="2人の間でファイルを共有するイラスト" width={799} height={799} loading="eager" fetchPriority="high" sizes="(min-width: 1024px) 440px, (min-width: 768px) 360px, (min-width: 640px) 480px, 340px" className="h-52 w-full max-w-[27rem] scale-[1.15] object-contain sm:h-72 md:h-80" />
             </div>
           </div>
         </section>
@@ -97,7 +97,7 @@ export default function SecureFileSharingLandingPage() {
               <p className="mt-5 text-base leading-8 text-ink/75">
                 ファイルは送信前にブラウザ内で暗号化します。通常の共有の場合、復号鍵は共有URLの「#」以降に入り、この部分はサーバーへ送られません。
               </p>
-              <Link href="/about" className="mt-5 inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">暗号化の仕組みを詳しく見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></Link>
+              <a href="/about" className="mt-5 inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">暗号化の仕組みを詳しく見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></a>
             </div>
             <div className="border border-ink/10 bg-paper p-5 sm:p-8">
               <p className="text-xs font-bold text-ink/60">通常の共有URL（パスワード未設定時）</p>
@@ -118,7 +118,7 @@ export default function SecureFileSharingLandingPage() {
           <div className="mx-auto max-w-6xl">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div><p className="text-sm font-bold text-brand-text">無料プラン</p><h2 id="plan-heading" className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">登録なしで、無料から。</h2></div>
-              <Link href="/pricing" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">料金プランを見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></Link>
+              <a href="/pricing" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">料金プランを見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></a>
             </div>
             <dl className="mt-10 grid border-y border-ink/15 sm:grid-cols-3 sm:divide-x sm:divide-ink/15">
               <div className="flex items-baseline justify-between gap-5 py-5 sm:block sm:pr-8"><dt className="text-sm text-ink/65">1ファイルの最大容量</dt><dd className="text-2xl font-bold">5GB</dd></div>
@@ -133,6 +133,7 @@ export default function SecureFileSharingLandingPage() {
           <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
             <h2 id="faq-heading" className="text-3xl font-extrabold tracking-tight sm:text-4xl">よくある質問</h2>
             <FaqAccordion
+              native={nativeFaq}
               items={FAQS}
               marker="plus"
               className="divide-y divide-ink/15 border-y border-ink/15"
@@ -148,7 +149,7 @@ export default function SecureFileSharingLandingPage() {
         </section>
       </main>
 
-      <SiteFooter />
+      {showChrome && <SiteFooter />}
     </div>
   );
 }

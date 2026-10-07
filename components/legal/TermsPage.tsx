@@ -10,9 +10,9 @@ import {
   OPERATOR_GROUP_LABEL,
 } from "@/lib/legal/constants";
 
-export default function TermsPage() {
+export default function TermsPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   return (
-    <LegalLayout
+    <LegalLayout showChrome={showChrome}
       title="利用規約"
       description="Anzdropをご利用いただく前にお読みください。"
       lastUpdated={LEGAL_LAST_UPDATED}

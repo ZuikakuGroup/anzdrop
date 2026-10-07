@@ -34,6 +34,7 @@
     "node_modules",
     "workers/router",
     "apps/home/.next",
-    "apps/home/.open-next"
+    "apps/home/.open-next",
+    "apps/public"
   ]
 }

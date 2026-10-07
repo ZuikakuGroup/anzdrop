@@ -16,7 +16,7 @@ Anzdrop(あんずどろっぷ)は、Cloudflare Workers上で動くエンドツ�
 
 ## 技術スタック
 
-- [Next.js](https://nextjs.org/)(App Router)/ React / TypeScript
+- [Next.js](https://nextjs.org/)(App Router、共有・アカウント・API) / [Astro](https://astro.build/)(公開コンテンツ) / React / TypeScript
 - [Cloudflare Workers](https://workers.cloudflare.com/) + [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare)
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)(メタデータ)/ [Cloudflare R2](https://developers.cloudflare.com/r2/)(暗号化済みファイル本体)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)(管理画面の認証)/ [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)(アップロード時のBot対策)
@@ -44,6 +44,10 @@ npm run dev
 | --- | --- |
 | `npm run dev` | 開発サーバー起動(Turbopackの既知の不具合を避けるためwebpackモード) |
 | `npm run build` | Next.jsの本番ビルド |
+| `npm run dev:public` | Astro公開ページの開発サーバー（4321番） |
+| `npm run build:public` | Astro公開Workerのビルド |
+| `npm run check:public` | Astroの型・テンプレート検証 |
+| `npm run test:public` | 実WorkersとChromiumで公開ページを検証 |
 | `npm run lint` | ESLint |
 | `npm run measure:home` | Lighthouseによるトップページの合成計測。`SITE_URL`で対象を指定可能 |
 | `npm run audit:seo` | 起動中のサイトに対する SEO 自動検査(詳細は [`docs/web-audit.md`](./docs/web-audit.md)) |
@@ -57,7 +61,7 @@ npm run dev
 
 `main`ブランチへのpushで GitHub Actions が自動的にD1マイグレーション適用とデプロイを行います([`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml))。
 
-本番デプロイでは、ビルドした3つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
+本番デプロイでは、ビルドした4つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
 
 ## ドキュメント
 

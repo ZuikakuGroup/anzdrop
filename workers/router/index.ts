@@ -1,4 +1,4 @@
-import { isHomeRequest } from "./routing";
+import { isHomeRequest, isPublicRequest } from "./routing";
 
 type ServiceBinding = {
   fetch(request: Request): Response | Promise<Response>;
@@ -7,6 +7,7 @@ type ServiceBinding = {
 type RouterEnv = {
   HOME: ServiceBinding;
   APP: ServiceBinding;
+  PUBLIC: ServiceBinding;
 };
 
 type RouterHandler = {
@@ -21,6 +22,6 @@ export default {
     // /api を含む既存の全経路は従来Workerへ送るため、認証とE2EEの境界は変わらない。
     return isHomeRequest(pathname)
       ? env.HOME.fetch(request)
-      : env.APP.fetch(request);
+      : isPublicRequest(pathname) ? env.PUBLIC.fetch(request) : env.APP.fetch(request);
   },
 } satisfies RouterHandler;

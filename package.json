@@ -20,9 +20,15 @@
     "preview": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && node scripts/strip-vercel-og.mts && opennextjs-cloudflare deploy --var DEPLOYMENT_ENV:production",
     "deploy:home": "cd apps/home && ../../node_modules/.bin/opennextjs-cloudflare build --config wrangler.jsonc && node ../../scripts/strip-vercel-og.mts && ../../node_modules/.bin/opennextjs-cloudflare deploy --config wrangler.jsonc --var DEPLOYMENT_ENV:production",
-    "deploy:router": "wrangler deploy --config wrangler.router.jsonc"
+    "deploy:router": "wrangler deploy --config wrangler.router.jsonc",
+    "dev:public": "npm --prefix apps/public run dev",
+    "build:public": "npm --prefix apps/public run build",
+    "check:public": "npm --prefix apps/public run check",
+    "test:public": "bash scripts/test-public-astro.sh"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^14.3.4",
+    "@astrojs/react": "^7.0.1",
     "@cloudflare/workers-types": "^5.20261003.1",
     "@hibiki-js/core": "^0.2.0",
     "@hibiki-js/stripe": "^0.3.0",
@@ -31,6 +37,8 @@
     "@simplewebauthn/server": "^14.0.3",
     "@stripe/react-stripe-js": "^7.0.0",
     "@stripe/stripe-js": "^10.0.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "astro": "^7.3.6",
     "aws4fetch": "^1.0.20",
     "chart.js": "^4.5.1",
     "fflate": "^0.8.3",
@@ -46,6 +54,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.10",
     "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",

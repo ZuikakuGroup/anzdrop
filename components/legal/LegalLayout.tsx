@@ -9,15 +9,17 @@ export default function LegalLayout({
   description,
   lastUpdated,
   children,
+  showChrome = true,
 }: {
+  showChrome?: boolean;
   title: string;
   description?: string;
   lastUpdated: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
+    <div className={showChrome ? "flex min-h-screen flex-col" : "flex flex-1 flex-col"}>
+      {showChrome && <SiteHeader />}
 
       <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-2xl space-y-8">
@@ -58,7 +60,7 @@ export default function LegalLayout({
         </div>
       </main>
 
-      <SiteFooter />
+      {showChrome && <SiteFooter />}
     </div>
   );
 }

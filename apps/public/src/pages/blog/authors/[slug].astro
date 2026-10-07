@@ -1,0 +1,15 @@
+---
+import BlogLayout from '../../../layouts/BlogLayout.astro';
+import BlogCards from '../../../components/BlogCards.astro';
+import { blog, isMicrocmsNotFoundError } from '../../../lib/blog';
+let item;
+try { item = await blog.getAuthor(Astro.params.slug!); }
+catch (error) { if (isMicrocmsNotFoundError(error)) return Astro.rewrite('/404'); throw error; }
+const posts = await blog.getAllPosts({ filters: `author[equals]${item.id}` });
+---
+<BlogLayout title={`${item.name} | Anzdropブログ`} description={item.bio} canonical={`/blog/authors/${encodeURIComponent(item.id)}`}>
+  <div class="mx-auto max-w-6xl space-y-8">
+    <header class="flex items-start gap-5 rounded-lg border border-ink/10 p-6"><img src={item.image.url} alt="" width="96" height="96" class="h-24 w-24 rounded-full object-cover" /><div class="space-y-2"><h1 class="text-3xl font-black">{item.name}</h1><p class="whitespace-pre-wrap text-sm leading-relaxed text-ink/60">{item.bio}</p>{item.externalUrl && <a href={item.externalUrl} target="_blank" rel="noopener noreferrer" class="text-sm font-bold text-brand hover:underline">プロフィールを見る</a>}</div></header>
+    {posts.length ? <BlogCards posts={posts} /> : <p class="text-sm text-ink/60">記事はまだありません。</p>}
+  </div>
+</BlogLayout>

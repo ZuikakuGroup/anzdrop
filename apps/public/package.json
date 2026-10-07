@@ -1,0 +1,1 @@
+{"name":"anzdrop-public","private":true,"type":"module","scripts":{"dev":"astro dev --host 127.0.0.1","build":"astro build","check":"astro check"}}
