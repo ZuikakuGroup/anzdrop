@@ -54,7 +54,7 @@ async function get<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {})
   for (const [key, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(key, String(value));
   // OpenNextの共有Tag Cacheを追加するとD1/R2/DOへ永続データを追加するため、
   // 現時点では保存を伴わないno-storeでmicroCMSの公開内容を直接返す。
-  const response = await fetch(url, { headers: { "X-MICROCMS-API-KEY": env.MICROCMS_API_KEY }, cache: "no-store" });
+  const response = await fetch(url, { headers: { "X-MICROCMS-API-KEY": env.MICROCMS_API_KEY }, cache: "no-store", redirect: "manual" });
   if (!response.ok) throw new MicrocmsApiError(response.status);
   return schema.parse(await response.json());
 }

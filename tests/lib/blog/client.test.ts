@@ -52,6 +52,23 @@ describe("microCMS client", () => {
     expect(isMicrocmsNotFoundError(new MicrocmsApiError(404))).toBe(true);
   });
 
+  it.each([301, 302, 303, 307, 308])("rejects HTTP %s redirects without following them", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status,
+      headers: { Location: "https://example.com/redirected" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const error = await getPost("post-id").catch(cause => cause);
+
+    expect(error).toBeInstanceOf(MicrocmsApiError);
+    expect(error.status).toBe(status);
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(expect.any(URL), expect.objectContaining({
+      headers: { "X-MICROCMS-API-KEY": "api-key" },
+      redirect: "manual",
+    }));
+  });
+
   it("fetches all pages by advancing the offset", async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => ({
       id: `category-${index}`,
