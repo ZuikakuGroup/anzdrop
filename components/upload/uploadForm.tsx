@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Script from "next/script";
 import {
+  PLAN_DEFAULT_RETENTION,
   getMaxFileSizeBytes,
   getUploadConcurrencyForPlan,
   isTurnstileRequiredForPlan,
@@ -111,7 +112,8 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle"
   );
-  const [retention, setRetention] = useState<Retention>("7d");
+  const [retention, setRetention] = useState<Retention>(PLAN_DEFAULT_RETENTION.free);
+  const retentionLockedRef = useRef(false);
   const [usePassword, setUsePassword] = useState(false);
   const [hasCreatedShare, setHasCreatedShare] = useState(false);
   const [password, setPassword] = useState("");
@@ -148,6 +150,10 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       .then((data) => {
         if (data.success) {
           setPlan(data.plan);
+          // 手動選択・アップロード開始後の保存期間は遅い認証応答で上書きしない。
+          if (!retentionLockedRef.current) {
+            setRetention(PLAN_DEFAULT_RETENTION[data.plan]);
+          }
         }
       })
       .catch(() => {});
@@ -417,6 +423,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     }
 
     setError("");
+    retentionLockedRef.current = true;
     setIsUploading(true);
     setProgress(0);
     setShowAdvanced(false);
@@ -584,7 +591,8 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
     setUsePassword(false);
     setHasCreatedShare(false);
     setPassword("");
-    setRetention("7d");
+    retentionLockedRef.current = false;
+    setRetention(PLAN_DEFAULT_RETENTION[plan]);
     setShowAdvanced(false);
     setIsQrOpen(false);
 
@@ -707,7 +715,10 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                     <AdvancedSettings
                       plan={plan}
                       retention={retention}
-                      onRetentionChange={setRetention}
+                      onRetentionChange={(value) => {
+                        retentionLockedRef.current = true;
+                        setRetention(value);
+                      }}
                       usePassword={usePassword}
                       onUsePasswordChange={setUsePassword}
                       password={password}
