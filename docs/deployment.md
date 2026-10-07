@@ -54,6 +54,8 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 ### Cloudflare Workersのシークレット(`wrangler secret put`、リポジトリには含まれない)
 
+`secrets.required` による全機能一律の必須チェックは設定しない。アカウント認証には `TURNSTILE_SECRET_KEY`・`SESSION_SECRET`・`ACCOUNT_AUTH_ENCRYPTION_KEY` を導入前に設定する。決済のキーは対象の決済機能を利用する場合に、`ANALYTICS_SECRET` は相関分析を利用する場合に設定する。R2直アップロードの3つのSecretは任意で、未設定ならproxyを利用する。
+
 オウンドメディアを有効化する場合は、`MICROCMS_API_KEY`（GET専用の Content API key）と `MICROCMS_WEBHOOK_SECRET` を設定する。`MICROCMS_SERVICE_DOMAIN` と `SITE_URL` は `wrangler.jsonc` の非秘密変数として本番値に更新する。詳しくは [`media.md`](./media.md) を参照。
 
 | Secret名 | 用途 |

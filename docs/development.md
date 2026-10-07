@@ -26,6 +26,19 @@ npm install
 
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 
+### 機能ごとのWorkers Secret
+
+`wrangler.jsonc` では `secrets.required` を定義しない。この指定はデプロイ時の必須チェックだけでなく、ローカルの `.dev.vars` / `.env` を一覧のキーだけに制限するため、任意機能のSecretが読み込まれなくなる。ローカルではリポジトリ直下のgitignore対象 `.dev.vars` に、検証する機能のSecretだけを設定し、開発サーバーを再起動する。別の開発用Workerや本番Secretの変更は不要。
+
+| 機能 | `.dev.vars` に設定する名前 |
+| --- | --- |
+| アカウント・OTP | `TURNSTILE_SECRET_KEY`、`SESSION_SECRET`、`ACCOUNT_AUTH_ENCRYPTION_KEY` |
+| R2直アップロード | `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`CLOUDFLARE_ACCOUNT_ID`（3つすべて） |
+| microCMSの記事取得・Webhook | `MICROCMS_API_KEY`、`MICROCMS_WEBHOOK_SECRET` |
+| Stripe / OpenNode / 分析 | `STRIPE_SECRET_KEY`・`STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` / `ANALYTICS_SECRET` |
+
+R2直アップロードのSecretが揃わない場合はproxyへフォールバックする。microCMSを使わない場合はそのSecretを省略できる。Webhookを検証する場合は `MICROCMS_WEBHOOK_SECRET` も設定する。実際の鍵はテスト用リソースのものを使い、ソースコード・ログ・コミットに含めない。OTP専用鍵の形式と本番への導入順は [deployment.md](./deployment.md) を参照。
+
 ### D1・R2のローカル永続化
 
 `next.config.ts` で `initOpenNextCloudflareForDev()` にローカルD1/R2の永続化先をOSの一時ディレクトリ(`os.tmpdir()/anzdrop-wrangler-state`)に指定している(理由は後述の「既知の問題」参照)。この永続化先に対して初回のみマイグレーションを適用する必要がある。

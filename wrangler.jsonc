@@ -12,14 +12,8 @@
 
   // ANALYTICS_SECRET(lib/analytics/transferId.tsのHMAC鍵)は秘密情報のため
   // ここには書かず、`wrangler secret put ANALYTICS_SECRET` で別途設定する。
-  // OTP secret encryption uses a dedicated key, separate from SESSION_SECRET.
-  "secrets": {
-    "required": [
-      "TURNSTILE_SECRET_KEY", "SESSION_SECRET", "ACCOUNT_AUTH_ENCRYPTION_KEY",
-      "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "OPENNODE_API_KEY",
-      "ANALYTICS_SECRET", "MICROCMS_API_KEY"
-    ]
-  },
+  // secrets.required filters local secrets too; optional R2/microCMS keys must remain loadable.
+  // Required keys and the dedicated OTP encryption key are documented in docs/deployment.md.
   "vars": {
     // microCMS のサービスドメインと公開URL。APIキー等の秘密情報は vars には置かない。
     "MICROCMS_SERVICE_DOMAIN": "anzdrop.microcms.io",
