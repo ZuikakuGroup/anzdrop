@@ -176,7 +176,6 @@ export default function SecurityPage() {
         <a href="/mypage" className="text-sm text-ink/60 hover:text-ink">← マイページ</a>
         <h1 className="text-2xl font-black leading-snug tracking-normal">ログイン・セキュリティ</h1>
         <p className="text-xs text-ink/50">パスキーと認証アプリは、必要に応じて設定できます。</p>
-        {status && <p className="break-all text-sm text-ink/60">アカウントID: <span className="font-mono text-ink">{status.accountId}</span></p>}
       </div>
       {!status ? <div className="rounded border border-ink/10 p-4">
         {error ? <><p role="alert" className="mb-4 text-sm text-brand">{error}</p><button onClick={load} className={buttonStyle}>再読み込み</button></> : <Spinner className="h-6 w-6 text-brand" />}
@@ -188,7 +187,7 @@ export default function SecurityPage() {
           </div>
           <p className="mt-2 text-sm leading-relaxed text-ink/65">指紋・顔認証・端末のPINでログインできます。</p>
           {status.passkeys.length > 0 && <ul className="mt-5 divide-y divide-ink/10 border-y border-ink/10">{status.passkeys.map((key) => <li key={key.id} className="flex items-center justify-between gap-4 py-4">
-            <div className="min-w-0"><p className="break-all text-sm font-bold">{key.name}</p><p className="mt-1 text-xs text-ink/60">登録日: {new Date(key.createdAt).toLocaleDateString("ja-JP")}</p></div>
+            <div className="min-w-0"><p className="break-all text-sm font-bold">{key.name}</p></div>
             <button disabled={busy || done} onClick={(event) => choose({ action: "passkey-delete", targetId: key.id }, event.currentTarget)} className="shrink-0 rounded px-3 py-2 text-sm text-ink/60 hover:bg-ink/5 hover:text-brand">削除</button>
           </li>)}</ul>}
           {canUsePasskey ? <div className="mt-5">

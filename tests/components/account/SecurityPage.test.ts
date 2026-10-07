@@ -37,6 +37,22 @@ async function submit(values: Record<string, string>) {
 }
 
 describe("security settings", () => {
+  it.each([false, true])("omits account ID and registration dates with OTP enabled: %s", async (totpEnabled) => {
+    fetchMock.mockResolvedValue(json({
+      ...status, totpEnabled,
+      passkeys: [{ id: "key-1", name: "My phone", createdAt: "2026-10-07T00:00:00.000Z" }],
+    }));
+    await render();
+    expect(container.textContent).toContain("My phone");
+    expect(container.textContent).toContain("登録済み 1件");
+    expect(container.textContent).toContain(totpEnabled ? "有効" : "未設定");
+    expect(container.textContent).not.toContain("アカウントID");
+    expect(container.textContent).not.toContain("alice");
+    expect(container.textContent).not.toContain("登録日");
+    expect(container.textContent).not.toContain("2026/10/7");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "削除")).toBe(true);
+  });
+
   it("enables OTP only after checking the first code", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/account/security") return json(status);
