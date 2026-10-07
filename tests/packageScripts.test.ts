@@ -15,7 +15,10 @@ describe("package scripts", () => {
   it("binds the development server to the loopback interface", async () => {
     const packageJson = await readPackageJson();
 
-    expect(packageJson.scripts?.dev).toBe("next dev --webpack --hostname 127.0.0.1");
+    expect(packageJson.scripts?.dev).toBe("node scripts/dev-app.mjs");
+    expect(packageJson.scripts?.["dev:api"]).toContain("--ip 127.0.0.1");
+    expect(packageJson.scripts?.["dev:app"]).toContain("--host localhost");
+    expect(packageJson.scripts?.["dev:legacy"]).toContain("--hostname 127.0.0.1");
   });
 
   it("runs the home-page measurement as plain JavaScript", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import Script from "next/script";
+import Script from "@/components/brand/ExternalScript";
 import {
   PLAN_DEFAULT_RETENTION,
   getMaxFileSizeBytes,

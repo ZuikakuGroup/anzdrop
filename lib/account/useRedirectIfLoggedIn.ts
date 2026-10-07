@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/browserNavigation";
 import type { MeResponse } from "@/app/api/account/me/schema";
 
 // 既にログイン済みの場合はdestinationへリダイレクトする(ログイン/サインアップ
@@ -9,9 +9,7 @@ import type { MeResponse } from "@/app/api/account/me/schema";
 // わかるまではfalseを返すので、呼び出し側はその間フォームの代わりに
 // 読み込み中の表示を出す。
 //
-// リダイレクトは router.replace(ソフト遷移)で行う。window.location による
-// フルリロードだと、遷移先(/mypage 等)で改めてスピナー→表示となり、
-// ログイン画面のスピナーと合わせてローディングが2回続いて見える。
+// Astroの画面へフルドキュメント遷移する。Cookieは同一Originで維持される。
 export function useRedirectIfLoggedIn(destination: string): boolean {
   const router = useRouter();
   const [canRenderForm, setCanRenderForm] = useState(false);

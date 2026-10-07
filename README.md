@@ -16,7 +16,7 @@ Anzdrop(あんずどろっぷ)は、Cloudflare Workers上で動くエンドツ�
 
 ## 技術スタック
 
-- [Next.js](https://nextjs.org/)(App Router、共有・アカウント・API) / [Astro](https://astro.build/)(公開コンテンツ) / React / TypeScript
+- [Astro](https://astro.build/)(公開ページ・アップロード・ダウンロード・マイページ) / React / [Hono](https://hono.dev/)(API) / TypeScript。管理・問い合わせ・通報画面はNext.jsの互換経路を維持
 - [Cloudflare Workers](https://workers.cloudflare.com/) + [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare)
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)(メタデータ)/ [Cloudflare R2](https://developers.cloudflare.com/r2/)(暗号化済みファイル本体)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)(管理画面の認証)/ [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)(アップロード時のBot対策)
@@ -42,7 +42,9 @@ npm run dev
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm run dev` | 開発サーバー起動(Turbopackの既知の不具合を避けるためwebpackモード) |
+| `npm run dev` | Astro＋React（localhost:3000）とHono API（8788）を起動 |
+| `npm run dev:legacy` | Next.jsの管理・問い合わせ・通報画面を開発 |
+| `npm run test:astro-hono` | ローカルworkerdとChromiumで移行画面・認証・ファイル共有を検証 |
 | `npm run build` | Next.jsの本番ビルド |
 | `npm run dev:public` | Astro公開ページの開発サーバー（4321番） |
 | `npm run build:public` | Astro公開Workerのビルド |

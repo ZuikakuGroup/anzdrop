@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Script from "next/script";
+import Script from "@/components/brand/ExternalScript";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { TURNSTILE_SITE_KEY } from "@/lib/turnstile-client";

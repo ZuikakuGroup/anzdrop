@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/components/account/LoginPage";
 
 const { replace, passkeyLogin, getToken } = vi.hoisted(() => ({ replace: vi.fn(), passkeyLogin: vi.fn(), getToken: vi.fn().mockResolvedValue("turnstile") }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("@/lib/browserNavigation", () => ({ useRouter: () => ({ replace }) }));
 vi.mock("@/lib/account/useRedirectIfLoggedIn", () => ({ useRedirectIfLoggedIn: () => true }));
 vi.mock("@/lib/turnstile-client", () => ({ useTurnstile: () => ({ widget: null, getToken }) }));
 vi.mock("@/components/brand/CenteredFormShell", () => ({ default: ({ children }: { children: ReactNode }) => children }));

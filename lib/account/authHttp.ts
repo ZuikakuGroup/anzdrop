@@ -1,4 +1,4 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { getWorkerRuntime } from "@/server/runtime";
 
 export class AccountAuthError extends Error {
   constructor(message = "認証に失敗しました。もう一度お試しください。", readonly status = 403) { super(message); }
@@ -14,7 +14,7 @@ export function authJson(body: unknown, status = 200, cookies: string[] = []): R
 export function withAccountAuthHandler(label: string, handler: (request: Request, env: CloudflareEnv) => Promise<Response>) {
   return async (request: Request): Promise<Response> => {
     try {
-      const response = await handler(request, getCloudflareContext().env);
+      const response = await handler(request, getWorkerRuntime().env);
       response.headers.set("Cache-Control", "no-store");
       return response;
     } catch (error) {

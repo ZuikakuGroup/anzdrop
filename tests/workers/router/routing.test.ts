@@ -3,7 +3,7 @@ import router from "@/workers/router";
 import { isHomeRequest, isPublicRequest } from "@/workers/router/routing";
 
 describe("トップページWorkerのルーティング", () => {
-  it.each(["/", "/_home-next/_next/static/chunk.js"])(
+  it.each(["/_home-next/_next/static/chunk.js"])(
     "%s をトップページWorkerへ送る",
     (pathname) => {
       expect(isHomeRequest(pathname)).toBe(true);
@@ -19,14 +19,14 @@ describe("トップページWorkerのルーティング", () => {
 });
 
 describe("公開ページWorkerのルーティング", () => {
-  it.each(["/about", "/about/", "/pricing", "/legal/privacy", "/lp/secure-file-sharing", "/blog", "/blog/", "/blog/article", "/blog/categories/topic", "/blog/authors/writer", "/blog/tags/topic", "/robots.txt", "/sitemap.xml", "/_public-astro/main.js"])("%s はAstroへ送る", pathname => {
+  it.each(["/", "/mypage", "/mypage/", "/mypage/security", "/mypage/billing", "/d/share", "/about", "/about/", "/pricing", "/legal/privacy", "/lp/secure-file-sharing", "/blog", "/blog/", "/blog/article", "/blog/categories/topic", "/blog/authors/writer", "/blog/tags/topic", "/robots.txt", "/sitemap.xml", "/_public-astro/main.js"])("%s はAstroへ送る", pathname => {
     expect(isPublicRequest(pathname)).toBe(true);
     expect(isHomeRequest(pathname)).toBe(false);
   });
-  it.each(["/", "/api/account/login", "/api/me", "/mypage/security", "/admin", "/d/share", "/contact", "/report", "/about-secret", "/blogger", "/_next/static/chunk.js"])("%s はAstroへ送らない", pathname => {
+  it.each(["/api/account/login", "/api/me", "/mypage-secret", "/d-secret", "/admin", "/contact", "/report", "/about-secret", "/blogger", "/_next/static/chunk.js"])("%s はAstroへ送らない", pathname => {
     expect(isPublicRequest(pathname)).toBe(false);
   });
-  it.each([["/", "HOME"], ["/blog/post", "PUBLIC"], ["/api/account/login", "APP"]] as const)("%s のRequestとResponseをそのまま渡す", async (pathname, target) => {
+  it.each([["/", "PUBLIC"], ["/blog/post", "PUBLIC"], ["/api/account/login", "APP"]] as const)("%s のRequestとResponseをそのまま渡す", async (pathname, target) => {
     const request = new Request(`https://anzdrop.com${pathname}`, { method: "POST", headers: { Cookie: "session=test" }, body: "opaque body" });
     const response = new Response("opaque response", { headers: { "Set-Cookie": "session=test" } });
     const env = { HOME: { fetch: vi.fn(() => response) }, PUBLIC: { fetch: vi.fn(() => response) }, APP: { fetch: vi.fn(() => response) } };

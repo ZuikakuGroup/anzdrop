@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import dynamic from "next/dynamic";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import {
   XIcon,
   LineIcon,
@@ -11,9 +10,7 @@ import {
 
 // 共有リンクの発行後、利用者がQRボタンを押すときだけ必要になる。初回表示で
 // qrcodeライブラリをダウンロード・評価しないようクライアント側で遅延読込する。
-const QrCodeModal = dynamic(() => import("@/components/brand/QrCodeModal"), {
-  ssr: false,
-});
+const QrCodeModal = lazy(() => import("@/components/brand/QrCodeModal"));
 
 type UploadShareResultProps = {
   shareUrl: string;
@@ -116,11 +113,13 @@ export default function UploadShareResult({
         </button>
       </div>
 
+      {isQrOpen && <Suspense fallback={null}>
       <QrCodeModal
         url={shareUrl}
         isOpen={isQrOpen}
         onClose={onCloseQr}
       />
+      </Suspense>}
 
       <button
         onClick={onCopy}

@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import UploadPage from '@/components/upload/UploadPage';
+---
+<InteractiveLayout title="ファイルを送る | Anzdrop" noindex={false}>
+  <UploadPage client:load />
+</InteractiveLayout>

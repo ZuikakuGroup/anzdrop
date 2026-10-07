@@ -1,0 +1,8 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import BillingPage from '@/components/billing/BillingPage';
+const clientSecret = Astro.url.searchParams.get('payment_intent_client_secret') ?? undefined;
+---
+<InteractiveLayout title="プラン・お支払い | Anzdrop" noindex={true}>
+  <BillingPage initialPaymentIntentClientSecret={clientSecret} client:load />
+</InteractiveLayout>

@@ -5,6 +5,27 @@
 - Node.js 22.12以降（CIは24系。Astroの最低要件に合わせる）
 - Cloudflareアカウント(D1・R2・Access・Turnstileを利用する場合。ローカルのD1/R2はwranglerのローカル永続化機能で完結するため、実際にAPIを叩く動作確認だけならCloudflareアカウント無しでも一部可能だが、`npm run preview`/`npm run deploy`やCloudflare Access連携の確認にはアカウントが必要)
 
+## Astro＋React / Honoの開発
+
+新しい操作画面は次の構成で起動します。初回のみ既存マイグレーションをローカルD1へ適用してください。
+
+```sh
+npx wrangler d1 migrations apply DB --local --config wrangler.api.jsonc
+npm run dev
+```
+
+ブラウザは`http://localhost:3000`を開きます。AstroのVite proxyが`/api`をHonoの8788番ポートへ送り、Host・Origin・Cookieを維持します。`dev:api`と`dev:app`を別々に起動することもできます。APIはループバックのみで待ち受け、WebAuthnは明示した`http://localhost:3000`だけを許可します。`127.0.0.1`のURLではパスキーを登録しないでください。
+
+公開用ビルド値はルートの`.env.local`またはシェルに`NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`を設定します。Astroのブラウザ向けdefineにはこの2値だけを含めます。APIのSecretはルートの`.dev.vars`から読み、Astroへコピーしません。ローカルHonoのD1/R2は`.wrangler/state`に保存します（既存Next devの一時ディレクトリとは別です）。管理・問い合わせ・通報画面を編集する場合は`npm run dev:legacy`を使用します。
+
+```sh
+npm run build:api       # アップロードしないWrangler dry-run
+npm run check:public
+npm run test:astro-hono
+```
+
+`test:astro-hono`は本番とは別のローカルD1/R2（`tmp/astro-hono-state`）、公式のTurnstileテストキー、ローカル専用認証鍵でworkerdを起動します。rootの`.dev.vars`を読み込まない隔離設定を生成します。3310番ポートでパスキー・OTP・復旧、CSP、React画面、ファイル暗号化/復号をChromiumで確認し、終了時にテストサーバーを停止します。API/画面の内部ポートは8791/4324です。本番へのデプロイや新しいマイグレーションは行いません。`wrangler.api.jsonc`はローカル開発・dry-run専用で、本番デプロイには使わないでください。
+
 ## セットアップ手順
 
 ```bash
@@ -57,9 +78,9 @@ npx wrangler d1 migrations apply DB --local --persist-to "$(node -e 'console.log
 npm run dev
 ```
 
-内部的には `next dev --webpack --hostname 127.0.0.1` を実行しており、ループバックアドレスだけで待ち受ける。`LOCAL_ADMIN_BYPASS=true`を使う際は、`--hostname`を上書きしてlocalhost以外へ待ち受けさせないこと。
+Astroをlocalhost:3000、Honoを127.0.0.1:8788で起動する。管理・問い合わせ・通報画面は `npm run dev:legacy` で従来のNext.jsを起動する。`LOCAL_ADMIN_BYPASS=true`を使う際は、localhost以外へ待ち受けさせないこと。
 
-> **既知の問題(Turbopack)**: `next dev`(Turbopackモード、デフォルト)では、ローカルD1/R2の永続化ディレクトリへの定期的な書き込みをTurbopackのファイル監視が変更として検知し続け、既知のTurbopack内部パニック(`Next.js package not found`)を踏んで、ブラウザへ無限にフルリロードを送り続ける不具合が確認されている。これを回避するため、`dev` スクリプトはwebpackモードを使っている。本番ビルド(`npm run build`/`npm run deploy`)はTurbopackのまま影響を受けない。
+> **既知の問題(Turbopack)**: `next dev`(Turbopackモード、デフォルト)では、ローカルD1/R2の永続化ディレクトリへの定期的な書き込みをTurbopackのファイル監視が変更として検知し続け、既知のTurbopack内部パニック(`Next.js package not found`)を踏んで、ブラウザへ無限にフルリロードを送り続ける不具合が確認されている。これを回避するため、`dev:legacy` スクリプトはwebpackモードを使っている。本番ビルド(`npm run build`/`npm run deploy`)はTurbopackのまま影響を受けない。
 
 > **既知の問題(.wasm静的import)**: [`lib/account/wasm-argon2/`](../lib/account/wasm-argon2/)の`.wasm`ファイルは、`next dev`(webpack)と`next build`(Turbopack)とで別々の設定(`next.config.ts`の`webpack()`・`turbopack.rules`)を必要とし、かつ実行時に渡ってくる値の形も異なる(`lib/account/wasm-argon2/wasm-interface.ts`のコメント参照)。この設定を変えると、ローカルでは問題なく動くのに本番のCloudflare Workersでだけ`CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder`で全滅する、という壊れ方をしうる(実際に一度これで本番のアカウント登録が完全に止まった)。`.wasm`のimport方法を変更した場合は、`npx opennextjs-cloudflare build`でビルドした後、`npx wrangler dev --local`(実際のビルド成果物を本物のworkerdで動かす、`next dev`とは別のローカル実行環境)でアカウント登録・ログイン・パスワード再設定を一通り確認すること。`next dev`だけの確認では不十分。
 
@@ -130,7 +151,7 @@ E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test 
 
 ## Astro公開ページの開発
 
-`npm run dev:public` で `http://localhost:4321/about` を開く。共有APIやアップロード・アカウント画面は従来の `npm run dev`（3000番）を使う。Astro単体では `/api` を提供しないため、ヘッダーの認証状態確認には本番のルーター、またはAPIを同一Originへ転送する環境が必要。
+`npm run dev:public` で `http://localhost:4321/about` を開く。アップロード・ダウンロード・マイページとAPIをまとめて確認する場合は `npm run dev`（3000番）を使う。Astroの開発サーバーは `/api` をローカルHono（8788番）へ転送するため、単独起動時にAPIも必要なら別ターミナルで `npm run dev:api` を起動する。
 
 ```bash
 npm run check:public

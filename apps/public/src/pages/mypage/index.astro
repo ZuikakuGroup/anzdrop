@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import MyPage from '@/components/account/MyPage';
+---
+<InteractiveLayout title="マイページ | Anzdrop" noindex={true}>
+  <MyPage client:load />
+</InteractiveLayout>

@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import LoginPage from '@/components/account/LoginPage';
+---
+<InteractiveLayout title="ログイン | Anzdrop" noindex={true}>
+  <LoginPage client:load />
+</InteractiveLayout>

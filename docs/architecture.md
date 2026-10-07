@@ -2,24 +2,32 @@
 
 ## 全体構成
 
-アカウント・共有・APIは Next.js (App Router) を [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare) でCloudflare Workers上にデプロイして動かしています。トップページだけは初期応答のばらつきを抑えるため別Workerへ分離し、公開コンテンツはAstroの別WorkerでSSRし、API Routes(`app/api/**/route.ts`)とアカウント・共有画面は既存Workerで動作します。状態は以下のCloudflareリソースに保存されます。
+公開ページとアップロード・ダウンロード・マイページはAstroのSSRとReact islandsで提供します。APIはHonoで既存の`anzdrop` Worker上で実行し、D1/R2・認証Secret・Cronを引き継ぎます。管理・問い合わせ・通報画面はNext.js/OpenNextの互換経路に残します。状態は以下のCloudflareリソースに保存されます。
 
 ```
 ブラウザ (E2EE暗号化/復号はすべてここで行う)
    │
    ▼
 Cloudflare Workers
-   ├─ anzdrop-router … `/` と `/_home-next/*` をHOMEへ、公開コンテンツをPUBLICへ、それ以外をAPPへ転送
-   ├─ anzdrop-home … トップページのSSR・nonce CSP・アップロードUI（永続ストレージなし）
-   ├─ anzdrop-public … Astroの公開ページ・ブログSSR（永続ストレージなし）
-   └─ anzdrop … Next.js API・各画面・D1/R2・Cron Trigger
+   ├─ anzdrop-router … `/`・`/d/*`・`/mypage/*`と公開コンテンツをPUBLICへ、APIと互換画面をAPPへ転送
+   ├─ anzdrop-home … 旧`/_home-next/*`アセットの互換経路（トップページの新規リクエストはPUBLIC）
+   ├─ anzdrop-public … Astroの公開ページ・ブログSSR・React操作画面（永続ストレージ・認証Secretなし）
+   └─ anzdrop … Hono API・Next.js互換画面・D1/R2・Cron Trigger
        ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
        ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
        ├─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
        └─ Cron Trigger (毎日UTC 00:10) … 計測基盤の日次集計・生イベントの保持期限切れ削除([`analytics.md`](./analytics.md)参照)
 ```
 
-エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、OpenNextが生成する`fetch`ハンドラをそのまま使いつつ、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
+エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、`/api`をHono（[`server/app.ts`](../server/app.ts)）、その他をOpenNextへ振り分け、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
+
+## APIと操作画面の境界
+
+`server/routes/**/route.ts`はWeb標準のRequest/Responseを使う業務処理です。HonoはURL・HTTPメソッド・動的パラメータを振り分け、本文やCookieを加工しません。`server/runtime.ts`のAsyncLocalStorageにリクエスト単位のenvとExecutionContextを保持し、並行リクエストで共有しません。`app/api/**/route.ts`はNextの互換アダプター、`schema.ts`は引き続きクライアントと共有します。Honoの実行経路はNext.js/OpenNextをimportしません。Stripe通知はHibikiの初期化時Response生成をworkerdのリクエスト内で行うため、通知ハンドラーだけを遅延importします。
+
+Astroの操作画面は共通のReactコンポーネントを`client:load`でハイドレーションします。画面遷移は同一Originのフルドキュメント遷移です。外部スクリプトにはそのレスポンスのnonceを引き継ぎ、既存のnonce CSP・no-storeを維持します。復号鍵・ファイルの暗号化/復号は引き続きブラウザだけで扱います。新しい保存対象・テーブル・秘密鍵は追加しません。
+
+ファイル保存のブラウザ検証で、Service WorkerのEOF通知直後に隠しiframeを撤去すると、小ファイルのダウンロード開始がキャンセルされる既存の競合を確認しました。通知後も1秒だけiframeを保持してブラウザの開始処理を待ち、復号バイト列が一致するE2Eで確認しています。
 
 ## LPのフォント
 
@@ -45,15 +53,15 @@ Cloudflare Workers
 
 | パス | 役割 |
 | --- | --- |
-| `/`(`app/page.tsx`) | アップロード画面(`components/upload/uploadForm.tsx`) |
+| `/`(`apps/public/src/pages/index.astro`) | アップロード画面(`components/upload/uploadForm.tsx`) |
 | `/lp/secure-file-sharing`(`apps/public/src/pages/lp/secure-file-sharing.astro`) | Google検索広告向けのファイル共有LP。共通ヘッダーを使い、登録不要・送信前のブラウザ内暗号化・無料プランの条件を冒頭で示す。3段階の利用手順、通常の共有URLの鍵の位置、FAQを掲載して`/`へ案内する。最初の着地パスは既存のAnalyticsで計測。ヒーローのLoose Drawingイラスト1点をローカル同梱する。見出しアクセントとCTAは共通のブランド色(`#f15a22`)を使う |
-| `/d/[shareId]`(`app/d/[shareId]/page.tsx`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
+| `/d/[shareId]`(`apps/public/src/pages/d/[shareId].astro`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
 | `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
 | `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
 | `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
-| `/mypage`(`app/mypage/page.tsx`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
-| `/mypage/billing`(`app/mypage/billing/page.tsx`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
+| `/mypage`(`apps/public/src/pages/mypage/index.astro`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
+| `/mypage/billing`(`apps/public/src/pages/mypage/billing.astro`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。購入できるのは現状Premiumのみ(Standardは提供準備中。`components/billing/BillingPage.tsx`の`PURCHASABLE_PLANS`)。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
 | `/pricing`(`apps/public/src/pages/pricing.astro`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standardは提供準備中で「準備中」表示のみ(実装はIssue #5でトラッキング) |
 | `/about`(`apps/public/src/pages/about.astro`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
 | `/contact`(`app/contact/page.tsx`) | 一般向けお問い合わせフォーム(`components/contact/ContactForm.tsx`)。共通ヘッダー・フッターから遷移 |

@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import SignupPage from '@/components/account/SignupPage';
+---
+<InteractiveLayout title="アカウント作成 | Anzdrop" noindex={true}>
+  <SignupPage client:load />
+</InteractiveLayout>

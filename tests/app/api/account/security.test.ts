@@ -1,3 +1,4 @@
+import { withWorkerRuntime } from "@/server/runtime";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestEnv, clearAllTables, insertTestAccount, stubTurnstileSuccess, type TestEnv } from "@/test/env";
 import { createPasskeyFixture } from "@/test/passkeyFixture";
@@ -10,7 +11,7 @@ import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequest
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
-vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => ({ env }) }));
+vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => ({ env, ctx: { waitUntil: () => {} } }) }));
 import { POST as login } from "@/app/api/account/login/route";
 import { POST as loginOtp } from "@/app/api/account/login/otp/route";
 import { POST as passkeyOptions } from "@/app/api/account/passkey/options/route";
@@ -27,7 +28,7 @@ type Handler = (request: Request) => Promise<Response>;
 function request(body: unknown = {}, cookies = "", method = "POST", requestOrigin = origin) {
   return new Request(`${origin}/api/account/test`, { method, headers: { "Content-Type": "application/json", cookie: cookies, origin: requestOrigin }, ...(method === "GET" ? {} : { body: JSON.stringify(body) }) });
 }
-const call = (handler: Handler, body: unknown = {}, cookies = "") => handler(request(body, cookies));
+const call = (handler: Handler, body: unknown = {}, cookies = "") => withWorkerRuntime({ env, ctx: { waitUntil: () => {} } }, () => handler(request(body, cookies)));
 function cookie(response: Response, name?: string): string {
   const cookies = response.headers.getSetCookie().map((value) => value.split(";")[0]);
   return name ? cookies.find((value) => value.startsWith(`${name}=`)) ?? "" : cookies.join("; ");
@@ -136,10 +137,10 @@ describe("optional authentication", () => {
 
 describe("security configuration", () => {
   it("requires a session, expected Origin and action-specific reauthentication", async () => {
-    expect((await securityStatus(request({}, "", "GET"))).status).toBe(401);
+    expect((await withWorkerRuntime({ env, ctx: { waitUntil: () => {} } }, () => securityStatus(request({}, "", "GET")))).status).toBe(401);
     const account = await insertTestAccount(env); const session = await signedIn(account.accountId);
     expect((await call(totpSetup, {}, session)).status).toBe(403);
-    expect((await reauthPassword(request({ action: "totp-enable", password: account.password, turnstileToken: "tok" }, session, "POST", "https://evil.example"))).status).toBe(403);
+    expect((await withWorkerRuntime({ env, ctx: { waitUntil: () => {} } }, () => reauthPassword(request({ action: "totp-enable", password: account.password, turnstileToken: "tok" }, session, "POST", "https://evil.example")))).status).toBe(403);
     const cookies = await proof(account.accountId, account.password, "passkey-add");
     expect((await call(totpSetup, {}, cookies)).status).toBe(403);
   });
@@ -151,7 +152,7 @@ describe("security configuration", () => {
     const setup = await call(totpSetup, {}, cookies);
     const body = await setup.json() as { secret: string; uri: string };
     const setupCookies = `${session}; ${cookie(setup)}`;
-    const before = await securityStatus(request({}, session, "GET"));
+    const before = await withWorkerRuntime({ env, ctx: { waitUntil: () => {} } }, () => securityStatus(request({}, session, "GET")));
     expect(await before.json()).toMatchObject({ totpEnabled: false });
     expect(JSON.stringify(await env.DB.prepare("SELECT * FROM account_auth_challenges").all())).not.toContain(body.secret);
     const confirmed = await call(totpConfirm, { code: await code(body.secret) }, setupCookies);
@@ -159,7 +160,7 @@ describe("security configuration", () => {
     expect(await verifySession(request({}, session), env)).toBeNull();
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM account_auth_challenges WHERE account_id = ?").bind(account.accountId).first("n")).toBe(0);
     const current = await signedIn(account.accountId, 1);
-    const after = await securityStatus(request({}, current, "GET"));
+    const after = await withWorkerRuntime({ env, ctx: { waitUntil: () => {} } }, () => securityStatus(request({}, current, "GET")));
     const status = await after.json();
     expect(status).toMatchObject({ totpEnabled: true }); expect(JSON.stringify(status)).not.toContain(body.secret);
     expect((await call(totpConfirm, { code: await code(body.secret) }, setupCookies)).status).toBe(401);
