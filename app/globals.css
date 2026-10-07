@@ -160,3 +160,12 @@ body {
   content-visibility: auto;
   contain-intrinsic-size: auto 22rem;
 }
+
+@font-face {
+  font-family: "Anzdrop Quicksand";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/quicksand/quicksand-latin-700.woff2") format("woff2");
+}
+.anz-brand-font { font-family: "Anzdrop Quicksand", sans-serif; }

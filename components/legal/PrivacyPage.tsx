@@ -10,9 +10,9 @@ import {
   OPERATOR_GROUP_LABEL,
 } from "@/lib/legal/constants";
 
-export default function PrivacyPage() {
+export default function PrivacyPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   return (
-    <LegalLayout
+    <LegalLayout showChrome={showChrome}
       title="プライバシーポリシー"
       description="Anzdrop(以下「本サービス」)における情報の取扱いについて定めます。"
       lastUpdated={LEGAL_LAST_UPDATED}

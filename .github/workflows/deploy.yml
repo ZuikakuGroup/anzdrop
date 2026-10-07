@@ -40,6 +40,9 @@ jobs:
       - name: Type check router Worker
         run: npm run check:router
 
+      - name: Type check public Astro pages
+        run: npm run check:public
+
       - name: Test
         run: npx vitest run
 

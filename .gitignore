@@ -67,3 +67,8 @@ pnpm-debug.log*
 
 test.txt
 tmp/
+
+# Astro / Cloudflare Vite outputs
+apps/public/dist/
+apps/public/.astro/
+apps/public/.wrangler/

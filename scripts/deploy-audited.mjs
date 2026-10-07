@@ -13,6 +13,7 @@ const extracted = path.join(root, "tmp/auditable-extracted");
 const workers = [
   { config: "wrangler.jsonc", bundle: "compiled/app/custom-worker.js" },
   { config: "apps/home/wrangler.jsonc", bundle: "compiled/home/home-worker.js" },
+  { config: "apps/public/wrangler.jsonc", bundle: "compiled/public/entry.mjs" },
   { config: "wrangler.router.jsonc", bundle: "compiled/router/index.js" },
 ];
 
@@ -97,14 +98,14 @@ async function main() {
   if (
     new Set(configs.map((config) => config.name)).size !== workers.length ||
     configs.some((config) => config.account_id !== accountId) ||
-    configs.slice(0, 2).some((config) => config.vars?.DEPLOYMENT_ENV !== "production")
+    configs.slice(0, 3).some((config) => config.vars?.DEPLOYMENT_ENV !== "production")
   ) {
     throw new Error("Worker names, account IDs, or production settings do not match the archived deployment plan");
   }
   const productionUrl = appConfig.vars?.SITE_URL;
   if (
     !productionUrl ||
-    !configs[2].routes?.some((route) => route.pattern === `${new URL(productionUrl).hostname}/*`)
+    !configs[3].routes?.some((route) => route.pattern === `${new URL(productionUrl).hostname}/*`)
   ) {
     throw new Error("Router route does not match the archived production URL");
   }
@@ -143,7 +144,7 @@ async function main() {
     deployedAt: deploymentRecords.at(-1).deployedAt,
   };
   await writeFile(path.join(root, "tmp/deployment-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { flag: "wx" });
-  console.log("Deployment manifest created after all three Workers deployments succeeded");
+  console.log("Deployment manifest created after all four Workers deployments succeeded");
 }
 
 await main();

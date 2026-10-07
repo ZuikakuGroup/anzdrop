@@ -2,11 +2,11 @@ import LegalLayout from "@/components/legal/LegalLayout";
 import { LEGAL_LAST_UPDATED } from "@/lib/legal/constants";
 import { buildTokushohoItems } from "@/lib/legal/tokushoho";
 
-export default function TokushohoPage() {
+export default function TokushohoPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   const items = buildTokushohoItems();
 
   return (
-    <LegalLayout
+    <LegalLayout showChrome={showChrome}
       title="特定商取引法に基づく表記"
       description="有料プランのご購入にあたっての表示事項です。"
       lastUpdated={LEGAL_LAST_UPDATED}

@@ -1,0 +1,5 @@
+---
+import PublicLayout from './PublicLayout.astro';
+interface Props { title: string; description?: string; canonical?: string; image?: string; article?: { publishedAt: string; updatedAt: string }; }
+---
+<PublicLayout {...Astro.props}><main class="flex-1 px-4 pb-10 pt-12 sm:px-8 sm:pb-10 sm:pt-14"><slot /></main></PublicLayout>

@@ -9,19 +9,19 @@
 1. 依存関係インストール(`npm ci`)
 2. `npm run lint`
 3. `npx tsc --noEmit`
-4. OpenNextで既存アプリとトップページをそれぞれ1回ビルドし、`strip-vercel-og.mts`を適用する。Wranglerの`--dry-run --outdir`でアプリ・トップページ・ルーターのアップロード用バンドルを生成する
-5. 3つのバンドル、両Nextアプリの静的アセット、3つのWrangler設定を決定論的なtarにまとめ、tarファイルのSHA-256を計算する
+4. OpenNextで既存アプリとトップページをそれぞれ1回ビルドし、`strip-vercel-og.mts`を適用する。Astro公開ページをビルドし、Wranglerの`--dry-run --outdir`でアプリ・トップページ・Astro公開ページ・ルーターのアップロード用バンドルを生成する
+5. 4つのWorkerのモジュール、Next/Astroの静的アセット、4つのWrangler設定を決定論的なtarにまとめ、tarファイルのSHA-256を計算する
 6. 公開リポジトリのGitHub Artifact Attestationをtarに対して作成し、tarとSHA-256ファイルをActions Artifactへ保存する
 7. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
-8. tarのSHA-256を再確認して展開し、`wrangler deploy --no-bundle`でアプリ、トップページ、ルーターの順に、そのtar内のバンドルとアセットをデプロイする。各コマンドが出力したWorker Version IDと、Cloudflare APIでそのVersion IDを100%配信するDeployment IDを取得する
-9. 3つのデプロイとID照合がすべて成功した後にJSON manifestを生成し、Actions Artifactへ保存する
+8. tarのSHA-256を再確認して展開し、`wrangler deploy --no-bundle`でアプリ、トップページ、Astro公開ページ、ルーターの順に、そのtar内のバンドルとアセットをデプロイする。各コマンドが出力したWorker Version IDと、Cloudflare APIでそのVersion IDを100%配信するDeployment IDを取得する
+9. 4つのデプロイとID照合がすべて成功した後にJSON manifestを生成し、Actions Artifactへ保存する
 
-いずれかのステップが失敗すると後続は実行されない。Workersのデプロイは原子的な3件セットではない。たとえばアプリWorkerのデプロイ後にトップページWorkerが失敗すると、既存ルーターは新しいアプリWorkerへ非トップページ経路を引き続き転送する。途中で失敗した場合、部分適用が残る可能性があるため、「すべて成功した」というmanifestは作成しない。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+いずれかのステップが失敗すると後続は実行されない。Workersのデプロイは原子的な4件セットではない。たとえばアプリWorkerのデプロイ後にトップページWorkerが失敗すると、既存ルーターは新しいアプリWorkerへ非トップページ経路を引き続き転送する。途中で失敗した場合、部分適用が残る可能性があるため、「すべて成功した」というmanifestは作成しない。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
 
 ### 監査用artifactとmanifest
 
-- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWranglerバンドル、2つの静的アセットディレクトリ、各Wrangler設定が入る。アプリとトップページの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のNext.jsビルドやWranglerバンドルは行わない。
-- `deployment-build-<runId>-<attempt>` Actions Artifactにtarと`.sha256`、`deployment-manifest-<runId>-<attempt>` Actions Artifactに成功後の`deployment-manifest.json`を保存する。manifestはリポジトリ、コミット、ref、workflow、run ID・attempt、tarのSHA-256、3つのWorker名・Version ID・Deployment ID・作成時刻、本番URLを記録する。トークン等の秘密情報は含まない。
+- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには4つのWorkerのモジュール、3つの静的アセットディレクトリ、各Wrangler設定が入る。アプリ・トップページ・公開ページの`DEPLOYMENT_ENV=production`、4つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のNext.jsビルドやWranglerバンドルは行わない。
+- `deployment-build-<runId>-<attempt>` Actions Artifactにtarと`.sha256`、`deployment-manifest-<runId>-<attempt>` Actions Artifactに成功後の`deployment-manifest.json`を保存する。manifestはリポジトリ、コミット、ref、workflow、run ID・attempt、tarのSHA-256、4つのWorker名・Version ID・Deployment ID・作成時刻、本番URLを記録する。トークン等の秘密情報は含まない。
 - Deployment IDは「最新のDeployment」から採らない。各`wrangler deploy`が出力した固有のVersion IDと、デプロイ開始後の[Cloudflare Workers Deployment API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)の記録を照合する。同一Version IDのDeploymentが複数ある、100%配信ではない、作成時刻が合わない等の場合は失敗する。WorkersのVersion IDはコード・設定・静的アセットのバージョン、Deployment IDはそれを配信する記録を表す。
 - GitHub Actions Artifactの保存期間は90日（組織・リポジトリの設定で短縮される場合がある）。それを超える長期保存が必要なら別途アーカイブを設計する。releaseやmainへの自動書き戻しは行わず、`contents: read`を維持する。
 - GitHub ActionsのAction参照は既存workflowと同じメジャーバージョンタグを使用する。タグの更新を信頼する運用であり、Action本体まで固定したい場合は全ActionをコミットSHAへpinする追加変更が必要。
@@ -40,7 +40,7 @@ jq -r '.artifact.sha256' manifest/deployment-manifest.json
 jq -r '.cloudflare.deployments[] | [.worker, .versionId, .deploymentId] | @tsv' manifest/deployment-manifest.json
 ```
 
-tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestationの署名・リポジトリ・workflow・コミット・refを検証する。Cloudflare側の対応を確かめるには、対象アカウントのWorkers Deployment閲覧権限で、manifest内の3つのDeployment IDが各Version IDを100%配信していた記録と一致することを確認する。Cloudflareの記録は公開APIではないため、アカウント権限のない第三者がCloudflare内部の状態まで独立に確認できるわけではない。
+tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestationの署名・リポジトリ・workflow・コミット・refを検証する。Cloudflare側の対応を確かめるには、対象アカウントのWorkers Deployment閲覧権限で、manifest内の4つのDeployment IDが各Version IDを100%配信していた記録と一致することを確認する。Cloudflareの記録は公開APIではないため、アカウント権限のない第三者がCloudflare内部の状態まで独立に確認できるわけではない。
 
 この仕組みはGitHubのソース、Actions workflow、配布したtar、CloudflareのDeployment記録を追跡するためのもの。Cloudflareの実サーバーが現在そのartifactだけを実行していることを暗号学的に証明するRemote Attestationではない。CloudflareとGitHub Actionsの実行基盤は信頼境界に残る。
 
@@ -188,10 +188,18 @@ Cloudflare Workersにはスクリプトサイズの上限があり、**無料プ
 npm run preview  # ローカルでCloudflare Workers向けビルド後、wranglerのローカルプレビューを起動
 npm run deploy        # 既存アプリWorkerをデプロイ
 npm run deploy:home   # トップページWorkerをデプロイ
-npm run deploy:router # 公開ルートを受けるRouter Workerを最後にデプロイ
+npm run build:public  # 公開Workerのコードと静的アセットを生成
+npx wrangler deploy --config apps/public/dist/server/wrangler.json --var DEPLOYMENT_ENV:production
+# 初回は公開WorkerにmicroCMSの読み取り用キーを登録する（値をコマンド引数やログに残さない）
+npx wrangler secret put MICROCMS_API_KEY --config apps/public/dist/server/wrangler.json
+# キーの値ではなく登録名だけを確認する。既に設定済みなら再登録は不要
+npx wrangler secret list --config apps/public/dist/server/wrangler.json --format json
+npm run deploy:router # 公開WorkerとCMSキーが揃ってからRouter Workerを最後にデプロイ
 ```
 
-上記の順番で実行する。Router Workerを最後に更新することで、トップページWorkerのデプロイに失敗しても、公開ルートは既存アプリWorkerを向いたままになる。
+上記の順番で実行し、公開Workerのデプロイが成功したことと、Secret一覧に `MICROCMS_API_KEY` があることを確認してからRouter Workerを更新する。既存APPのSecretは新しいWorkerへ自動共有されない。キーは `MICROCMS_SERVICE_DOMAIN` のサービスで公開コンテンツを取得できる読み取り用キーを用意する。
+
+Router Workerを最後に更新することで、初回導入時にHOME・PUBLICのデプロイやCMSキーの準備が失敗しても、既存ルーターの振り分けを維持できる。失敗した場合はそこで中断し、Router Workerをデプロイしない。
 
 手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。この手動コマンドは監査用tar・Attestation・manifestを生成しない。
 
@@ -209,3 +217,11 @@ rm /安全な一時ディレクトリ/account-auth-key
 現行の暗号文形式は1鍵に対応する。鍵を上書きするだけでは既存のOTPが検証できなくなるため、通常のローテーションは行わない。更新が必要な場合はOTP関連操作・ログインを保守停止し、旧鍵で全有効秘密と設定途中秘密を復号、新鍵で同じアカウント・用途の追加認証データを使って再暗号化する移行を別途実装・検証する。DBの暗号文とSecretを一緒に切り替え、旧鍵は移行前バックアップの保持期間が終わるまで保管する。部分更新のまま再開しない。
 
 OTP有効化後は、OTPを要求しない旧コードへロールバックしない。修正はOTP検証を維持する対応コードで行う。`ACCOUNT_AUTH_LOCAL_ORIGIN` はローカル検証専用で、本番には配置しない。
+
+### Astro公開ページWorkerの導入
+
+`anzdrop-public` を追加する。`apps/public/astro.config.mjs` はCloudflare adapterでSSRし、`session: false` と画像パススルーを明示するため、追加ストレージやImages bindingは不要。ブログ用の `MICROCMS_API_KEY` を新Workerへ設定する必要がある。既存アプリの認証・決済・E2EE用Secretをコピーしない。
+
+初回は公開Workerを作成してmicroCMS Secretを設定・確認した後、PUBLIC service bindingを持つルーターを切り替える。未設定のままルーターを切り替えるとブログ取得は失敗する。ローカル実装は本番設定を変更しない。
+
+監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。4WorkerをAPP、HOME、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。公開ページだけのロールバックはPUBLICを直前版に戻すか、ルーターの公開ページ振り分けを戻してNextの互換経路へ送る。

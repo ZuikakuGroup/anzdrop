@@ -1,0 +1,15 @@
+---
+import BlogLayout from '../../../layouts/BlogLayout.astro';
+import BlogCards from '../../../components/BlogCards.astro';
+import { blog, isMicrocmsNotFoundError } from '../../../lib/blog';
+let item;
+try { item = await blog.getTag(Astro.params.slug!); }
+catch (error) { if (isMicrocmsNotFoundError(error)) return Astro.rewrite('/404'); throw error; }
+const posts = await blog.getAllPosts({ filters: `tags[contains]${item.id}` });
+---
+<BlogLayout title={`${item.name} | Anzdropブログ`} description={item.description} canonical={`/blog/tags/${encodeURIComponent(item.id)}`}>
+  <div class="mx-auto max-w-6xl space-y-8">
+    <header class="space-y-2"><p class="text-xs font-bold tracking-widest text-brand">タグ</p><h1 class="text-3xl font-black">{item.name}</h1><p class="whitespace-pre-wrap text-sm leading-relaxed text-ink/60">{item.description}</p><a href="/blog" class="text-sm font-bold text-brand hover:underline">ブログ一覧へ</a></header>
+    {posts.length ? <BlogCards posts={posts} /> : <p class="text-sm text-ink/60">記事はまだありません。</p>}
+  </div>
+</BlogLayout>

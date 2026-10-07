@@ -8,7 +8,7 @@ payload_dir=tmp/auditable-payload
 artifact=tmp/anzdrop-deploy.tar
 rm -rf "$build_dir" "$payload_dir" tmp/auditable-extracted
 rm -f tmp/deployment-manifest.json "$artifact" "$artifact.sha256"
-mkdir -p "$build_dir" "$payload_dir/compiled" "$payload_dir/apps/home/.open-next" "$payload_dir/.open-next"
+mkdir -p "$build_dir" "$payload_dir/compiled" "$payload_dir/apps/home/.open-next" "$payload_dir/.open-next" "$payload_dir/apps/public/dist"
 
 # OpenNext builds each Next.js app once. Wrangler's dry run then emits the
 # deployable Worker bundles without uploading them.
@@ -20,24 +20,33 @@ node scripts/strip-vercel-og.mts
   node ../../scripts/strip-vercel-og.mts
 )
 
+npm run build:public
+
 npx wrangler deploy --dry-run --outdir "$build_dir/app" --config wrangler.jsonc --var DEPLOYMENT_ENV:production
 (
   cd apps/home
   ../../node_modules/.bin/wrangler deploy --dry-run --outdir ../../"$build_dir/home" --config wrangler.jsonc --var DEPLOYMENT_ENV:production
+)
+(
+  cd apps/public
+  ../../node_modules/.bin/wrangler deploy --dry-run --outdir ../../"$build_dir/public" --config dist/server/wrangler.json
 )
 npx wrangler deploy --dry-run --outdir "$build_dir/router" --config wrangler.router.jsonc
 
 test -s "$build_dir/app/custom-worker.js"
 test -s "$build_dir/home/home-worker.js"
 test -s "$build_dir/router/index.js"
+test -s "$build_dir/public/entry.mjs"
 
-cp -a "$build_dir/app" "$build_dir/home" "$build_dir/router" "$payload_dir/compiled/"
+cp -a "$build_dir/app" "$build_dir/home" "$build_dir/router" "$build_dir/public" "$payload_dir/compiled/"
 cp -a .open-next/assets "$payload_dir/.open-next/assets"
 cp -a apps/home/.open-next/assets "$payload_dir/apps/home/.open-next/assets"
+cp -a apps/public/dist/client "$payload_dir/apps/public/dist/client"
+cp apps/public/wrangler.jsonc "$payload_dir/apps/public/wrangler.jsonc"
 cp wrangler.jsonc wrangler.router.jsonc "$payload_dir/"
 cp apps/home/wrangler.jsonc "$payload_dir/apps/home/"
 node scripts/prepare-production-config.mjs \
-  "$payload_dir/wrangler.jsonc" "$payload_dir/apps/home/wrangler.jsonc" "$payload_dir/wrangler.router.jsonc"
+  "$payload_dir/wrangler.jsonc" "$payload_dir/apps/home/wrangler.jsonc" "$payload_dir/apps/public/wrangler.jsonc" "$payload_dir/wrangler.router.jsonc"
 
 # Normalize file order and metadata. The archiver also refuses symlinks, which
 # could otherwise make deployed bytes depend on paths outside the archive.

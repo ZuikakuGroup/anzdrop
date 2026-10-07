@@ -1,12 +1,12 @@
-import Link from "next/link";
+/* eslint-disable @next/next/no-html-link-for-pages -- Shared with Astro; cross-Worker navigation requires a full document request. */
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { CheckIcon, XIcon } from "@/components/brand/ShareIcons";
 
-export default function PricingPage() {
+export default function PricingPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
+    <div className={showChrome ? "flex min-h-screen flex-col" : "flex flex-1 flex-col"}>
+      {showChrome && <SiteHeader />}
 
       <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-5xl">
@@ -68,12 +68,12 @@ export default function PricingPage() {
                 </li>
               </ul>
 
-              <Link
+              <a
                 href="/"
                 className="mt-8 block w-full rounded border-2 border-ink px-4 py-3 text-center text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03]"
               >
                 始める
-              </Link>
+              </a>
             </div>
 
             <div className="flex flex-col rounded-lg border border-ink/10 bg-paper p-8">
@@ -190,7 +190,7 @@ export default function PricingPage() {
         </div>
       </main>
 
-      <SiteFooter />
+      {showChrome && <SiteFooter />}
     </div>
   );
 }

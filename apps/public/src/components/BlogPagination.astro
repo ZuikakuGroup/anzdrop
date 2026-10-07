@@ -1,0 +1,17 @@
+---
+import { ChevronIcon } from '@/components/brand/ShareIcons';
+interface Props { page: number; lastPage: number; }
+const { page, lastPage } = Astro.props;
+const href = (value: number) => value === 1 ? '/blog' : `/blog?page=${value}`;
+const arrow = 'inline-flex size-8 items-center justify-center rounded text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink';
+---
+<nav aria-label="ページネーション" class="flex items-center justify-center gap-3 text-sm font-bold">
+  {page > 1 ? <a href={href(page - 1)} aria-label="前のページ" class={arrow}><ChevronIcon className="h-4 w-4 rotate-90" /></a> : <span aria-disabled="true" aria-label="前のページ" class={`${arrow} opacity-30`}><ChevronIcon className="h-4 w-4 rotate-90" /></span>}
+  <form action="/blog" method="get" class="flex items-center gap-1.5">
+    <label for="blog-page" class="sr-only">ページ番号</label>
+    <input id="blog-page" name="page" type="number" inputmode="numeric" min="1" max={lastPage} required value={page} class="size-8 rounded border border-ink/20 bg-paper p-0 text-center tabular-nums outline-none focus:border-brand" />
+    <button type="submit" class="sr-only">指定したページへ移動</button>
+  </form>
+  {page < lastPage ? <a href={href(page + 1)} aria-label="次のページ" class={arrow}><ChevronIcon className="h-4 w-4 -rotate-90" /></a> : <span aria-disabled="true" aria-label="次のページ" class={`${arrow} opacity-30`}><ChevronIcon className="h-4 w-4 -rotate-90" /></span>}
+</nav>
+<style>input::-webkit-inner-spin-button,input::-webkit-outer-spin-button{appearance:none;margin:0}input[type=number]{appearance:textfield}</style>

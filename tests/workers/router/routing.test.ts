@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { isHomeRequest } from "@/workers/router/routing";
+import { describe, expect, it, vi } from "vitest";
+import router from "@/workers/router";
+import { isHomeRequest, isPublicRequest } from "@/workers/router/routing";
 
 describe("トップページWorkerのルーティング", () => {
   it.each(["/", "/_home-next/_next/static/chunk.js"])(
@@ -15,4 +16,23 @@ describe("トップページWorkerのルーティング", () => {
       expect(isHomeRequest(pathname)).toBe(false);
     }
   );
+});
+
+describe("公開ページWorkerのルーティング", () => {
+  it.each(["/about", "/about/", "/pricing", "/legal/privacy", "/lp/secure-file-sharing", "/blog", "/blog/", "/blog/article", "/blog/categories/topic", "/blog/authors/writer", "/blog/tags/topic", "/robots.txt", "/sitemap.xml", "/_public-astro/main.js"])("%s はAstroへ送る", pathname => {
+    expect(isPublicRequest(pathname)).toBe(true);
+    expect(isHomeRequest(pathname)).toBe(false);
+  });
+  it.each(["/", "/api/account/login", "/api/me", "/mypage/security", "/admin", "/d/share", "/contact", "/report", "/about-secret", "/blogger", "/_next/static/chunk.js"])("%s はAstroへ送らない", pathname => {
+    expect(isPublicRequest(pathname)).toBe(false);
+  });
+  it.each([["/", "HOME"], ["/blog/post", "PUBLIC"], ["/api/account/login", "APP"]] as const)("%s のRequestとResponseをそのまま渡す", async (pathname, target) => {
+    const request = new Request(`https://anzdrop.com${pathname}`, { method: "POST", headers: { Cookie: "session=test" }, body: "opaque body" });
+    const response = new Response("opaque response", { headers: { "Set-Cookie": "session=test" } });
+    const env = { HOME: { fetch: vi.fn(() => response) }, PUBLIC: { fetch: vi.fn(() => response) }, APP: { fetch: vi.fn(() => response) } };
+    expect(await router.fetch(request, env)).toBe(response);
+    expect(env[target].fetch).toHaveBeenCalledExactlyOnceWith(request);
+    expect(await request.text()).toBe("opaque body");
+    for (const key of ["HOME", "PUBLIC", "APP"] as const) if (key !== target) expect(env[key].fetch).not.toHaveBeenCalled();
+  });
 });

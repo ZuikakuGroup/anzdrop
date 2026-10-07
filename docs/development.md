@@ -2,7 +2,7 @@
 
 ## 前提
 
-- Node.js 22系
+- Node.js 22.12以降（CIは24系。Astroの最低要件に合わせる）
 - Cloudflareアカウント(D1・R2・Access・Turnstileを利用する場合。ローカルのD1/R2はwranglerのローカル永続化機能で完結するため、実際にAPIを叩く動作確認だけならCloudflareアカウント無しでも一部可能だが、`npm run preview`/`npm run deploy`やCloudflare Access連携の確認にはアカウントが必要)
 
 ## セットアップ手順
@@ -127,3 +127,19 @@ WebAuthnはlocalhostの明示設定のみを許可する。ブラウザでは `h
 ```sh
 E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test tests/e2e/account-security.spec.ts --workers=1
 ```
+
+## Astro公開ページの開発
+
+`npm run dev:public` で `http://localhost:4321/about` を開く。共有APIやアップロード・アカウント画面は従来の `npm run dev`（3000番）を使う。Astro単体では `/api` を提供しないため、ヘッダーの認証状態確認には本番のルーター、またはAPIを同一Originへ転送する環境が必要。
+
+```bash
+npm run check:public
+npm run build:public
+npx wrangler dev --config apps/public/dist/server/wrangler.json --port 4321 --var BLOG_USE_SEED_DATA:true --var WEB_AUDIT:true
+# 別ターミナル。実WorkersでSSR/CSP・FAQ・画像拡大・404・SEOを確認する
+PUBLIC_ASTRO_TEST=true E2E_BASE_URL=http://localhost:4321 npx playwright test tests/e2e/public-astro.spec.ts
+```
+
+実CMSを使う場合は `apps/public/.dev.vars` に `MICROCMS_API_KEY` を設定する（コミット禁止）。seedは開発・明示した監査環境だけで使用し、`DEPLOYMENT_ENV=production` では無効。生成物は `apps/public/dist`、`.astro`、`.wrangler` に出力し、Gitには含めない。
+
+`npm run test:public` はビルド・プレビューの起動と終了・上記ブラウザ検証をまとめて実行する。初回は `npx playwright install chromium` を実行する。CIでもこの手順で実Workersを検証する。
