@@ -39,8 +39,16 @@ test("optional passkey and OTP registration, login, removal and recovery on loca
   } });
 
   await page.goto("/mypage/security");
-  await page.getByLabel("パスキーの表示名").fill("検証端末");
+  await expect(page.getByLabel("パスキーの表示名")).toHaveCount(0);
   await page.getByRole("button", { name: "パスキーを追加", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "パスキーを追加", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "パスキーを追加", exact: true }).click();
+  await page.getByLabel("パスキーの表示名").fill("検証端末");
+  await page.getByRole("button", { name: "次へ", exact: true }).click();
   await page.getByLabel("現在のパスワード").fill(password);
   await page.getByRole("button", { name: "本人確認して続ける" }).click();
   await expect(page.getByRole("status")).toContainText("すべての端末");
@@ -60,6 +68,7 @@ test("optional passkey and OTP registration, login, removal and recovery on loca
 
   await page.getByRole("button", { name: "OTPを設定", exact: true }).click();
   await page.getByRole("button", { name: "パスキーで本人確認" }).click();
+  await page.getByText("QRコードを読み取れない場合", { exact: true }).click();
   const secret = await page.locator("p").filter({ hasText: /^[A-Z2-7]{32}$/ }).textContent();
   expect(secret).toMatch(/^[A-Z2-7]{32}$/);
   await page.getByLabel("認証アプリの6桁コード").fill(otp(secret!));
@@ -94,4 +103,49 @@ test("optional passkey and OTP registration, login, removal and recovery on loca
   expect((await post("/api/account/login", { accountId, password: `${password}new`, turnstileToken: testToken })).status()).toBe(200);
   expect(await (await page.request.get("/api/account/security")).json()).toMatchObject({ totpEnabled: false, passkeys: [] });
   await cdp.detach();
+});
+
+test("security dialog keeps interactive Turnstile reachable and preserves its widget when reopened", async ({ page }) => {
+  test.skip(!localEnabled, "Explicit localhost authentication test environment required");
+  await page.route("**/api/account/me", (route) => route.fulfill({ json: { success: true, accountId: "dialog-preview", plan: "free", planExpiresAt: null } }));
+  await page.route("**/api/account/security", (route) => route.fulfill({ json: { success: true, accountId: "dialog-preview", totpEnabled: false, passkeys: [] } }));
+  await page.route("**/api/account/security/reauth/password", (route) => route.fulfill({ status: 403, json: { success: false, error: "確認用の認証エラー" } }));
+  await page.route("**/api/account/security/cancel", (route) => route.fulfill({ json: { success: true } }));
+  // チャレンジの対話コールバックを再現し、native dialog内で実際に操作できることを確認する。
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", (route) => route.fulfill({ contentType: "application/javascript", body: `
+    (() => {
+      let options, frame, count = 0;
+      window.turnstile = {
+        render(container, supplied) {
+          count++; options = supplied;
+          frame = document.createElement('iframe'); frame.title = '対話チャレンジ';
+          container.appendChild(frame);
+          const button = frame.contentDocument.createElement('button');
+          button.textContent = 'チャレンジを確認';
+          button.onclick = () => { options['after-interactive-callback'](); options.callback('XXXX.DUMMY.TOKEN.XXXX'); };
+          frame.contentDocument.body.appendChild(button);
+          return 'dialog-widget';
+        },
+        execute() { options['before-interactive-callback'](); },
+        reset() {},
+      };
+      window.getDialogWidget = () => ({ count, frame });
+    })();` }));
+  await page.goto("/mypage/security");
+  await page.getByRole("button", { name: "OTPを設定", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await page.getByLabel("現在のパスワード").fill("test-password");
+  await page.getByRole("button", { name: "本人確認して続ける" }).click();
+  await expect(dialog.locator('iframe[title="対話チャレンジ"]')).toBeVisible();
+  await dialog.frameLocator('iframe[title="対話チャレンジ"]').getByRole("button", { name: "チャレンジを確認" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("確認用の認証エラー");
+  await page.getByRole("button", { name: "キャンセル", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "OTPを設定", exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "OTPを設定", exact: true }).click();
+  await page.getByLabel("現在のパスワード").fill("test-password");
+  await page.getByRole("button", { name: "本人確認して続ける" }).click();
+  await dialog.frameLocator('iframe[title="対話チャレンジ"]').getByRole("button", { name: "チャレンジを確認" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("確認用の認証エラー");
+  expect(await page.evaluate(() => (window as unknown as { getDialogWidget: () => { count: number; frame: HTMLIFrameElement } }).getDialogWidget().count)).toBe(1);
 });
