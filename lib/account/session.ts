@@ -44,10 +44,13 @@ export function clearSessionCookie(): string {
 // トークンに埋め込まれたsessionVersionと一致するか確認する。パスワード
 // 再設定(/api/account/recover)がこの値をインクリメントするため、
 // セッションCookieが漏れていても再設定後は無効化される。
+export function verifySession(request: Request, env: CloudflareEnv, includeVersion: true): Promise<(SessionIdentity & { sessionVersion: number }) | null>;
+export function verifySession(request: Request, env: CloudflareEnv): Promise<SessionIdentity | null>;
 export async function verifySession(
   request: Request,
-  env: CloudflareEnv
-): Promise<SessionIdentity | null> {
+  env: CloudflareEnv,
+  includeVersion = false
+): Promise<(SessionIdentity & { sessionVersion?: number }) | null> {
   const token = extractCookie(
     request.headers.get("cookie"),
     SESSION_COOKIE_NAME
@@ -78,7 +81,7 @@ export async function verifySession(
       return null;
     }
 
-    return { accountId };
+    return includeVersion ? { accountId, sessionVersion } : { accountId };
   } catch {
     return null;
   }

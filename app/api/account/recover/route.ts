@@ -1,4 +1,3 @@
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { generateRecoveryCode } from "@/lib/account/id";
 import {
   hashPassword,
@@ -6,7 +5,8 @@ import {
   DUMMY_PASSWORD_HASH,
 } from "@/lib/account/password";
 import { requireTurnstile } from "@/lib/turnstile";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAccountAuthHandler, AccountAuthError, authJson } from "@/lib/account/authHttp";
+import { clearSessionCookie } from "@/lib/account/session";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
   RecoverRequestSchema,
@@ -15,10 +15,9 @@ import {
 
 const INVALID_RECOVERY_ERROR = "アカウントIDまたはリカバリーコードが正しくありません";
 
-export const POST = withApiHandler(
+export const POST = withAccountAuthHandler(
   "POST /api/account/recover",
-  async (request: Request): Promise<Response> => {
-    const { env } = getCloudflareContext();
+  async (request, env): Promise<Response> => {
 
     const parsed = await parseJsonBody(request, RecoverRequestSchema);
 
@@ -38,10 +37,10 @@ export const POST = withApiHandler(
     }
 
     const account = await env.DB.prepare(
-      `SELECT recovery_code_hash FROM accounts WHERE id = ? LIMIT 1`
+      `SELECT recovery_code_hash, session_version FROM accounts WHERE id = ? LIMIT 1`
     )
       .bind(accountId)
-      .first<{ recovery_code_hash: string }>();
+      .first<{ recovery_code_hash: string; session_version: number }>();
 
     const recoveryCodeMatches = await verifyPassword(
       recoveryCode,
@@ -66,7 +65,7 @@ export const POST = withApiHandler(
     // セッションCookie(盗まれている可能性がある)を全て無効化する。
     // リカバリーコードによる本人確認ができた時点で、ログイン失敗回数による
     // ロックアウト状態も解除する。
-    await env.DB.prepare(
+    const reset = env.DB.prepare(
       `
       UPDATE accounts
       SET password_hash = ?,
@@ -74,17 +73,28 @@ export const POST = withApiHandler(
           session_version = session_version + 1,
           failed_login_attempts = 0,
           locked_until = NULL
-      WHERE id = ?
+      WHERE id = ? AND recovery_code_hash = ? AND session_version = ?
     `
     )
-      .bind(newPasswordHash, newRecoveryCodeHash, accountId)
-      .run();
+      .bind(newPasswordHash, newRecoveryCodeHash, accountId, account.recovery_code_hash, account.session_version);
+
+    // 新しいコードハッシュはこのリクエストだけの値。UPDATEが0行だった場合に
+    // 別リクエストの認証設定まで消さないよう、後続DELETEも同じ値で条件付けする。
+    const guard = "EXISTS (SELECT 1 FROM accounts WHERE id = ? AND recovery_code_hash = ? AND session_version = ?)";
+    const values = [accountId, newRecoveryCodeHash, account.session_version + 1];
+    const results = await env.DB.batch([
+      reset,
+      env.DB.prepare(`DELETE FROM account_passkeys WHERE account_id = ? AND ${guard}`).bind(accountId, ...values),
+      env.DB.prepare(`DELETE FROM account_totp WHERE account_id = ? AND ${guard}`).bind(accountId, ...values),
+      env.DB.prepare(`DELETE FROM account_auth_challenges WHERE account_id = ? AND ${guard}`).bind(accountId, ...values),
+    ]);
+    if (results[0].meta.changes !== 1) throw new AccountAuthError(INVALID_RECOVERY_ERROR);
 
     const responseBody: RecoverResponse = {
       success: true,
       recoveryCode: newRecoveryCode,
     };
 
-    return Response.json(responseBody);
+    return authJson(responseBody, 200, [clearSessionCookie()]);
   }
 );

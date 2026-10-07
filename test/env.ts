@@ -10,6 +10,7 @@ import path from "node:path";
 import { vi } from "vitest";
 import { hashPassword } from "@/lib/account/password";
 import { createSessionCookie } from "@/lib/account/session";
+import { encodeBase64Url } from "@/lib/crypto/base64";
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../migrations");
 
@@ -153,6 +154,7 @@ export async function createTestEnv(): Promise<TestEnvHandle> {
     OPENNODE_BTC_DAYS_PER_CHARGE: 30,
     TURNSTILE_SECRET_KEY: "test-turnstile-secret",
     SESSION_SECRET: "test-session-secret-thats-long-enough-for-hs256-signing",
+    ACCOUNT_AUTH_ENCRYPTION_KEY: encodeBase64Url(new Uint8Array(32).fill(7)),
     STRIPE_SECRET_KEY: "sk_test_dummy",
     STRIPE_WEBHOOK_SECRET: "whsec_test_dummy",
     OPENNODE_API_KEY: "test-opennode-api-key",
@@ -167,6 +169,9 @@ export async function createTestEnv(): Promise<TestEnvHandle> {
 }
 
 const ALL_TABLES = [
+  "account_auth_challenges",
+  "account_passkeys",
+  "account_totp",
   "upload_parts",
   "uploads",
   "files",

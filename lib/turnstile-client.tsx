@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -47,7 +48,8 @@ declare global {
 // チャレンジ表示が必要になった場合は、before/after-interactive-callbackを使って
 // ページ内埋め込みではなくモーダルオーバーレイとして見せる。
 export function useTurnstile(
-  enabled = true
+  enabled = true,
+  portalTarget?: RefObject<HTMLElement | null>
 ): { getToken: () => Promise<string>; widget: ReactNode } {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -191,9 +193,10 @@ export function useTurnstile(
   // 外側のオーバーレイの見た目だけを切り替える。非表示中はopacity/pointer-events
   // で隠すのみで、display:noneやアンマウントはしない。
   const widget =
-    isMounted
+    isMounted && (!portalTarget || portalTarget.current)
       ? createPortal(
           <div
+            inert={!isInteractive}
             className={
               isInteractive
                 ? "fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-xs"
@@ -202,7 +205,7 @@ export function useTurnstile(
           >
             <div ref={containerRef} />
           </div>,
-          document.body
+          portalTarget?.current ?? document.body
         )
       : null;
 

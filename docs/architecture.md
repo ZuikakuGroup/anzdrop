@@ -173,3 +173,11 @@ Turnstile を含む濫用対策全体の位置づけは、アップロードが�
 nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません。Workers 上の低トラフィックな用途なので影響は小さいと判断)。
 
 CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` に切り替わり、違反をブロックせず観測だけできます(新しい外部フローを入れた直後のロールアウトや、OpenNext / Next 更新時の確認用の安全弁)。`proxy.ts` は OpenNext 上では「Node.js middleware」として動き OpenNext 側のサポートは実験的なため、更新時のリグレッション確認が必要です([`deployment.md`](./deployment.md#セキュリティレスポンスヘッダproxyts))。
+
+## アカウント認証の境界
+
+パスワード、任意のOTP、パスキーの入口は `lib/account/passwordAuthentication.ts` / `passkeys.ts` / `securityStore.ts` に分ける。必要な認証が完了した後に `grantSession.ts` で開始時の `session_version` を条件付き更新に照合し、セッションを発行する。設定・復旧と競合しても旧世代の認証を新世代へ引き上げない。
+
+パスキーはSimpleWebAuthnでOrigin・RP ID・署名・本人確認を検証する。登録はdiscoverable credential必須・attestationなし。OTPは独立したアカウント単位の試行枠を持ち、コード再利用を時間ステップの条件付き更新で拒否する。設定変更の再認証証明は対象操作に限定し、異なる変更に流用しない。ログには秘密・認証応答・検証例外を含めない。
+
+認証情報の保存は許可済みのD1内に限定し、ファイル暗号化処理と復号鍵の管理には変更を加えない。保存内容は [database.md](./database.md)、画面・復旧仕様は [accounts.md](./accounts.md) を参照。

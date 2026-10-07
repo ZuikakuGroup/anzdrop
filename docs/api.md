@@ -153,7 +153,7 @@
 ### `POST /api/account/login`
 
 - リクエスト: `{ accountId, password, turnstileToken }`
-- 成功時、セッションCookie(`anzdrop_session`)を発行する。レスポンス: `{ success: true }`
+- OTP未設定の成功時はセッションCookie(`anzdrop_session`)を発行し、従来どおり `{ success: true }` を返す。OTP設定済みは `{ success: true, next: "otp" }` と5分間の認証途中Cookieを返し、セッションは発行しない。
 - 同一アカウントIDで5回連続してログインに失敗すると、5分間はそのIDでのログインを制限する。ただしロック中でも正しいパスワード(と Turnstile)を提示できる本人は通す(標的型ロックアウト嫌がらせの緩和。[`accounts.md`](./accounts.md#ログインのロックアウト総当たり対策)参照)。
 
 ### `POST /api/account/logout`
@@ -165,7 +165,7 @@
 アカウントID・リカバリーコードでパスワードを再設定する。メールでの再設定手段はない。
 
 - リクエスト: `{ accountId, recoveryCode, newPassword, turnstileToken }`
-- レスポンス: `{ success: true, recoveryCode }`。パスワードと同時にリカバリーコードも再発行される(使い捨て)。
+- レスポンス: `{ success: true, recoveryCode }`。パスワードと同時にリカバリーコードも再発行される(使い捨て)。全パスキー・OTP・認証途中情報を削除し、全セッションを失効させる。並行リクエストでも同じコードの成功は一度だけ。
 
 ### `GET /api/account/me`
 
@@ -276,3 +276,26 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ### `GET /api/admin/analytics?view=overview|funnel|reliability|acquisition|retention|recipient-growth&from&to`
 
 計測ダッシュボード([`analytics.md`](./analytics.md)参照)向けの集計データを返す、読み取り専用ルート(Origin検証は行わない)。`from`/`to`(`YYYY-MM-DD`)省略時は直近30日で、指定時は当日を含む直近1年以内でなければ400を返す。レスポンスは `{ success: true, view, from, to, data }` で、`data` の形は`view`ごとに異なる([`lib/analytics/reports.ts`](../lib/analytics/reports.ts)の各関数の戻り値)。
+
+## 任意のパスキー・OTP API
+
+認証用レスポンスは `Cache-Control: no-store`。以下のPOSTは許可Originとの完全一致を要求する。本番は `https://anzdrop.com` / RP ID `anzdrop.com` 固定で、リクエストHostから決めない。認証途中のアカウントは本文で受け取らず、HttpOnly・Secure・SameSite=Strictの専用Cookieとサーバー側情報から確定する。
+
+| メソッド・パス | 本文 / 成功レスポンス |
+| --- | --- |
+| `POST /api/account/login/otp` | `{ code }` → `{ success: true }` とセッションCookie |
+| `POST /api/account/passkey/options` | `{ turnstileToken }` → `{ success: true, options }`（discoverable credential用） |
+| `POST /api/account/passkey/verify` | `{ response }` → `{ success: true }` とセッションCookie |
+| `GET /api/account/security` | `{ success: true, accountId, totpEnabled, passkeys: [{ id, name, createdAt }] }`。秘密・公開鍵は返さない |
+| `POST /api/account/security/reauth/password` | `{ action, targetId?, password, code?, turnstileToken }` → `{ success: true }` |
+| `POST /api/account/security/reauth/options` | `{ action, targetId? }` → `{ success: true, options }`（自分のパスキーに限定） |
+| `POST /api/account/security/reauth/verify` | `{ response }` → `{ success: true }`（対象操作用の再認証証明） |
+| `POST /api/account/security/passkeys/options` | `{ name }` → `{ success: true, options }` |
+| `POST /api/account/security/passkeys/verify` | `{ response }` → `{ success: true }`、全セッション失効 |
+| `POST /api/account/security/passkeys/delete` | `{ id }` → `{ success: true }`、全セッション失効 |
+| `POST /api/account/security/totp/setup` | `{}` → `{ success: true, secret, uri }`（設定途中のみ秘密を返す） |
+| `POST /api/account/security/totp/confirm` | `{ code }` → `{ success: true }`、有効化して全セッション失効 |
+| `POST /api/account/security/totp/disable` | `{}` → `{ success: true }`、全セッション失効 |
+| `POST /api/account/security/cancel` | `{}` → `{ success: true }`、設定途中情報とCookieを削除 |
+
+`action` は `passkey-add` / `passkey-delete` / `totp-enable` / `totp-disable`。削除では `targetId` に対象の認証情報IDを指定する。設定取得以外は有効なセッションと、同じ操作に対する再認証を要求する（再認証・中止API自体は証明不要）。コードは6桁の文字列。OTPはアカウント単位5分5回の上限で429、無効・期限切れ・再送・世代不一致は403、未ログインは401、不正本文は400。DB・暗号化・検証の障害時は認証を通さない。

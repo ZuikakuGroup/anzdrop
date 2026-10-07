@@ -26,6 +26,19 @@ npm install
 
 `wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
 
+### 機能ごとのWorkers Secret
+
+`wrangler.jsonc` では `secrets.required` を定義しない。この指定はデプロイ時の必須チェックだけでなく、ローカルの `.dev.vars` / `.env` を一覧のキーだけに制限するため、任意機能のSecretが読み込まれなくなる。ローカルではリポジトリ直下のgitignore対象 `.dev.vars` に、検証する機能のSecretだけを設定し、開発サーバーを再起動する。別の開発用Workerや本番Secretの変更は不要。
+
+| 機能 | `.dev.vars` に設定する名前 |
+| --- | --- |
+| アカウント・OTP | `TURNSTILE_SECRET_KEY`、`SESSION_SECRET`、`ACCOUNT_AUTH_ENCRYPTION_KEY` |
+| R2直アップロード | `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`CLOUDFLARE_ACCOUNT_ID`（3つすべて） |
+| microCMSの記事取得・Webhook | `MICROCMS_API_KEY`、`MICROCMS_WEBHOOK_SECRET` |
+| Stripe / OpenNode / 分析 | `STRIPE_SECRET_KEY`・`STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` / `ANALYTICS_SECRET` |
+
+R2直アップロードのSecretが揃わない場合はproxyへフォールバックする。microCMSを使わない場合はそのSecretを省略できる。Webhookを検証する場合は `MICROCMS_WEBHOOK_SECRET` も設定する。実際の鍵はテスト用リソースのものを使い、ソースコード・ログ・コミットに含めない。OTP専用鍵の形式と本番への導入順は [deployment.md](./deployment.md) を参照。
+
 ### D1・R2のローカル永続化
 
 `next.config.ts` で `initOpenNextCloudflareForDev()` にローカルD1/R2の永続化先をOSの一時ディレクトリ(`os.tmpdir()/anzdrop-wrangler-state`)に指定している(理由は後述の「既知の問題」参照)。この永続化先に対して初回のみマイグレーションを適用する必要がある。
@@ -100,3 +113,17 @@ SITE_URL=http://127.0.0.1:3000 npm run audit:web
 
 - ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。
 - `/admin` はCloudflare Access配下のため、通常は `lib/access.ts` の `verifyAccessJwt()` に有効なAccess設定が必要となる。ただし上記の開発専用バイパスの条件をすべて満たす場合は、ローカル管理者として確認できる。条件を満たさない場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
+
+## パスキー・OTPのローカル確認
+
+WebAuthnはlocalhostの明示設定のみを許可する。ブラウザでは `http://localhost:3000` を開く（既存devサーバーのバインド先は127.0.0.1でもよい）。別ポートでは `ACCOUNT_AUTH_LOCAL_ORIGIN=http://localhost:ポート` をサーバー環境に設定する。127.0.0.1やリクエストHostから認証先を自動判定しない。本番の `DEPLOYMENT_ENV=production` ではこのローカル設定があっても本番Originを使用する。
+
+ローカルD1にmigration 0018を適用し、gitignore対象の `.dev.vars` に32バイトの専用暗号化鍵を設定する。鍵形式・生成方法は [deployment.md](./deployment.md) を参照。ダミー鍵を本番に使わない。
+
+`tests/app/api/account/security.test.ts` はMiniflareの実D1と実際のWebAuthn署名で、4つの設定状態、OTP制限・再利用、チャレンジと復旧の競合を検証する。UIテストはOTP設定の中止・完了、非対応ブラウザ・キャンセルを検証する。
+
+ローカルのビルド成果物をworkerdで起動した後、次のコマンドでChromium仮想認証器による登録・ログイン・OTP設定・削除・復旧を確認する。テスト用Turnstileキーは [Cloudflare公式のダミーキー](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) をビルド時・サーバー側の両方に設定する。SecretとローカルD1は本番から分離する。このテストはlocalhostと明示フラグが揃わない場合はスキップする。
+
+```sh
+E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test tests/e2e/account-security.spec.ts --workers=1
+```

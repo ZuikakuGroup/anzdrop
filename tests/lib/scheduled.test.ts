@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { recomputeRecentDailyMetrics, deleteExpiredAnalyticsEvents, runScheduledCleanup } =
+const { recomputeRecentDailyMetrics, deleteExpiredAnalyticsEvents, runScheduledCleanup, deleteExpiredAuthChallenges } =
   vi.hoisted(() => ({
     recomputeRecentDailyMetrics: vi.fn(),
     deleteExpiredAnalyticsEvents: vi.fn(),
     runScheduledCleanup: vi.fn(),
+    deleteExpiredAuthChallenges: vi.fn(),
   }));
 
 vi.mock("@/lib/analytics/aggregate", () => ({ recomputeRecentDailyMetrics }));
 vi.mock("@/lib/analytics/retention", () => ({ deleteExpiredAnalyticsEvents }));
 vi.mock("@/lib/cleanup", () => ({ runScheduledCleanup }));
+vi.mock("@/lib/account/securityStore", () => ({ deleteExpiredAuthChallenges }));
 
 import { runScheduledTask } from "@/lib/scheduled";
 
@@ -26,12 +28,14 @@ describe("runScheduledTask", () => {
     expect(recomputeRecentDailyMetrics).toHaveBeenCalledWith(env);
     expect(deleteExpiredAnalyticsEvents).toHaveBeenCalledWith(env);
     expect(runScheduledCleanup).not.toHaveBeenCalled();
+    expect(deleteExpiredAuthChallenges).not.toHaveBeenCalled();
   });
 
   it("runs cleanup for the six-hour cron", async () => {
     await runScheduledTask({ cron: "0 */6 * * *" }, env);
 
     expect(runScheduledCleanup).toHaveBeenCalledWith(env);
+    expect(deleteExpiredAuthChallenges).toHaveBeenCalledWith(env);
     expect(recomputeRecentDailyMetrics).not.toHaveBeenCalled();
     expect(deleteExpiredAnalyticsEvents).not.toHaveBeenCalled();
   });

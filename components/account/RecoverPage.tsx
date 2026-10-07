@@ -105,7 +105,7 @@ export default function RecoverPage() {
   return (
     <CenteredFormShell
       title="パスワードの再設定"
-      description="メールでの再設定は行っていません。アカウントID・リカバリーコードが必要です。"
+      description="メールでの再設定は行っていません。アカウントID・リカバリーコードが必要です。再設定するとパスキー・OTPもすべて解除されます。"
     >
           {newRecoveryCode ? (
             <div className="space-y-4">
