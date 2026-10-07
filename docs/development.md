@@ -100,3 +100,17 @@ SITE_URL=http://127.0.0.1:3000 npm run audit:web
 
 - ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。
 - `/admin` はCloudflare Access配下のため、通常は `lib/access.ts` の `verifyAccessJwt()` に有効なAccess設定が必要となる。ただし上記の開発専用バイパスの条件をすべて満たす場合は、ローカル管理者として確認できる。条件を満たさない場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
+
+## パスキー・OTPのローカル確認
+
+WebAuthnはlocalhostの明示設定のみを許可する。ブラウザでは `http://localhost:3000` を開く（既存devサーバーのバインド先は127.0.0.1でもよい）。別ポートでは `ACCOUNT_AUTH_LOCAL_ORIGIN=http://localhost:ポート` をサーバー環境に設定する。127.0.0.1やリクエストHostから認証先を自動判定しない。本番の `DEPLOYMENT_ENV=production` ではこのローカル設定があっても本番Originを使用する。
+
+ローカルD1にmigration 0018を適用し、gitignore対象の `.dev.vars` に32バイトの専用暗号化鍵を設定する。鍵形式・生成方法は [deployment.md](./deployment.md) を参照。ダミー鍵を本番に使わない。
+
+`tests/app/api/account/security.test.ts` はMiniflareの実D1と実際のWebAuthn署名で、4つの設定状態、OTP制限・再利用、チャレンジと復旧の競合を検証する。UIテストはOTP設定の中止・完了、非対応ブラウザ・キャンセルを検証する。
+
+ローカルのビルド成果物をworkerdで起動した後、次のコマンドでChromium仮想認証器による登録・ログイン・OTP設定・削除・復旧を確認する。テスト用Turnstileキーは [Cloudflare公式のダミーキー](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) をビルド時・サーバー側の両方に設定する。SecretとローカルD1は本番から分離する。このテストはlocalhostと明示フラグが揃わない場合はスキップする。
+
+```sh
+E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test tests/e2e/account-security.spec.ts --workers=1
+```

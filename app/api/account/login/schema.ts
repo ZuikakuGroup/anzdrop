@@ -9,4 +9,4 @@ export const LoginRequestSchema = z.object({
 
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
-export type LoginResponse = ApiResponse;
+export type LoginResponse = ApiResponse<{ next?: "otp" }>;

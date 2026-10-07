@@ -196,3 +196,19 @@ migration 0016。毎日UTC 00:10のCron Triggerから[`lib/analytics/aggregate.t
 | `0017_add_analytics_occurred_at_index.sql` | `analytics_events.occurred_at` 単独インデックスを追加(分析イベントの期限切れ削除を効率化) |
 
 新しいマイグレーションを追加する際は、既存の番号に続く連番のファイル名(`000N_説明.sql`)で `migrations/` に追加する。適用方法は [`development.md`](./development.md)(ローカル)・[`deployment.md`](./deployment.md)(本番、GitHub Actionsが自動実行)を参照。
+
+## 任意認証の保存（migration 0018）
+
+`0018_add_account_authentication.sql` で以下を追加する。新規D1保存についてはユーザーの明示的な許可を得ている。
+
+| テーブル | 内容 | 保持・暗号化 |
+| --- | --- | --- |
+| `account_passkeys` | account_id、認証情報ID、ランダムWebAuthn user ID、公開鍵、表示名、登録日、カウンター、transports、device_type、backed_up | 削除または復旧まで。公開鍵のため暗号化しない |
+| `account_totp` | 暗号化した共有秘密、最後に成功した時間ステップ、試行回数と5分枠の開始時刻 | 解除または復旧まで。未設定の試行枠は枠の終了後に掃除 |
+| `account_auth_challenges` | CookieトークンのSHA-256、アカウント・session_version、用途・対象操作、チャレンジ、設定途中の暗号化OTP秘密、期限、消費claim | 認証は5分、OTP設定は10分で無効。使用・中止後削除 |
+
+OTP秘密は専用 `ACCOUNT_AUTH_ENCRYPTION_KEY` によりAES-256-GCMで暗号化する。アカウントと用途を追加認証データに含め、設定途中と有効設定の暗号文を交換できないようにする。認証時だけサーバーで復号する。ファイルのE2E暗号化や鍵管理は変えない。
+
+認証途中情報は各リクエストと6時間ごとの掃除で期限切れを削除する。掃除が遅れても期限を過ぎた情報は利用できない。条件付き更新とD1のトランザクション対応 `batch()` を使い、OTP時間ステップ・チャレンジ・設定変更・復旧の二重成功を防ぐ。設定変更は操作ごとのclaimで後続SQLを制御し、世代更新まで同じbatchで行う。
+
+メール、IP、生体情報、パスキー秘密鍵、ファイル復号鍵、新たなログイン履歴は保存しない。

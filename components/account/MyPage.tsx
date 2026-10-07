@@ -140,6 +140,7 @@ function MyPageOverview({
       </a>
 
       <p className="text-xs leading-relaxed text-ink/50">
+        <a href="/mypage/security" className="mb-3 block font-bold text-brand hover:underline">ログイン・セキュリティ</a>
         パスワードを忘れた場合の再設定は、リカバリーコードでのみ行えます。<br />リカバリーコードを紛失すると復旧できません。
       </p>
     </div>

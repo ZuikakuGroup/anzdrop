@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
@@ -8,6 +8,10 @@ import { useTurnstile } from "@/lib/turnstile-client";
 import { useRedirectIfLoggedIn } from "@/lib/account/useRedirectIfLoggedIn";
 import PasswordInput from "@/components/brand/PasswordInput";
 import type { LoginResponse } from "@/app/api/account/login/schema";
+import OtpInput from "./OtpInput";
+import { accountAuthRequest, isPasskeyCancellation, loginWithPasskey, passkeysSupported } from "@/lib/account/securityClient";
+
+const subscribe = () => () => {};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,6 +20,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [needsOtp, setNeedsOtp] = useState(false);
+  const canUsePasskey = useSyncExternalStore(subscribe, passkeysSupported, () => false);
   const { widget: turnstileWidget, getToken: getTurnstileToken } =
     useTurnstile();
 
@@ -30,6 +36,18 @@ export default function LoginPage() {
     // イベントを発火しないことがある。その場合 controlled state が空のままに
     // なるため、送信時は form の DOM 値(FormData)を正とし、state も同期する。
     const formData = new FormData(event.currentTarget);
+    if (needsOtp) {
+      setIsSubmitting(true);
+      setError("");
+      try {
+        await accountAuthRequest("/api/account/login/otp", { code: String(formData.get("code") ?? "") });
+        router.replace("/mypage");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "認証に失敗しました。");
+        setIsSubmitting(false);
+      }
+      return;
+    }
     const submittedAccountId = String(formData.get("accountId") ?? "");
     const submittedPassword = String(formData.get("password") ?? "");
     setAccountId(submittedAccountId);
@@ -64,12 +82,31 @@ export default function LoginPage() {
         throw new Error(!data.success ? data.error : "ログインに失敗しました。");
       }
 
-      router.replace("/mypage");
+      setPassword("");
+      if (data.next === "otp") {
+        setNeedsOtp(true);
+        setIsSubmitting(false);
+      } else {
+        router.replace("/mypage");
+      }
     } catch (unknownErr) {
       const err =
         unknownErr instanceof Error ? unknownErr : new Error("不明なエラー");
 
       setError(err.message);
+      setIsSubmitting(false);
+    }
+  };
+
+  const passkeyLogin = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    setError("");
+    try {
+      await loginWithPasskey(await getTurnstileToken());
+      router.replace("/mypage");
+    } catch (error) {
+      if (!isPasskeyCancellation(error)) setError(error instanceof Error ? error.message : "認証に失敗しました。");
       setIsSubmitting(false);
     }
   };
@@ -86,6 +123,11 @@ export default function LoginPage() {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
+            {needsOtp ? <>
+              <p className="text-sm text-ink/70">パスワードを確認しました。認証アプリのコードを入力してください。</p>
+              <OtpInput disabled={isSubmitting} />
+              <button type="button" disabled={isSubmitting} onClick={() => { setNeedsOtp(false); setError(""); }} className="text-xs text-brand hover:underline">パスワード入力に戻る</button>
+            </> : <>
             <div className="space-y-1">
               <label
                 htmlFor="login-account-id"
@@ -126,6 +168,8 @@ export default function LoginPage() {
               />
             </div>
 
+            </>}
+
             {turnstileWidget}
 
             <button
@@ -136,6 +180,10 @@ export default function LoginPage() {
               {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
               {isSubmitting ? "ログイン中..." : "ログインする"}
             </button>
+
+            {canUsePasskey ? <button type="button" onClick={passkeyLogin} disabled={isSubmitting}
+              className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold disabled:opacity-30">パスキーでログイン</button>
+              : <p className="text-xs text-ink/50">このブラウザではパスキーを利用できません。パスワードでログインしてください。</p>}
 
             <p
               role="alert"

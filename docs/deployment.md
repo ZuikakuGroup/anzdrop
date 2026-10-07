@@ -59,6 +59,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 | Secret名 | 用途 |
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Turnstile検証用のシークレットキー |
+| `ACCOUNT_AUTH_ENCRYPTION_KEY` | OTP秘密のAES-256-GCM暗号化専用鍵。32バイトをpaddingなしbase64urlで表す43文字 |
 | `SESSION_SECRET` | アカウントのログインセッションJWTの署名鍵(HS256)。詳細は[`accounts.md`](./accounts.md) |
 | `STRIPE_SECRET_KEY` | Stripe APIキー(Customer/Subscriptionの作成・取得・更新などのAPI呼び出しに使用) |
 | `STRIPE_WEBHOOK_SECRET` | `/api/billing/stripe/webhook` の署名検証用シークレット(Stripeダッシュボードで作成したWebhookエンドポイントごとに発行される) |
@@ -191,3 +192,18 @@ npm run deploy:router # 公開ルートを受けるRouter Workerを最後にデ�
 上記の順番で実行する。Router Workerを最後に更新することで、トップページWorkerのデプロイに失敗しても、公開ルートは既存アプリWorkerを向いたままになる。
 
 手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。この手動コマンドは監査用tar・Attestation・manifestを生成しない。
+
+## OTP暗号化鍵を設定してから導入する
+
+導入順は **専用Secret設定 → migration 0018適用 → 対応コードのデプロイ**。自動デプロイ前にSecretを準備する。鍵はセッション署名鍵と分離する。秘密管理ツールで32バイトの乱数を生成し、paddingなしbase64urlの43文字として保存する。登録時のみ、リポジトリ外の権限600の一時ファイルへ改行なしでエクスポートして、次のようにstdinから渡す。生成値をソース・vars・ログ・コミットへ含めない。
+
+```sh
+npx wrangler secret put ACCOUNT_AUTH_ENCRYPTION_KEY < /安全な一時ディレクトリ/account-auth-key
+rm /安全な一時ディレクトリ/account-auth-key
+```
+
+設定した鍵はアクセスを制限した秘密管理ツールに保管し、DBのバックアップと組にして復旧できるようにする。紛失すると保存済みOTP秘密を復号できず、OTPの利用者はパスキーまたはリカバリーコードによる復旧が必要になる。
+
+現行の暗号文形式は1鍵に対応する。鍵を上書きするだけでは既存のOTPが検証できなくなるため、通常のローテーションは行わない。更新が必要な場合はOTP関連操作・ログインを保守停止し、旧鍵で全有効秘密と設定途中秘密を復号、新鍵で同じアカウント・用途の追加認証データを使って再暗号化する移行を別途実装・検証する。DBの暗号文とSecretを一緒に切り替え、旧鍵は移行前バックアップの保持期間が終わるまで保管する。部分更新のまま再開しない。
+
+OTP有効化後は、OTPを要求しない旧コードへロールバックしない。修正はOTP検証を維持する対応コードで行う。`ACCOUNT_AUTH_LOCAL_ORIGIN` はローカル検証専用で、本番には配置しない。

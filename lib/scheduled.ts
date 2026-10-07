@@ -23,4 +23,6 @@ export async function runScheduledTask(
 
   const { runScheduledCleanup } = await import("./cleanup");
   await runScheduledCleanup(env);
+  const { deleteExpiredAuthChallenges } = await import("./account/securityStore");
+  await deleteExpiredAuthChallenges(env);
 }
