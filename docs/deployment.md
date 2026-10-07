@@ -188,10 +188,18 @@ Cloudflare Workersにはスクリプトサイズの上限があり、**無料プ
 npm run preview  # ローカルでCloudflare Workers向けビルド後、wranglerのローカルプレビューを起動
 npm run deploy        # 既存アプリWorkerをデプロイ
 npm run deploy:home   # トップページWorkerをデプロイ
-npm run deploy:router # 公開ルートを受けるRouter Workerを最後にデプロイ
+npm run build:public  # 公開Workerのコードと静的アセットを生成
+npx wrangler deploy --config apps/public/dist/server/wrangler.json --var DEPLOYMENT_ENV:production
+# 初回は公開WorkerにmicroCMSの読み取り用キーを登録する（値をコマンド引数やログに残さない）
+npx wrangler secret put MICROCMS_API_KEY --config apps/public/dist/server/wrangler.json
+# キーの値ではなく登録名だけを確認する。既に設定済みなら再登録は不要
+npx wrangler secret list --config apps/public/dist/server/wrangler.json --format json
+npm run deploy:router # 公開WorkerとCMSキーが揃ってからRouter Workerを最後にデプロイ
 ```
 
-上記の順番で実行する。Router Workerを最後に更新することで、トップページWorkerのデプロイに失敗しても、公開ルートは既存アプリWorkerを向いたままになる。
+上記の順番で実行し、公開Workerのデプロイが成功したことと、Secret一覧に `MICROCMS_API_KEY` があることを確認してからRouter Workerを更新する。既存APPのSecretは新しいWorkerへ自動共有されない。キーは `MICROCMS_SERVICE_DOMAIN` のサービスで公開コンテンツを取得できる読み取り用キーを用意する。
+
+Router Workerを最後に更新することで、初回導入時にHOME・PUBLICのデプロイやCMSキーの準備が失敗しても、既存ルーターの振り分けを維持できる。失敗した場合はそこで中断し、Router Workerをデプロイしない。
 
 手動デプロイ時は `CLOUDFLARE_API_TOKEN` 等の認証情報をローカルの `wrangler` にも設定しておく必要がある(`wrangler login` またはトークンを環境変数で渡す)。CIと同様、事前にD1マイグレーションの適用(`npx wrangler d1 migrations apply DB --remote`)を忘れないこと(`npm run deploy` はマイグレーションを自動実行しない)。この手動コマンドは監査用tar・Attestation・manifestを生成しない。
 
