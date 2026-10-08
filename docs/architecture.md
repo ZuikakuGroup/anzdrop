@@ -41,7 +41,7 @@ Astroの操作画面は共通のReactコンポーネントを`client:load`でハ
 | --- | --- | --- |
 | `DB` | D1 Database | `shares` / `uploads` / `upload_parts` / `files` / `reports` / `accounts` / `btc_payments` / `stripe_events` / `analytics_events` / `analytics_daily_metrics` テーブル |
 | `FILES_BUCKET` | R2 Bucket | 暗号化済みファイル本体(マルチパートアップロード) |
-| `FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER` | Rate Limiting | アプリ層のレート制限(下記「レート制限」参照) |
+| `FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER` / `FORM_RATE_LIMITER` | Rate Limiting | アプリ層のレート制限(下記「レート制限」参照) |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 環境変数 | 管理画面(`/admin`, `/api/admin/*`)のCloudflare Access JWT検証用 |
 | `TURNSTILE_SECRET_KEY` | シークレット | アップロード開始・アカウント関連APIのTurnstile検証用 |
 | `ANALYTICS_SECRET` | シークレット | 計測基盤がshareIdをHMACでハッシュ化する鍵([`analytics.md`](./analytics.md)参照) |
@@ -151,8 +151,11 @@ API側の詳細は [`api.md`](./api.md) を参照。
 | `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk`・`POST /api/upload/part-urls`・`POST /api/upload/part-ack` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
 | `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
 | `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | エンドポイント全体の固定キー + `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。固定キーでD1への総書き込み量を抑え、匿名ID単位でも連打を止める。IPは扱わない |
+| `FORM_RATE_LIMITER` | `POST /api/account/signup`・`POST /api/report`・`POST /api/contact` | APIごとの固定キー(`signup` / `report` / `contact`) | 各API全体で120/60秒。Turnstile成功後、パスワードのハッシュ計算・D1書き込み前に判定する。IP・メールアドレス・アカウントID・共有IDはキーにしない |
 
 実際の閾値は [`wrangler.jsonc`](../wrangler.jsonc) の `ratelimits` にあります(`period` は 10 か 60 のみ指定可能)。
+
+`FORM_RATE_LIMITER` は全利用者で枠を共有する。Turnstile検証に失敗した送信は枠を消費しないが、有効なトークンを大量取得する相手が枠を使い切ると、その地域の正当な送信も一時的に429になる。フォーム間の枠は独立。ユーザー確認済みのコスト保護策として導入し、Cloudflareの一時カウンタ以外に新しい永続データは保存しない。
 
 **閾値を決めるときに外してはいけない前提**:
 

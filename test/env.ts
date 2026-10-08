@@ -47,6 +47,7 @@ export const RATE_LIMITER_BINDINGS = [
   "UPLOAD_RATE_LIMITER",
   "ACCOUNT_RATE_LIMITER",
   "ANALYTICS_RATE_LIMITER",
+  "FORM_RATE_LIMITER",
 ] as const;
 
 export type RateLimiterBinding = (typeof RATE_LIMITER_BINDINGS)[number];

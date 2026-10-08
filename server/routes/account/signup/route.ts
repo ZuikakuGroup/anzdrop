@@ -2,6 +2,7 @@ import { getWorkerRuntime } from "@/server/runtime";
 import { generateRecoveryCode } from "@/lib/account/id";
 import { hashPassword } from "@/lib/account/password";
 import { requireTurnstile } from "@/lib/turnstile";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
@@ -22,7 +23,7 @@ export const POST = withApiHandler(
 
     const { accountId, password } = parsed.data;
 
-    // アカウント作成はメールもレート制限もない中での主な悪用標的なので、
+    // アカウント大量作成の対策として、回数制限に加え、
     // 新規共有作成(/api/upload/start)と同様にTurnstile検証を必須にする。
     const turnstile = await requireTurnstile(
       parsed.data.turnstileToken,
@@ -31,6 +32,12 @@ export const POST = withApiHandler(
 
     if (!turnstile.ok) {
       return turnstile.response;
+    }
+
+    // 固定キーでAPI全体の書き込みを抑える。利用者のIPや入力値は数えない。
+    const limit = await checkRateLimit(env.FORM_RATE_LIMITER, "signup", "account/signup");
+    if (!limit.ok) {
+      return limit.response;
     }
 
     const recoveryCode = generateRecoveryCode();

@@ -29,6 +29,11 @@
   ],
   "ratelimits": [
     {
+      "name": "FORM_RATE_LIMITER",
+      "namespace_id": "81006",
+      "simple": { "limit": 120, "period": 60 }
+    },
+    {
       "name": "FILE_RATE_LIMITER",
       "namespace_id": "81001",
       "simple": {
