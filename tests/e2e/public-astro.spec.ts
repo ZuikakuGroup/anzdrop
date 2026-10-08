@@ -64,6 +64,41 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     expect(await sitemap.text()).toContain('https://anzdrop.com/blog/local-seed-post-1');
     expect(await (await request.get('/robots.txt')).text()).toContain('Disallow: /api\n');
   });
+  test('FAQの開閉で高さがアニメーションし、動きを減らす設定では即時に切り替わる', async ({ page }) => {
+    await page.goto('/about');
+    const faq = page.locator('details').first();
+    const summary = faq.locator('summary');
+    const closedHeight = await faq.evaluate(element => element.getBoundingClientRect().height);
+
+    // Sample actual layout across frames in both directions, rather than only checking CSS classes.
+    const sampleToggle = () => faq.evaluate(async element => {
+      element.querySelector('summary')!.click();
+      const heights: number[] = [];
+      const start = performance.now();
+      while (performance.now() - start < 400) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        heights.push(element.getBoundingClientRect().height);
+      }
+      return heights;
+    });
+    const opening = await sampleToggle();
+    await expect(faq).toHaveAttribute('open', '');
+    const openHeight = await faq.evaluate(element => element.getBoundingClientRect().height);
+    expect(openHeight).toBeGreaterThan(closedHeight);
+    expect(opening.some(height => height > closedHeight + 1 && height < openHeight - 1)).toBe(true);
+    const closing = await sampleToggle();
+    await expect(faq).not.toHaveAttribute('open');
+    expect(closing.some(height => height > closedHeight + 1 && height < openHeight - 1)).toBe(true);
+    await expect(faq).toHaveCSS('height', `${closedHeight}px`);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(faq).toHaveAttribute('open', '');
+    expect(await faq.evaluate(element => getComputedStyle(element, '::details-content').transitionDuration)).toBe('0s');
+    await page.keyboard.press('Enter');
+    await expect(faq).not.toHaveAttribute('open');
+  });
 });
 
 test('公開ページの本文とメタデータをSSRし、セッションを発行しない', async ({ request }) => {

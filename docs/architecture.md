@@ -198,6 +198,8 @@ CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定�
 
 `apps/public` が `/about`、`/pricing`、`/legal/{terms,privacy,tokushoho}`、`/lp/secure-file-sharing`、`/blog` と記事・分類・タグ・著者ページ、`/robots.txt`、`/sitemap.xml` を提供する。生成アセットは `/_public-astro/`。URLは維持し、共通React部品をSSRする。ヘッダー、画像拡大、LPの既存計測だけをReact islandとして実行し、FAQとブログのページ送りはHTML標準機能を使う。
 
+`/about` のFAQは、`::details-content` と `interpolate-size` に対応するブラウザーで高さ・透明度を300msで変化させる。JavaScriptや追加のデータ保存は不要。未対応のブラウザーは標準の開閉を維持し、`prefers-reduced-motion: reduce` ではアニメーションを無効にする。
+
 ブログ取得・検証は `lib/blog/core.ts` をNext/Astroで共有する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
 
 Nextの同名公開ルートは開発用とルーターを戻す際の互換経路として残す。公開ページへのリンクは通常のドキュメント遷移を使い、NextのRSCリクエストをWorker間に持ち越さない。
