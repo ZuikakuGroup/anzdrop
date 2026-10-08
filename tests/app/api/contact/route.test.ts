@@ -11,6 +11,7 @@ import {
 import {
   createTestEnv,
   clearAllTables,
+  resetRateLimiters,
   stubTurnstileSuccess,
   stubTurnstileFailure,
   type TestEnv,
@@ -35,6 +36,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await clearAllTables(env);
+  resetRateLimiters(env);
 });
 
 afterEach(() => {
@@ -283,5 +285,52 @@ describe("POST /api/contact", () => {
 
     const contacts = await allContacts();
     expect(contacts[0].name).not.toContain(fakeKey);
+  });
+});
+
+
+describe("contact のAPI全体レート制限", () => {
+  const body = { email: "user@example.com", subject: "test", message: "hello", turnstileToken: "tok" };
+
+  it("許可された送信を固定キーで数え、入力値をキーにしない", async () => {
+    stubTurnstileSuccess();
+    const response = await postContact(body);
+    expect(response.status).toBe(200);
+    expect(env.FORM_RATE_LIMITER.keys).toEqual(["contact"]);
+  });
+
+  it("上限到達時は429と再試行時間を返し、DBへ保存しない", async () => {
+    stubTurnstileSuccess();
+    env.FORM_RATE_LIMITER.denyKeyFrom("contact", 1);
+    const response = await postContact(body);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ success: false });
+    const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM contacts").first<{ total: number }>();
+    expect(count?.total).toBe(0);
+  });
+
+  it("他のフォームの上限到達でこのAPIを止めない", async () => {
+    stubTurnstileSuccess();
+    env.FORM_RATE_LIMITER.denyKeyFrom("signup", 1);
+    expect((await postContact(body)).status).toBe(200);
+  });
+
+  it("Turnstileに失敗した送信は全利用者の枠を消費しない", async () => {
+    stubTurnstileFailure();
+    expect((await postContact(body)).status).toBe(403);
+    expect(env.FORM_RATE_LIMITER.keys).toEqual([]);
+  });
+
+  it("制限サービスの障害時は既存の送信を維持する", async () => {
+    stubTurnstileSuccess();
+    env.FORM_RATE_LIMITER.failNext();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await postContact(body)).status).toBe(200);
+    } finally {
+      log.mockRestore();
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { getWorkerRuntime } from "@/server/runtime";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { requireTurnstile } from "@/lib/turnstile";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { isValidEmail } from "@/lib/email";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -65,6 +66,12 @@ export const POST = withApiHandler(
 
     if (!turnstile.ok) {
       return turnstile.response;
+    }
+
+    // 固定キーでAPI全体の書き込みを抑える。利用者のIPや入力値は数えない。
+    const limit = await checkRateLimit(env.FORM_RATE_LIMITER, "report", "report");
+    if (!limit.ok) {
+      return limit.response;
     }
 
     const reportType = parseReportType(requestBody.reportType) ?? "general";

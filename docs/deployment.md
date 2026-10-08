@@ -107,7 +107,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 - **D1**: `binding: "DB"`, `database_name: "anzdrop-db"`(`database_id` は固定値でリポジトリに含まれる。新しい環境向けに作り直す場合は `wrangler d1 create anzdrop-db` 後にIDを書き換える)。
 - **R2**: `binding: "FILES_BUCKET"`, `bucket_name: "anzdrop"`。
 - **Cron Trigger**: `"0 */6 * * *"`(6時間ごと、期限切れ共有・放置アップロードの掃除。[`architecture.md`](./architecture.md#掃除cleanup)参照)と`"10 0 * * *"`(毎日UTC 00:10、分析日次集計)。
-- **Rate Limiting バインディング**: `ratelimits` に5つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81005`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
+- **Rate Limiting バインディング**: `ratelimits` に6つ(`FILE_RATE_LIMITER` / `SHARE_RATE_LIMITER` / `UPLOAD_RATE_LIMITER` / `ACCOUNT_RATE_LIMITER` / `ANALYTICS_RATE_LIMITER` / `FORM_RATE_LIMITER`)。事前のリソース作成は不要だが、**`namespace_id` はCloudflareアカウント内で一意**でなければならない(同じ値を使うと、別のWorkerのバインディングとカウンタを共有してしまい、原因の分からない429の元になる)。公式ドキュメントのサンプル値(`1001` など)との衝突を避けるため、このリポジトリでは `81001`〜`81006`(issue番号#81由来)を使っている。適用先と閾値の考え方は[`architecture.md`](./architecture.md#レート制限)を参照。
 - **vars**: `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD`(Cloudflare Accessの設定)、`STRIPE_PRICE_ID_STANDARD` / `STRIPE_PRICE_ID_PREMIUM` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD` / `OPENNODE_BTC_CHARGE_AMOUNT_USD_PREMIUM` / `OPENNODE_BTC_DAYS_PER_CHARGE`(有料プランの設定、上記の表を参照)。
 - **secrets**(`wrangler secret put` で設定、リポジトリには含まれない): 上記の表を参照。
 
@@ -123,6 +123,12 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 ## WAF のレート制限ルール
 
+本番用の設定は [`config/waf-rate-limit.json`](../config/waf-rate-limit.json) に記録する。2026-10-08にCloudflare APIで適用し、entrypointの読み戻しで有効化を確認済み（ruleset ID: `91708d5468b942b4ba7c132923cb66cd`）。`anzdrop.com` のゾーンは有効で独自ドメイン取得は完了済み。`/api` と `/api/` 以下を、同一IP・データセンターごとに3000回/10秒で数え、超過時は10秒間Blockして429のJSON応答を返す。FreeプランではHostを条件にできないため、同ゾーンの他のサブドメインのAPIも対象となる。
+
+3000回/10秒は並列転送と共有IPの余裕を確保するための緩い初期値。8MiBの転送だけを想定すると単独利用で約20Gbps相当だが、パートURL発行・ACKや同じIPの他の利用者の呼び出しも合算するため、厳密な帯域上限ではない。Cloudflareのカウンタもベストエフォートであり、費用の厳密な上限は保証しない。IPはCloudflareだけが制限判定に使い、アプリのDBやログに追加保存しない。
+
+適用時は `http_ratelimit` のentrypointを読み、既存ルールがある場合は上書きせず差分を確認する。設定後はentrypointの読み戻しで有効化を確認する。ロールバックは `ref: anzdrop_api_ip_rate_limit` のルールだけを無効にし、他のルールを残す。
+
 [`architecture.md`](./architecture.md#レート制限) の外側の層。Workers 側のバインディングが「共有・セッション単位」で数えるのに対し、こちらは**送信元 IP 単位**で数える。Anzdrop のコードは IP を一切扱わないため、IP を見た判定はすべてここに寄せている。
 
 Rate Limiting Rules は**ゾーン単位の機能**なので、Worker を `*.workers.dev` だけで公開している状態では設定できない(ダッシュボードに項目自体が出ない)。設定するには先に独自ドメインを Cloudflare ゾーンとして追加し、Worker のカスタムドメインに割り当てておく必要がある。
@@ -131,7 +137,7 @@ Rate Limiting Rules は**ゾーン単位の機能**なので、Worker を `*.wor
 2. Workers & Pages → `anzdrop` → **Settings** → **Domains & Routes** → **Add** → **Custom domain** で、そのドメイン(およびルート指定したいホスト名)を割り当てる。
 3. そのゾーンの **Security** → **Security rules** → **Create rule** → **Rate limiting rules** で以下のようなルールを作る。
 
-   - 式: `starts_with(http.request.uri.path, "/api/")`
+   - 式: `starts_with(http.request.uri.path, "/api/") or http.request.uri.path eq "/api"`
    - 特性(With the same characteristics): **IP**
    - 閾値・期間・アクション・継続時間: プランごとに選べる値が違う(**Free プランはルール1本・カウント期間10秒・Block・継続10秒のみ**)。
 
