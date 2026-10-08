@@ -30,6 +30,15 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/about');
     expect(violations).toEqual([]);
   });
+  test('Standardの料金と購入導線を公開する', async ({ page }) => {
+    await page.goto('/pricing');
+    const card = page.getByRole('heading', { name: 'Standard', exact: true }).locator('..');
+    await expect(card).toContainText('¥250');
+    await expect(card).toContainText('20GB');
+    await expect(card).toContainText('15日');
+    await expect(card).not.toContainText('準備中');
+    await expect(card.getByRole('link', { name: '始める' })).toHaveAttribute('href', '/mypage/billing');
+  });
   test('ブログのページ送り・記事・画像拡大・404', async ({ page, request }) => {
     await page.goto('/blog');
     await page.getByRole('link', { name: '次のページ' }).click();
@@ -54,6 +63,41 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     expect(sitemap.status()).toBe(200);
     expect(await sitemap.text()).toContain('https://anzdrop.com/blog/local-seed-post-1');
     expect(await (await request.get('/robots.txt')).text()).toContain('Disallow: /api\n');
+  });
+  test('FAQの開閉で高さがアニメーションし、動きを減らす設定では即時に切り替わる', async ({ page }) => {
+    await page.goto('/about');
+    const faq = page.locator('details').first();
+    const summary = faq.locator('summary');
+    const closedHeight = await faq.evaluate(element => element.getBoundingClientRect().height);
+
+    // Sample actual layout across frames in both directions, rather than only checking CSS classes.
+    const sampleToggle = () => faq.evaluate(async element => {
+      element.querySelector('summary')!.click();
+      const heights: number[] = [];
+      const start = performance.now();
+      while (performance.now() - start < 400) {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        heights.push(element.getBoundingClientRect().height);
+      }
+      return heights;
+    });
+    const opening = await sampleToggle();
+    await expect(faq).toHaveAttribute('open', '');
+    const openHeight = await faq.evaluate(element => element.getBoundingClientRect().height);
+    expect(openHeight).toBeGreaterThan(closedHeight);
+    expect(opening.some(height => height > closedHeight + 1 && height < openHeight - 1)).toBe(true);
+    const closing = await sampleToggle();
+    await expect(faq).not.toHaveAttribute('open');
+    expect(closing.some(height => height > closedHeight + 1 && height < openHeight - 1)).toBe(true);
+    await expect(faq).toHaveCSS('height', `${closedHeight}px`);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await summary.focus();
+    await page.keyboard.press('Enter');
+    await expect(faq).toHaveAttribute('open', '');
+    expect(await faq.evaluate(element => getComputedStyle(element, '::details-content').transitionDuration)).toBe('0s');
+    await page.keyboard.press('Enter');
+    await expect(faq).not.toHaveAttribute('open');
   });
 });
 

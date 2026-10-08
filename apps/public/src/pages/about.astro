@@ -3,6 +3,35 @@ import PublicLayout from '../layouts/PublicLayout.astro';
 import Page from '@/components/about/AboutPage';
 ---
 <PublicLayout title="Anzdropとは | Anzdrop" description="Anzdropの仕組み、エンドツーエンド暗号化、よくある質問について紹介します。">
-  <Page showChrome={false} nativeFaq={true} />
+  <div class="about-faq-animation">
+    <Page showChrome={false} nativeFaq={true} />
+  </div>
 
 </PublicLayout>
+
+<style is:global>
+  @supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+    .about-faq-animation details {
+      interpolate-size: allow-keywords;
+    }
+
+    .about-faq-animation details::details-content {
+      height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: height 300ms ease-out, opacity 300ms ease-out,
+        content-visibility 300ms allow-discrete;
+    }
+
+    .about-faq-animation details[open]::details-content {
+      height: auto;
+      opacity: 1;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .about-faq-animation details::details-content {
+        transition: none;
+      }
+    }
+  }
+</style>

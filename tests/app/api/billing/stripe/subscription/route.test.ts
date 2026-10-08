@@ -171,16 +171,20 @@ describe("POST /api/billing/stripe/subscription", () => {
     );
   });
 
-  it("rejects the not-yet-available standard plan (bypassing the purchase UI) with 400", async () => {
-    const { accountId } = await insertTestAccount(env, {
-      stripeCustomerId: "cus_existing",
-    });
+  it("creates a Standard subscription using its price without granting the plan before payment", async () => {
+    const { accountId } = await insertTestAccount(env, { stripeCustomerId: "cus_existing" });
     const cookie = await sessionCookieHeader(env, accountId);
-
+    mockSubscriptionsCreate.mockResolvedValue(subscriptionWithClientSecret("sub_standard", "standard_secret"));
     const response = await postSubscription(cookie, { plan: "standard" });
-
-    expect(response.status).toBe(400);
-    expect(mockSubscriptionsCreate).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, clientSecret: "standard_secret" });
+    expect(mockSubscriptionsCreate).toHaveBeenCalledWith(expect.objectContaining({
+      items: [{ price: env.STRIPE_PRICE_ID_STANDARD }],
+      payment_behavior: "default_incomplete",
+      payment_settings: expect.objectContaining({ payment_method_types: ["card"] }),
+    }));
+    const account = await env.DB.prepare("SELECT plan, stripe_subscription_id FROM accounts WHERE id = ?").bind(accountId).first<{ plan: string; stripe_subscription_id: string }>();
+    expect(account).toMatchObject({ plan: "free", stripe_subscription_id: "sub_standard" });
   });
 
   it("creates the subscription for the premium plan's price with card-only, default-incomplete settings", async () => {

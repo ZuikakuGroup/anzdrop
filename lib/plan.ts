@@ -60,11 +60,8 @@ export const PLAN_MONTHLY_PRICE_JPY: Record<Exclude<Plan, "free">, number> = {
 
 // 現在購入できる有料プラン。購入UI(components/billing/BillingPage.tsx)と
 // 決済API(app/api/billing/stripe/subscription・app/api/billing/btc/charge)が
-// 共有する単一の情報源。Standardは提供準備中(Issue #5)のため含めない。
-// スキーマ・APIルート・環境変数(STRIPE_PRICE_ID_STANDARD 等)はStandardも
-// 扱える状態のまま残してあるので、提供開始時はこの配列へ "standard" を戻すだけで
-// 購入UI・Stripe/Bitcoinの両決済APIに反映される。
-export const PURCHASABLE_PLANS = ["premium"] as const satisfies readonly Exclude<
+// 共有する単一の情報源。料金ページでも両プランの購入導線を提供する。
+export const PURCHASABLE_PLANS = ["standard", "premium"] as const satisfies readonly Exclude<
   Plan,
   "free"
 >[];
