@@ -140,9 +140,9 @@ API側の詳細は [`api.md`](./api.md) を参照。
 | 層 | 設定場所 | 数える単位 | 守るもの |
 | --- | --- | --- | --- |
 | 外側 | Cloudflare WAF の Rate Limiting Rules(ゾーン側のダッシュボード設定。[`deployment.md`](./deployment.md#waf-のレート制限ルール)) | 送信元 IP | 単一 IP からの機械的な連打全般 |
-| 内側 | Workers の Rate Limiting バインディング([`lib/rateLimit.ts`](../lib/rateLimit.ts)) | `fileId` / `shareId` / アップロードセッションID / アカウントID | 分散した IP から1つの共有・1つのセッションへ集中する濫用 |
+| 内側 | Workers の Rate Limiting バインディング([`lib/rateLimit.ts`](../lib/rateLimit.ts)) | `fileId` / `shareId` / アップロードセッションID / アカウントID / APIごとの固定キー | 分散した IP から1つの共有・1つのセッション・1つのAPIへ集中する濫用 |
 
-内側の層でキーにするのはアプリ内の識別子だけで、**IP アドレスなどの訪問者情報は一切キーにしません**。Anzdrop 側のコードで訪問者の IP を収集・加工しないという方針([`lib/turnstile.ts`](../lib/turnstile.ts) が siteverify に `remoteip` を送らないのと同じ考え方)を保つためで、IP 単位の判定は Cloudflare 側に任せます。
+内側の層でキーにするのはアプリ内の識別子やAPIごとの固定キー(`FORM_RATE_LIMITER` では `signup` / `report` / `contact`)で、**IP アドレスなどの訪問者情報は一切キーにしません**。Anzdrop 側のコードで訪問者の IP を収集・加工しないという方針([`lib/turnstile.ts`](../lib/turnstile.ts) が siteverify に `remoteip` を送らないのと同じ考え方)を保つためで、IP 単位の判定は Cloudflare 側に任せます。
 
 | バインディング | 適用先 | キー | 閾値の考え方 |
 | --- | --- | --- | --- |
@@ -171,7 +171,6 @@ API側の詳細は [`api.md`](./api.md) を参照。
 - **429 で弾いた分は「消費」しない**: 保存期間「1回」のファイルの `download_count` は加算されません。
 - **429 は利用者に「一時的だ」と伝える**: ダウンロード画面は429を専用の文言(`lib/download/errors.ts` の `RATE_LIMITED_MESSAGE`)で表示します。汎用の「URLが正しいかご確認のうえ」に丸めると、待てば直る混雑なのに「リンクが壊れている」と読めてしまうためです。
 - **ログにキーを残さない**: `fileId` / `shareId` は共有URLの一部なので、エラーログにも含めません。
-- **`/api/report`・`/api/contact`・`/api/account/signup` は対象外**: IP を使わずに数える適切な単位が無く(共通キーにすると1人の攻撃者が全員をロックアウトできてしまう)、既に Turnstile で保護されているため、この層では扱わず外側の WAF ルールに任せます。
 
 Turnstile を含む濫用対策全体の位置づけは、アップロードが無認証で公開されている前提([`moderation.md`](./moderation.md))と合わせて読んでください。
 
