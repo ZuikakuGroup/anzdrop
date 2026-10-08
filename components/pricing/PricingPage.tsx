@@ -79,7 +79,7 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
             <div className="flex flex-col rounded-lg border border-ink/10 bg-paper p-8">
               <h2 className="text-lg font-black">Standard</h2>
               <p className="mt-1 text-sm text-ink/50">
-                近日公開予定の中間プランです。
+                容量と保存期間を増やしたい方に。
               </p>
               <p className="mt-4 text-3xl font-black">
                 ¥250
@@ -123,9 +123,12 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 </li>
               </ul>
 
-              <span className="mt-8 block w-full rounded border-2 border-ink/20 px-4 py-3 text-center text-sm font-black tracking-wider text-ink/30">
-                準備中
-              </span>
+              <a
+                href="/mypage/billing"
+                className="mt-8 block w-full rounded border-2 border-ink px-4 py-3 text-center text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03]"
+              >
+                始める
+              </a>
             </div>
 
             <div className="flex flex-col rounded-lg border-2 border-brand bg-paper p-8">

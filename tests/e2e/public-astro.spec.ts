@@ -30,6 +30,15 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/about');
     expect(violations).toEqual([]);
   });
+  test('Standardの料金と購入導線を公開する', async ({ page }) => {
+    await page.goto('/pricing');
+    const card = page.getByRole('heading', { name: 'Standard', exact: true }).locator('..');
+    await expect(card).toContainText('¥250');
+    await expect(card).toContainText('20GB');
+    await expect(card).toContainText('15日');
+    await expect(card).not.toContainText('準備中');
+    await expect(card.getByRole('link', { name: '始める' })).toHaveAttribute('href', '/mypage/billing');
+  });
   test('ブログのページ送り・記事・画像拡大・404', async ({ page, request }) => {
     await page.goto('/blog');
     await page.getByRole('link', { name: '次のページ' }).click();

@@ -23,7 +23,7 @@ import {
 } from "@/lib/account/planStatus";
 
 // 購入可能プランは lib/plan.ts の PURCHASABLE_PLANS を単一の情報源とする
-// (決済API側の受理判定と揃える)。Standard は提供準備中(Issue #5)。
+// (決済API側の受理判定と揃える)。Standard・Premiumを提供する。
 
 // Webhook反映はStripeからの非同期通知を待つ必要があるため、決済確定直後は
 // 少し間を空けて数回だけ最新のプランを取り直す(反映が間に合わなくても

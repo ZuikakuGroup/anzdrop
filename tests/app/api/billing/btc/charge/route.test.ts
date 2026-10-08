@@ -151,22 +151,19 @@ describe("POST /api/billing/btc/charge", () => {
     expect(payment?.plan).toBe("premium");
   });
 
-  it("rejects the not-yet-available standard plan (bypassing the purchase UI) with 400", async () => {
+  it("creates a pending Standard payment for its USD amount without granting the plan", async () => {
     const { accountId } = await insertTestAccount(env);
     const cookie = await sessionCookieHeader(env, accountId);
-
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
+    stubOpenNodeSuccess("charge-standard", "https://checkout.opennode.com/charge-standard");
     const response = await postCharge(cookie, { plan: "standard" });
-
-    expect(response.status).toBe(400);
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    const { results } = await env.DB.prepare(
-      `SELECT id FROM btc_payments`
-    ).all();
-    expect(results).toHaveLength(0);
+    expect(response.status).toBe(200);
+    const fetchMock = vi.mocked(fetch);
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+    expect(requestBody.amount).toBe(env.OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD);
+    const payment = await env.DB.prepare("SELECT plan, status FROM btc_payments WHERE opennode_charge_id = ?").bind("charge-standard").first<{ plan: string; status: string }>();
+    expect(payment).toEqual({ plan: "standard", status: "pending" });
+    const account = await env.DB.prepare("SELECT plan FROM accounts WHERE id = ?").bind(accountId).first<{ plan: string }>();
+    expect(account?.plan).toBe("free");
   });
 
   it("sends the plan-specific USD amount and a callback url derived from the request origin", async () => {

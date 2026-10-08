@@ -47,7 +47,7 @@ export const POST = withApiHandler(
     const { plan } = parsed.data;
 
     // スキーマは standard/premium の両方を型として受けるが、実際に購入導線へ
-    // 出しているプランだけを決済対象にする(Standard は提供準備中。Issue #5)。
+    // 出しているプランだけを決済対象にする。
     if (!isPurchasablePlan(plan)) {
       return Response.json(
         { success: false, error: "このプランは現在購入できません" },
