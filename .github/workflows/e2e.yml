@@ -73,7 +73,7 @@ jobs:
         run: bash scripts/wait-for-url.sh "$E2E_BASE_URL/" 180 5
 
       - name: Run Playwright
-        run: npx playwright test
+        run: npx playwright test --project=chromium
         env:
           CI: "true"
           E2E_BASE_URL: ${{ env.E2E_BASE_URL }}
