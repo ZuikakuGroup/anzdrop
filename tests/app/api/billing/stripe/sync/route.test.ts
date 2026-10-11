@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -20,9 +21,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 const mockSubscriptionsRetrieve = vi.fn();
 const mockInvoicesRetrieve = vi.fn();
@@ -84,7 +83,7 @@ function subscription(
 }
 
 async function postSync(cookie?: string, origin: string | null = "http://localhost") {
-  const { POST } = await import("@/app/api/billing/stripe/sync/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/billing/stripe/sync/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/billing/stripe/sync", {

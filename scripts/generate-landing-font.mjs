@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 const pagePath = "components/landing/SecureFileSharingLandingPage.tsx";
 const headerPath = "components/brand/SiteHeader.tsx";
 const footerPath = "components/brand/SiteFooter.tsx";
-const cssPath = "app/globals.css";
+const cssPath = "apps/public/src/globals.css";
 const fontPath = "public/fonts/noto-sans-jp-lp/noto-sans-jp-lp.woff2";
 
 const sourceText = (await Promise.all([

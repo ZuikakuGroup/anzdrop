@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -13,9 +14,7 @@ import { verifyAccessJwt } from "@/lib/access";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 vi.mock("@/lib/access", () => ({
   verifyAccessJwt: vi.fn(),
@@ -41,7 +40,7 @@ function authorize() {
 }
 
 async function getAnalytics(query: string) {
-  const { GET } = await import("@/app/api/admin/analytics/route");
+  const { GET } = bindRouteHandlers(await import("@/server/routes/admin/analytics/route"), testRuntime);
 
   return GET(new Request(`http://localhost/api/admin/analytics?${query}`));
 }

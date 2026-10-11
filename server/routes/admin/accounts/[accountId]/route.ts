@@ -15,7 +15,7 @@ import {
   GrantPlanRequestSchema,
   type AdminAccountInfo,
   type AdminAccountResponse,
-} from "@/app/api/admin/accounts/[accountId]/schema";
+} from "@/lib/api/schemas/admin/accounts/[accountId]/schema";
 
 type AccountRow = {
   plan: string;

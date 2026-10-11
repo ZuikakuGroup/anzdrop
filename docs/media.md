@@ -31,4 +31,4 @@ Content API key は GET 権限だけを付与する。microCMS では4 API そ�
 
 ## Astroでの配信
 
-公開ブログの実配信は `apps/public/src/pages/blog` が担当する。取得・Zod検証・HTMLサニタイズはNextの互換経路と共通。記事キャッシュ・読者情報・画像コピーの新規保存は行わない。microCMS画像は既存の許可URLをブラウザへ渡し、記事画像の拡大はReact islandで動かす。CMS Secretは公開Workerにも個別に設定する。
+公開ブログの実配信は `apps/public/src/pages/blog` が担当する。取得・Zod検証・HTMLサニタイズは`lib/blog/core.ts`で共通化。記事キャッシュ・読者情報・画像コピーの新規保存は行わない。microCMS画像は既存の許可URLをブラウザへ渡し、記事画像の拡大はReact islandで動かす。CMS Secretは公開Workerにも個別に設定する。

@@ -30,7 +30,7 @@ interface __BaseEnv_CloudflareEnv {
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
-		mainModule: typeof import("./custom-worker");
+		mainModule: typeof import("./server/worker");
 	}
 	interface Env extends __BaseEnv_CloudflareEnv {}
 }

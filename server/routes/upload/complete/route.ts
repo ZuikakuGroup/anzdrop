@@ -10,7 +10,7 @@ import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import {
   UploadCompleteRequestSchema,
   type UploadCompleteResponse,
-} from "@/app/api/upload/complete/schema";
+} from "@/lib/api/schemas/upload/complete/schema";
 
 type UploadRecord = {
   id: string;

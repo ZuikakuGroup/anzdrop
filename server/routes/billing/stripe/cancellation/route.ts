@@ -11,7 +11,7 @@ import {
 import {
   CancellationRequestSchema,
   type CancellationResponse,
-} from "@/app/api/billing/stripe/cancellation/schema";
+} from "@/lib/api/schemas/billing/stripe/cancellation/schema";
 
 // カード契約(自動更新サブスク)の「期間末での解約」と、その取り消し(再開)。
 // 即時解約や日割り返金は行わない。cancel_at_period_end を切り替えるだけで、

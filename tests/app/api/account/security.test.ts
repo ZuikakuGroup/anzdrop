@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import { withWorkerRuntime } from "@/server/runtime";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestEnv, clearAllTables, insertTestAccount, stubTurnstileSuccess, type TestEnv } from "@/test/env";
@@ -11,12 +12,17 @@ import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequest
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
-vi.mock("@opennextjs/cloudflare", () => ({ getCloudflareContext: () => ({ env, ctx: { waitUntil: () => {} } }) }));
-import { POST as login } from "@/app/api/account/login/route";
-import { POST as loginOtp } from "@/app/api/account/login/otp/route";
-import { POST as passkeyOptions } from "@/app/api/account/passkey/options/route";
-import { POST as passkeyVerify } from "@/app/api/account/passkey/verify/route";
-import { POST as recover } from "@/app/api/account/recover/route";
+const testRuntime = () => ({ env, ctx: { waitUntil: () => {} } });
+import * as routeaccountlogin from "@/server/routes/account/login/route";
+const { POST : login } = bindRouteHandlers(routeaccountlogin, testRuntime);
+import * as routeaccountloginotp from "@/server/routes/account/login/otp/route";
+const { POST : loginOtp } = bindRouteHandlers(routeaccountloginotp, testRuntime);
+import * as routeaccountpasskeyoptions from "@/server/routes/account/passkey/options/route";
+const { POST : passkeyOptions } = bindRouteHandlers(routeaccountpasskeyoptions, testRuntime);
+import * as routeaccountpasskeyverify from "@/server/routes/account/passkey/verify/route";
+const { POST : passkeyVerify } = bindRouteHandlers(routeaccountpasskeyverify, testRuntime);
+import * as routeaccountrecover from "@/server/routes/account/recover/route";
+const { POST : recover } = bindRouteHandlers(routeaccountrecover, testRuntime);
 import { securityStatus, reauthPassword, reauthOptions, reauthVerify, passkeyRegisterOptions, passkeyRegisterVerify, passkeyDelete, totpSetup, totpConfirm, totpDisable, cancelSecurityOperation } from "@/lib/account/securityHandlers";
 
 beforeAll(async () => { const handle = await createTestEnv(); env = handle.env; dispose = handle.dispose; });

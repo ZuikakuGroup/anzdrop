@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import Page from '@/components/report/ReportForm';
+---
+<InteractiveLayout title="通報 | Anzdrop">
+  <Page client:load initialShareId={Astro.url.searchParams.get("shareId") ?? ""} />
+</InteractiveLayout>

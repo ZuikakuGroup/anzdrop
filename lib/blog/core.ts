@@ -52,7 +52,7 @@ async function get<T>(endpoint: string, schema: z.ZodType<T>, query: Query = {})
   if (!env.MICROCMS_SERVICE_DOMAIN || !env.MICROCMS_API_KEY) throw new Error("microCMS is not configured");
   const url = new URL(`/api/v1/${endpoint}`, `https://${env.MICROCMS_SERVICE_DOMAIN}`);
   for (const [key, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(key, String(value));
-  // OpenNextの共有Tag Cacheを追加するとD1/R2/DOへ永続データを追加するため、
+  // 共有キャッシュを追加するとD1/R2/DOへ永続データを追加するため、
   // 現時点では保存を伴わないno-storeでmicroCMSの公開内容を直接返す。
   const response = await fetch(url, { headers: { "X-MICROCMS-API-KEY": env.MICROCMS_API_KEY }, cache: "no-store", redirect: "manual" });
   if (!response.ok) throw new MicrocmsApiError(response.status);

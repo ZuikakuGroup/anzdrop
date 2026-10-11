@@ -3,11 +3,11 @@
 ## 前提
 
 - Node.js 22.12以降（CIは24系。Astroの最低要件に合わせる）
-- Cloudflareアカウント(D1・R2・Access・Turnstileを利用する場合。ローカルのD1/R2はwranglerのローカル永続化機能で完結するため、実際にAPIを叩く動作確認だけならCloudflareアカウント無しでも一部可能だが、`npm run preview`/`npm run deploy`やCloudflare Access連携の確認にはアカウントが必要)
+- Cloudflareアカウント(D1・R2・Access・Turnstileを利用する場合。ローカルのD1/R2はwranglerのローカル永続化機能で完結するため、実際にAPIを叩く動作確認だけならCloudflareアカウント無しでも一部可能だが、本番デプロイやCloudflare Access連携の確認にはアカウントが必要)
 
 ## Astro＋React / Honoの開発
 
-新しい操作画面は次の構成で起動します。初回のみ既存マイグレーションをローカルD1へ適用してください。
+すべての画面は次の構成で起動します。初回のみ既存マイグレーションをローカルD1へ適用してください。
 
 ```sh
 npx wrangler d1 migrations apply DB --local --config wrangler.api.jsonc
@@ -16,7 +16,7 @@ npm run dev
 
 ブラウザは`http://localhost:3000`を開きます。AstroのVite proxyが`/api`をHonoの8788番ポートへ送り、Host・Origin・Cookieを維持します。`dev:api`と`dev:app`を別々に起動することもできます。APIはループバックのみで待ち受け、WebAuthnは明示した`http://localhost:3000`だけを許可します。`127.0.0.1`のURLではパスキーを登録しないでください。
 
-公開用ビルド値はルートの`.env.local`またはシェルに`NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`を設定します。Astroのブラウザ向けdefineにはこの2値だけを含めます。APIのSecretはルートの`.dev.vars`から読み、Astroへコピーしません。ローカルHonoのD1/R2は`.wrangler/state`に保存します（既存Next devの一時ディレクトリとは別です）。管理・問い合わせ・通報画面を編集する場合は`npm run dev:legacy`を使用します。
+公開用ビルド値はルートの`.env.local`またはシェルに`NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`を設定します。Astroのブラウザ向けdefineにはこの2値だけを含めます。APIのSecretはルートの`.dev.vars`から読み、Astroへコピーしません。ローカルHonoのD1/R2は`.wrangler/state`に保存します。管理画面もAstroで提供し、APP Service BindingでHonoに認証を確認します。
 
 ```sh
 npm run build:api       # アップロードしないWrangler dry-run
@@ -36,12 +36,12 @@ npm install
 
 | ファイル | 用途 | 主な変数 |
 | --- | --- | --- |
-| `.env.local`(gitignore対象) | Next.jsのビルド/実行時の環境変数 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`・`LOCAL_ADMIN_BYPASS` |
+| `.env.local`(gitignore対象) | 公開ビルド値・ローカル開発設定 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`・`LOCAL_ADMIN_BYPASS` |
 | `.dev.vars`(gitignore対象) | ローカルのWorkers実行時シークレット(wranglerが読む) | `TURNSTILE_SECRET_KEY` |
 
 いずれもリポジトリには含まれないため、各自発行して設定する。`NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`は[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)から発行する(開発用にはテスト用の常時成功/失敗キーも利用可能)。`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`はStripeダッシュボード(テストモード)の「開発者」→「APIキー」から取得できる公開可能キー(`pk_test_...`)を使う。
 
-ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは`NODE_ENV=development`かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・Preview・外部Hostでは有効にならない。確認後は設定を外す。
+ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは開発用のHono設定（`LOCAL_DEVELOPMENT=true`）または`NODE_ENV=development`、かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・外部Hostでは有効にならない。プレビューでも明示設定が必要。確認後は設定を外す。
 
 ブログのページネーションをmicroCMSへ書き込まずに確認する場合は、`.env.local`に`BLOG_USE_SEED_DATA=true`を設定する。ローカル開発時だけ15件の確認用記事へ切り替わり、`/blog`の2ページ目、記事詳細、関連記事、カテゴリ・タグ・著者ページを確認できる。本番・Previewでは同じ値が設定されても有効にならない。例外として、SEO/Lighthouse 監査用に `WEB_AUDIT=true` と併用した場合だけ production 起動でも seed が有効になる(手順は [`docs/web-audit.md`](./web-audit.md))。確認後はこの設定を外して開発サーバーを再起動する。
 
@@ -62,29 +62,15 @@ R2直アップロードのSecretが揃わない場合はproxyへフォールバ�
 
 ### D1・R2のローカル永続化
 
-`next.config.ts` で `initOpenNextCloudflareForDev()` にローカルD1/R2の永続化先をOSの一時ディレクトリ(`os.tmpdir()/anzdrop-wrangler-state`)に指定している(理由は後述の「既知の問題」参照)。この永続化先に対して初回のみマイグレーションを適用する必要がある。
+HonoのWranglerが`.wrangler/state`を使います。初回と既存マイグレーションの追加時は`npx wrangler d1 migrations apply DB --local --config wrangler.api.jsonc`で同じ保存先に適用します。旧開発環境の一時DBは自動では移しません。
 
-```bash
-npx wrangler d1 migrations apply DB --local --persist-to "$(node -e 'console.log(require(\"os\").tmpdir())')/anzdrop-wrangler-state"
-```
+### 開発サーバーとプレビュー
 
-新しいマイグレーションを追加した際も、上記コマンドで同じ永続化先に再適用すること。
+`npm run dev`でAstroをlocalhost:3000、Honoを127.0.0.1:8788で起動します。管理画面の認証確認にはローカルAPP Service Bindingを使います。`.env.local`の`LOCAL_ADMIN_BYPASS=true`を読み込むのは`npm run dev`です。本番では`DEPLOYMENT_ENV=production`がバイパスを無効にします。
 
-> **注意:** `wrangler` CLIの `--persist-to` が書き込む実際のディレクトリ構成(`<path>/v3/d1/...`)と、`next dev` 経由(`@opennextjs/cloudflare`の `getPlatformProxy`)がバインディングとして実際に開く実行時のディレクトリ構成(`<path>/d1/...`、`v3`なし)がズレることがある。この場合CLIでの `migrations apply` が成功と表示されても、実際に動いている開発サーバーには反映されない(`D1_ERROR: no such table`等になる)。ズレを疑ったら、`lsof -p <workerdのpid>` で実際に開かれているsqliteファイルを特定し、そのファイルへ直接 `sqlite3 <file> < migrations/000N_*.sql` を実行する、または一度開発サーバーを再起動してから再度CLIでマイグレーションを適用する。
+`npm run build`はAstro・Hono・ルーターをビルドするだけで、アップロードしません。その後`npm run preview`でビルド済みルーター・Astro・Honoを起動します。`npm run start -- --hostname 127.0.0.1 --port 3000`も同じプレビューです。
 
-### 開発サーバー
-
-```bash
-npm run dev
-```
-
-Astroをlocalhost:3000、Honoを127.0.0.1:8788で起動する。管理・問い合わせ・通報画面は `npm run dev:legacy` で従来のNext.jsを起動する。`LOCAL_ADMIN_BYPASS=true`を使う際は、localhost以外へ待ち受けさせないこと。
-
-> **既知の問題(Turbopack)**: `next dev`(Turbopackモード、デフォルト)では、ローカルD1/R2の永続化ディレクトリへの定期的な書き込みをTurbopackのファイル監視が変更として検知し続け、既知のTurbopack内部パニック(`Next.js package not found`)を踏んで、ブラウザへ無限にフルリロードを送り続ける不具合が確認されている。これを回避するため、`dev:legacy` スクリプトはwebpackモードを使っている。本番ビルド(`npm run build`/`npm run deploy`)はTurbopackのまま影響を受けない。
-
-> **既知の問題(.wasm静的import)**: [`lib/account/wasm-argon2/`](../lib/account/wasm-argon2/)の`.wasm`ファイルは、`next dev`(webpack)と`next build`(Turbopack)とで別々の設定(`next.config.ts`の`webpack()`・`turbopack.rules`)を必要とし、かつ実行時に渡ってくる値の形も異なる(`lib/account/wasm-argon2/wasm-interface.ts`のコメント参照)。この設定を変えると、ローカルでは問題なく動くのに本番のCloudflare Workersでだけ`CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder`で全滅する、という壊れ方をしうる(実際に一度これで本番のアカウント登録が完全に止まった)。`.wasm`のimport方法を変更した場合は、`npx opennextjs-cloudflare build`でビルドした後、`npx wrangler dev --local`(実際のビルド成果物を本物のworkerdで動かす、`next dev`とは別のローカル実行環境)でアカウント登録・ログイン・パスワード再設定を一通り確認すること。`next dev`だけの確認では不十分。
-
-[http://localhost:3000](http://localhost:3000) で確認できる。
+`.wasm`はWorkersが静的importするコンパイル済みモジュールとして扱います。変更時には`npm run test:astro-hono`で実際のworkerd上の登録・ログイン・復旧を確認してください。ブラウザ用バンドルには取り込みません。
 
 ### Docker(任意)
 
@@ -98,7 +84,7 @@ npm run test:watch    # ウォッチモード
 npm run test:coverage # カバレッジ付き
 ```
 
-テストは `tests/` 以下に、`lib/`・`app/` のソースと同じディレクトリ構成でまとめて置かれている(例: `lib/account/password.ts` のテストは `tests/lib/account/password.test.ts`)。暗号化(`tests/lib/crypto/*.test.ts`)・アクセス制御(`tests/lib/access.test.ts`)・掃除処理(`tests/lib/cleanup.test.ts`)・保存期間計算(`tests/lib/retention.test.ts`)・各APIルート(`tests/app/api/**/route.test.ts`)などをカバーしている。共有のテストヘルパー(`createTestEnv`など)は `test/env.ts`(単数形、`tests/`とは別)にある。
+テストは `tests/` 以下に置く。共通処理はソースと同じ構成とし、APIテストは既存の `tests/app/api/` 配下に保持してHonoのWorkerランタイムで実行する(例: `lib/account/password.ts` のテストは `tests/lib/account/password.test.ts`)。暗号化(`tests/lib/crypto/*.test.ts`)・アクセス制御(`tests/lib/access.test.ts`)・掃除処理(`tests/lib/cleanup.test.ts`)・保存期間計算(`tests/lib/retention.test.ts`)・各APIルート(`tests/app/api/**/route.test.ts`)などをカバーしている。共有のテストヘルパー(`createTestEnv`など)は `test/env.ts`(単数形、`tests/`とは別)にある。
 
 ## Lint・型チェック
 

@@ -21,7 +21,7 @@ import { parseJsonBody } from "@/lib/api/validate";
 import {
   UploadStartRequestSchema,
   type UploadStartResponse,
-} from "@/app/api/upload/start/schema";
+} from "@/lib/api/schemas/upload/start/schema";
 import { resolveUploadMode } from "@/lib/upload/r2DirectCredentials";
 
 export const POST = withApiHandler(

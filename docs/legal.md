@@ -5,9 +5,9 @@
 
 | パス | コンポーネント | 内容 |
 | --- | --- | --- |
-| `/legal/terms`(`app/legal/terms/page.tsx`) | `components/legal/TermsPage.tsx` | 利用規約 |
-| `/legal/privacy`(`app/legal/privacy/page.tsx`) | `components/legal/PrivacyPage.tsx` | プライバシーポリシー |
-| `/legal/tokushoho`(`app/legal/tokushoho/page.tsx`) | `components/legal/TokushohoPage.tsx` | 特定商取引法に基づく表記 |
+| `/legal/terms`(`apps/public/src/pages/legal/terms.astro`) | `components/legal/TermsPage.tsx` | 利用規約 |
+| `/legal/privacy`(`apps/public/src/pages/legal/privacy.astro`) | `components/legal/PrivacyPage.tsx` | プライバシーポリシー |
+| `/legal/tokushoho`(`apps/public/src/pages/legal/tokushoho.astro`) | `components/legal/TokushohoPage.tsx` | 特定商取引法に基づく表記 |
 
 ## 構成
 

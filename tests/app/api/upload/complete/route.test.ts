@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -50,20 +51,18 @@ async function encryptAsSingleFile(
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-// app/api/file/[fileId]はgetCloudflareContext()から{ env, ctx }を取り出すため、
+// server/routes/file/[fileId]はWorker runtimeから{ env, ctx }を取り出すため、
 // このファイルの末尾でダウンロードまで通しで検証するテストのために両方渡す。
 let waitUntilPromises: Promise<unknown>[];
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({
+const testRuntime = () => ({
     env,
     ctx: {
       waitUntil: (promise: Promise<unknown>) => {
         waitUntilPromises.push(promise);
       },
     },
-  }),
-}));
+  });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -84,7 +83,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// app/api/upload/start -> app/api/upload/chunk を実際に叩き、本物のR2マルチ
+// server/routes/upload/start -> server/routes/upload/chunk を実際に叩き、本物のR2マルチ
 // パートアップロード(uploadId/etag)を伴うアップロードセッションを用意する。
 async function startUpload(
   retention: Retention = "7d",
@@ -92,7 +91,7 @@ async function startUpload(
   fileSize = 2048
 ): Promise<{ uploadSessionId: string; shareId: string; uploadToken: string }> {
   stubTurnstileSuccess();
-  const { POST } = await import("@/app/api/upload/start/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), testRuntime);
   const response = await POST(
     new Request("http://localhost/api/upload/start", {
       method: "POST",
@@ -118,7 +117,7 @@ async function uploadPart(
   partNumber: number,
   bytes: BodyInit
 ) {
-  const { POST } = await import("@/app/api/upload/chunk/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/chunk/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/upload/chunk", {
@@ -137,7 +136,7 @@ async function postComplete(
   body: unknown,
   headers: Record<string, string> = {}
 ) {
-  const { POST } = await import("@/app/api/upload/complete/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/complete/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/upload/complete", {
@@ -370,7 +369,7 @@ describe("POST /api/upload/complete", () => {
     expect(response.status).toBe(200);
     const body = await readJson<{ fileId: string }>(response);
 
-    const { GET: downloadFile } = await import("@/app/api/file/[fileId]/route");
+    const { GET: downloadFile } = bindRouteHandlers(await import("@/server/routes/file/[fileId]/route"), testRuntime);
     const downloadResponse = await downloadFile(
       new Request(`http://localhost/api/file/${body.fileId}`),
       { params: Promise.resolve({ fileId: body.fileId }) }
@@ -419,7 +418,7 @@ describe("POST /api/upload/complete", () => {
 
     // uploadChunksFromStream が呼ぶ fetch("/api/upload/chunk", ...) を、
     // 実際の chunk ルートハンドラへ転送する。
-    const { POST: chunkRoute } = await import("@/app/api/upload/chunk/route");
+    const { POST: chunkRoute } = bindRouteHandlers(await import("@/server/routes/upload/chunk/route"), testRuntime);
     const seenPartSizes: number[] = [];
     vi.stubGlobal(
       "fetch",
@@ -470,7 +469,7 @@ describe("POST /api/upload/complete", () => {
     expect(fileRow?.size).toBe(plaintextSize);
 
     // ダウンロードして復号すると元の平文にバイト単位で一致する。
-    const { GET: downloadFile } = await import("@/app/api/file/[fileId]/route");
+    const { GET: downloadFile } = bindRouteHandlers(await import("@/server/routes/file/[fileId]/route"), testRuntime);
     const downloadResponse = await downloadFile(
       new Request(`http://localhost/api/file/${completeBody.fileId}`),
       { params: Promise.resolve({ fileId: completeBody.fileId }) }

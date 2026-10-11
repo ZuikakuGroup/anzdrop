@@ -8,7 +8,7 @@ import type {
   DownloadResponse,
   DownloadResponseFile,
   DownloadResponseShare,
-} from "@/app/api/download/[shareId]/schema";
+} from "@/lib/api/schemas/download/[shareId]/schema";
 
 type Share = {
   id: string;

@@ -12,7 +12,7 @@ import {
 import {
   UploadPartUrlsRequestSchema,
   type UploadPartUrlsResponse,
-} from "@/app/api/upload/part-urls/schema";
+} from "@/lib/api/schemas/upload/part-urls/schema";
 
 export const POST = withApiHandler(
   "POST /api/upload/part-urls",

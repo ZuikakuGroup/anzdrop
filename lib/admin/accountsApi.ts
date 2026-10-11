@@ -1,7 +1,7 @@
 import type {
   AdminAccountInfo,
   AdminAccountResponse,
-} from "@/app/api/admin/accounts/[accountId]/schema";
+} from "@/lib/api/schemas/admin/accounts/[accountId]/schema";
 
 export type { AdminAccountInfo };
 

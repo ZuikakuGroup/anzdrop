@@ -15,7 +15,7 @@ import Spinner from "@/components/brand/Spinner";
 import { getStripe } from "@/lib/stripe-client";
 
 // フォームの見た目をアプリのブランドカラーに合わせるためのAppearance API設定。
-// 色は app/globals.css の CSS 変数を実行時に読み取り、両者がズレないようにする
+// 色は apps/public/src/globals.css の CSS 変数を実行時に読み取り、両者がズレないようにする
 // (このコンポーネントはユーザー操作後にクライアントでのみ描画されるので、
 // フォールバックは SSR 相当の初期値)。
 function resolveAppearance(): StripeElementsOptions["appearance"] {

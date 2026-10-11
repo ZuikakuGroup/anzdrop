@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -18,7 +19,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-// このルートはgetCloudflareContext()から{ env, ctx }の両方を取り出す
+// このルートはWorker runtimeから{ env, ctx }の両方を取り出す
 // (他のルートは{ env }のみ)。ctx.waitUntilに渡されたPromiseを配列に集め、
 // テスト側でawaitすることで、裏で実行される一度限りファイルの削除処理を
 // 確定的に待ち合わせられるようにする。
@@ -27,16 +28,14 @@ let waitUntilPromises: Promise<unknown>[];
 // 特定のテストだけルートに渡す env を差し替えたいとき(R2 body の制御など)に使う。
 let routeEnvOverride: TestEnv | null = null;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({
+const testRuntime = () => ({
     env: routeEnvOverride ?? env,
     ctx: {
       waitUntil: (promise: Promise<unknown>) => {
         waitUntilPromises.push(promise);
       },
     },
-  }),
-}));
+  });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -227,7 +226,7 @@ async function insertFile(overrides: FileOverrides = {}): Promise<{
 }
 
 async function getFile(fileId: string) {
-  const { GET } = await import("@/app/api/file/[fileId]/route");
+  const { GET } = bindRouteHandlers(await import("@/server/routes/file/[fileId]/route"), testRuntime);
 
   return GET(new Request(`http://localhost/api/file/${fileId}`), {
     params: Promise.resolve({ fileId }),
@@ -568,7 +567,7 @@ async function getFileWithRange(
   fileId: string,
   range: string
 ): Promise<Response> {
-  const { GET } = await import("@/app/api/file/[fileId]/route");
+  const { GET } = bindRouteHandlers(await import("@/server/routes/file/[fileId]/route"), testRuntime);
 
   return GET(
     new Request(`http://localhost/api/file/${fileId}`, {

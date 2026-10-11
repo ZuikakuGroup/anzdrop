@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "anzdrop",
-  "main": "./custom-worker.ts",
+  "main": "./server/worker.ts",
   // 公開入口は anzdrop.com のルーターだけに限定する。workers.dev を有効にすると
   // ゾーン側の WAF / Access などを通らず、アプリ Worker へ直接到達できる。
   "workers_dev": false,
@@ -37,14 +37,10 @@
   // (掃除処理自体も1件の失敗で全体が止まらないバッチ方式。GitHub issue #63)。
   //
   // 毎日UTC 00:10には計測基盤(lib/analytics/aggregate.ts)の日次集計と
-  // 生イベントの保持期限切れ削除を実行する。custom-worker.tsのscheduled()が
+  // 生イベントの保持期限切れ削除を実行する。server/worker.tsのscheduled()が
   // event.cronの値でどちらの処理か振り分ける。
   "triggers": {
     "crons": ["0 */6 * * *", "10 0 * * *"]
-  },
-
-  "assets": {
-    "directory": ".open-next/assets"
   },
 
   "d1_databases": [

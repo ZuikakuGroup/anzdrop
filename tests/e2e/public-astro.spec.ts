@@ -41,6 +41,11 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
   });
   test('ブログのページ送り・記事・画像拡大・404', async ({ page, request }) => {
     await page.goto('/blog');
+    const articleCard = page.locator('main article').first();
+    await expect(articleCard.locator('a')).toHaveCount(1);
+    await expect(articleCard.locator('a')).toHaveAttribute('href', /\/blog\//);
+    await expect(articleCard.locator('a img')).toHaveClass(/group-hover:scale/);
+    await expect(articleCard.locator('.aspect-video')).toHaveCount(1);
     await page.getByRole('link', { name: '次のページ' }).click();
     await expect(page).toHaveURL(/page=2/);
     await expect(page.locator('#blog-page')).toHaveValue('2');

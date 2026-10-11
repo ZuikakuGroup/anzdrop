@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -19,9 +20,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 const mockSubscriptionsRetrieve = vi.fn();
 const mockSubscriptionsUpdate = vi.fn();
@@ -77,9 +76,7 @@ function activeSubscription(cancelAtPeriodEnd: boolean) {
 }
 
 async function postCancellation(cookie?: string, body: unknown = { cancelAtPeriodEnd: true }) {
-  const { POST } = await import(
-    "@/app/api/billing/stripe/cancellation/route"
-  );
+  const { POST } = bindRouteHandlers(await import("@/server/routes/billing/stripe/cancellation/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/billing/stripe/cancellation", {

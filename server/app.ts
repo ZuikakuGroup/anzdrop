@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { verifyAccessJwt } from "@/lib/access";
+import { ADMIN_ACCESS_PATH } from "@/lib/adminPageAccess";
 import { withWorkerRuntime } from "./runtime";
 import { buildStaticSecurityHeaders } from "@/lib/securityHeaders";
 import * as accountLoginOtpRoute from "./routes/account/login/otp/route";
@@ -55,6 +57,11 @@ app.use("*", async (c, next) => {
   for (const [name, value] of Object.entries(buildStaticSecurityHeaders(c.env.DEPLOYMENT_ENV === "production"))) c.header(name, value);
 });
 app.onError(() => Response.json({ success: false, error: "サーバー内部でエラーが発生しました" }, { status: 500, headers: { "Cache-Control": "no-store" } }));
+// Service-binding-only authentication probe. The public router blocks /__internal.
+app.get(ADMIN_ACCESS_PATH, async c => {
+  const identity = await verifyAccessJwt(c.req.raw.headers, c.env);
+  return new Response(null, { status: identity ? 204 : 404 });
+});
 app.on("POST", "/api/account/login/otp", c => withWorkerRuntime({ env: c.env, ctx: c.executionCtx }, () => accountLoginOtpRoute.POST(c.req.raw)));
 app.on("POST", "/api/account/login", c => withWorkerRuntime({ env: c.env, ctx: c.executionCtx }, () => accountLoginRoute.POST(c.req.raw)));
 app.on("POST", "/api/account/logout", c => withWorkerRuntime({ env: c.env, ctx: c.executionCtx }, () => accountLogoutRoute.POST(c.req.raw)));

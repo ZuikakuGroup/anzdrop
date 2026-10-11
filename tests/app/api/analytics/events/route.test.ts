@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   describe,
   expect,
   it,
-  vi,
 } from "vitest";
 import {
   createTestEnv,
@@ -17,9 +17,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -60,7 +58,7 @@ function uploadStartEvent(overrides: Record<string, unknown> = {}) {
 }
 
 async function postEvents(events: unknown[]) {
-  const { POST } = await import("@/app/api/analytics/events/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/analytics/events/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/analytics/events", {
@@ -71,7 +69,7 @@ async function postEvents(events: unknown[]) {
 }
 
 async function postRawBody(body: string, headers?: HeadersInit) {
-  const { POST } = await import("@/app/api/analytics/events/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/analytics/events/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/analytics/events", {

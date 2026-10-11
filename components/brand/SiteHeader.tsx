@@ -1,5 +1,3 @@
-/* eslint-disable @next/next/no-location-assign-relative-destination -- Shared navigation cannot depend on Next router. */
-/* eslint-disable @next/next/no-html-link-for-pages -- Shared with Astro; cross-Worker navigation requires a full document request. */
 "use client";
 
 import { useEffect, useRef, useState } from "react";

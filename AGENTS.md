@@ -1,13 +1,3 @@
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
-
 ## 基本ルール
 
 - 回答は基本的に日本語で行うこと。
@@ -52,7 +42,7 @@ D1 を含むサーバー側の永続ストレージに、新しい種類の情�
 ## 技術スタック
 
 - 言語: TypeScript
-- フレームワーク: Next.js
+- フレームワーク: Astro / React / Hono
 - パッケージマネージャー: npm
 - データベース: SQLite / Cloudflare D1
 - テスティングフレームワーク: Vitest

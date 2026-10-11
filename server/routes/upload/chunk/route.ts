@@ -7,7 +7,7 @@ import {
 } from "@/lib/upload/uploadSessionAuth";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
-import type { ChunkUploadResponse } from "@/app/api/upload/chunk/schema";
+import type { ChunkUploadResponse } from "@/lib/api/schemas/upload/chunk/schema";
 
 export const POST = withApiHandler(
   "POST /api/upload/chunk",

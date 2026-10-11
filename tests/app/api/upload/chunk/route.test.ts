@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -20,9 +21,7 @@ import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -43,7 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// 実際にapp/api/upload/startを叩き、本物のR2マルチパートアップロードIDを持つ
+// 実際にserver/routes/upload/startを叩き、本物のR2マルチパートアップロードIDを持つ
 // アップロードセッションを用意する(R2のマルチパートIDは手書きモックでは
 // 現実的に再現できないため)。
 async function startUpload(
@@ -54,7 +53,7 @@ async function startUpload(
   uploadToken: string;
 }> {
   stubTurnstileSuccess();
-  const { POST } = await import("@/app/api/upload/start/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), testRuntime);
   const response = await POST(
     new Request("http://localhost/api/upload/start", {
       method: "POST",
@@ -71,7 +70,7 @@ async function startUpload(
 }
 
 async function postChunk(headers: Record<string, string>, body?: BodyInit) {
-  const { POST } = await import("@/app/api/upload/chunk/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/chunk/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/upload/chunk", {

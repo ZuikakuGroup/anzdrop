@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SESSION_COOKIE_NAME } from "@/lib/account/session";
-import { POST } from "@/app/api/account/logout/route";
+import { POST } from "@/server/routes/account/logout/route";
 
 describe("POST /api/account/logout", () => {
   it("always returns success and clears the session cookie", async () => {

@@ -11,7 +11,7 @@ import {
   MIN_ACCOUNT_ID_LENGTH,
   MAX_ACCOUNT_ID_LENGTH,
 } from "@/lib/account/id";
-import type { SignupResponse } from "@/app/api/account/signup/schema";
+import type { SignupResponse } from "@/lib/api/schemas/account/signup/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 

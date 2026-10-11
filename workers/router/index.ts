@@ -1,27 +1,15 @@
-import { isHomeRequest, isPublicRequest } from "./routing";
+import { isApiRequest, isInternalRequest } from "./routing";
 
-type ServiceBinding = {
-  fetch(request: Request): Response | Promise<Response>;
-};
-
-type RouterEnv = {
-  HOME: ServiceBinding;
-  APP: ServiceBinding;
-  PUBLIC: ServiceBinding;
-};
-
-type RouterHandler = {
-  fetch(request: Request, env: RouterEnv): Response | Promise<Response>;
-};
+type ServiceBinding = { fetch(request: Request): Response | Promise<Response> };
+type RouterEnv = { APP: ServiceBinding; PUBLIC: ServiceBinding };
 
 export default {
-  async fetch(request, env) {
+  fetch(request: Request, env: RouterEnv) {
     const pathname = new URL(request.url).pathname;
-
-    // Requestをそのまま渡し、Cookie・本文・レスポンスストリームを加工しない。
-    // /api は既存APPのHonoへ、対話画面はPUBLICのAstro/Reactへ送る。
-    return isHomeRequest(pathname)
-      ? env.HOME.fetch(request)
-      : isPublicRequest(pathname) ? env.PUBLIC.fetch(request) : env.APP.fetch(request);
+    if (isInternalRequest(pathname)) {
+      return new Response(null, { status: 404, headers: { "Cache-Control": "no-store" } });
+    }
+    // Forward cookies, bodies and response streams without modification.
+    return isApiRequest(pathname) ? env.APP.fetch(request) : env.PUBLIC.fetch(request);
   },
-} satisfies RouterHandler;
+};

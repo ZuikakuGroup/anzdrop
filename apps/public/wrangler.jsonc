@@ -5,6 +5,7 @@
   "workers_dev": false,
   "compatibility_date": "2026-10-07",
   "compatibility_flags": ["nodejs_compat"],
+  "services": [{ "binding": "APP", "service": "anzdrop" }],
   "assets": { "directory": "./dist/client", "binding": "ASSETS" },
   "vars": { "SITE_URL": "https://anzdrop.com", "MICROCMS_SERVICE_DOMAIN": "anzdrop.microcms.io" }
 }

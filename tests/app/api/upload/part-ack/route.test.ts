@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   describe,
   expect,
   it,
-  vi,
 } from "vitest";
 import {
   createTestEnv,
@@ -18,9 +18,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -39,7 +37,7 @@ beforeEach(async () => {
 
 async function startUpload(fileSize = 20 * 1024 * 1024) {
   stubTurnstileSuccess();
-  const { POST } = await import("@/app/api/upload/start/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), testRuntime);
   const response = await POST(
     new Request("http://localhost/api/upload/start", {
       method: "POST",
@@ -58,7 +56,7 @@ async function startUpload(fileSize = 20 * 1024 * 1024) {
 }
 
 async function postPartAck(body: unknown) {
-  const { POST } = await import("@/app/api/upload/part-ack/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/part-ack/route"), testRuntime);
   return POST(
     new Request("http://localhost/api/upload/part-ack", {
       method: "POST",

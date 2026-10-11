@@ -5,7 +5,7 @@ import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { useTurnstile } from "@/lib/turnstile-client";
 import { usePageOrigin } from "@/lib/browser/usePageOrigin";
-import { REPORT_CATEGORIES } from "@/app/api/report/schema";
+import { REPORT_CATEGORIES } from "@/lib/api/schemas/report/schema";
 
 type ReportFormProps = {
   initialShareId: string;

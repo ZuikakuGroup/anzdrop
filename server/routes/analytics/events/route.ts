@@ -11,7 +11,7 @@ import {
 import {
   AnalyticsEventsRequestSchema,
   type AnalyticsEventsResponse,
-} from "@/app/api/analytics/events/schema";
+} from "@/lib/api/schemas/analytics/events/schema";
 
 // Beacon/fetchのbodyサイズが際限なく膨らまないようにする(20件バッチ、
 // 各イベントは小さなJSONのため十分な余裕を見た上限)。

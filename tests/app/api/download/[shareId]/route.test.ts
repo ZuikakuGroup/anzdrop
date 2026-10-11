@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -25,9 +26,7 @@ type DownloadResponseBody = {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -119,7 +118,7 @@ async function insertFile(
 }
 
 async function getDownload(shareId: string) {
-  const { GET } = await import("@/app/api/download/[shareId]/route");
+  const { GET } = bindRouteHandlers(await import("@/server/routes/download/[shareId]/route"), testRuntime);
 
   return GET(new Request(`http://localhost/api/download/${shareId}`), {
     params: Promise.resolve({ shareId }),

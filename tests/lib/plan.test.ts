@@ -314,7 +314,7 @@ describe("downgradeExpiredCardPlan", () => {
   async function insertPaidBtcPayment(
     accountId: string,
     extendsPlanUntil: string,
-    chargeId = crypto.randomUUID()
+    chargeId: string = crypto.randomUUID()
   ): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO btc_payments

@@ -61,7 +61,7 @@ export type TurnstileGuardResult =
   | { ok: true }
   | { ok: false; response: Response };
 
-// app/api/**の5ルート(login/signup/recover/report/upload/start)で手作業
+// server/routes/**の5ルート(login/signup/recover/report/upload/start)で手作業
 // コピーされていた「verifyTurnstileToken→失敗時に403応答を組み立てる」の
 // 定型をまとめる。
 export async function requireTurnstile(

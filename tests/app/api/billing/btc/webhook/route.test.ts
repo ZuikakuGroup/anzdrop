@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   describe,
   expect,
   it,
-  vi,
 } from "vitest";
 import {
   createTestEnv,
@@ -18,9 +18,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -56,7 +54,7 @@ async function hmacHex(key: string, message: string): Promise<string> {
 }
 
 async function postWebhook(fields: Record<string, string>) {
-  const { POST } = await import("@/app/api/billing/btc/webhook/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/billing/btc/webhook/route"), testRuntime);
   const form = new URLSearchParams(fields);
 
   return POST(

@@ -27,7 +27,7 @@ vi.mock("@/lib/upload/encrypt", () => ({
 }));
 
 import { getCurrentAccount } from "@/lib/account/me-client";
-import type { MeResponse } from "@/app/api/account/me/schema";
+import type { MeResponse } from "@/lib/api/schemas/account/me/schema";
 vi.mock("@/lib/turnstile-client", () => ({
   TURNSTILE_SITE_KEY: "",
   useTurnstile: () => ({ widget: null, getToken: async () => "test-token" }),

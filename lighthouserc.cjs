@@ -9,7 +9,6 @@
  * and CI share the same start/wait pattern).
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports -- LHCI loads CommonJS config */
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 

@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -22,17 +23,13 @@ import { vi } from "vitest";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-let forceContextError = false;
+let forceBindingError = false;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
-    if (forceContextError) {
-      throw new Error("boom: unexpected internal failure");
-    }
-
-    return { env };
-  },
-}));
+const testRuntime = () => ({
+  env: forceBindingError ? new Proxy(env, {
+    get() { throw new Error("boom: unexpected internal failure"); },
+  }) : env,
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -54,7 +51,7 @@ afterEach(() => {
 });
 
 async function postSignup(body: unknown) {
-  const { POST } = await import("@/app/api/account/signup/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/account/signup/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/account/signup", {
@@ -159,7 +156,7 @@ describe("POST /api/account/signup", () => {
     expect(response.status).toBe(409);
 
     // 既存アカウントのパスワードが上書きされていないこと。
-    const { POST: login } = await import("@/app/api/account/login/route");
+    const { POST: login } = bindRouteHandlers(await import("@/server/routes/account/login/route"), testRuntime);
     const loginResponse = await login(
       new Request("http://localhost/api/account/login", {
         method: "POST",
@@ -212,7 +209,7 @@ describe("POST /api/account/signup", () => {
     });
     const body = await readJson<{ accountId: string }>(response);
 
-    const { POST: login } = await import("@/app/api/account/login/route");
+    const { POST: login } = bindRouteHandlers(await import("@/server/routes/account/login/route"), testRuntime);
     const loginResponse = await login(
       new Request("http://localhost/api/account/login", {
         method: "POST",
@@ -229,7 +226,7 @@ describe("POST /api/account/signup", () => {
   });
 
   it("returns a generic 500 (without leaking internal error details) on unexpected failure", async () => {
-    forceContextError = true;
+    forceBindingError = true;
 
     try {
       const response = await postSignup({
@@ -245,7 +242,7 @@ describe("POST /api/account/signup", () => {
       expect(body.success).toBe(false);
       expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
-      forceContextError = false;
+      forceBindingError = false;
     }
   });
 });

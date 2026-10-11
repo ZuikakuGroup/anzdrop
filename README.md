@@ -16,8 +16,8 @@ Anzdrop(あんずどろっぷ)は、Cloudflare Workers上で動くエンドツ�
 
 ## 技術スタック
 
-- [Astro](https://astro.build/)(公開ページ・アップロード・ダウンロード・マイページ) / React / [Hono](https://hono.dev/)(API) / TypeScript。管理・問い合わせ・通報画面はNext.jsの互換経路を維持
-- [Cloudflare Workers](https://workers.cloudflare.com/) + [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare)
+- [Astro](https://astro.build/)(すべての画面) / React / [Hono](https://hono.dev/)(API・管理画面の認証) / TypeScript
+- [Cloudflare Workers](https://workers.cloudflare.com/)（ルーター・Astro・Honoの3 Worker）
 - [Cloudflare D1](https://developers.cloudflare.com/d1/)(メタデータ)/ [Cloudflare R2](https://developers.cloudflare.com/r2/)(暗号化済みファイル本体)
 - [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)(管理画面の認証)/ [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)(アップロード時のBot対策)
 - Tailwind CSS v4 / Vitest
@@ -43,9 +43,8 @@ npm run dev
 | コマンド | 内容 |
 | --- | --- |
 | `npm run dev` | Astro＋React（localhost:3000）とHono API（8788）を起動 |
-| `npm run dev:legacy` | Next.jsの管理・問い合わせ・通報画面を開発 |
 | `npm run test:astro-hono` | ローカルworkerdとChromiumで移行画面・認証・ファイル共有を検証 |
-| `npm run build` | Next.jsの本番ビルド |
+| `npm run build` | Astro・Hono・ルーターのローカルビルド（アップロードなし） |
 | `npm run dev:public` | Astro公開ページの開発サーバー（4321番） |
 | `npm run build:public` | Astro公開Workerのビルド |
 | `npm run check:public` | Astroの型・テンプレート検証 |
@@ -58,12 +57,12 @@ npm run dev
 | `npm test` | Vitestによるユニットテスト実行 |
 | `npm run test:coverage` | カバレッジ付きテスト実行 |
 | `npm run test:e2e` | Playwright による本番/指定URL向け E2E(`E2E_BASE_URL`で対象変更可) |
-| `npm run preview` | Cloudflare Workers向けビルド後、ローカルでプレビュー |
-| `npm run deploy` | Cloudflare Workersへビルド・デプロイ |
+| `npm run preview` | ビルド済み3 Workerをローカルでプレビュー（先に `npm run build`） |
+| `npm run deploy` | GitHub Actionsのmain push環境で監査アーカイブを生成・デプロイ |
 
 `main`ブランチへのpushで GitHub Actions が自動的にD1マイグレーション適用とデプロイを行います([`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml))。
 
-本番デプロイでは、ビルドした4つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
+本番デプロイでは、ビルドした3つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
 
 ## ドキュメント
 

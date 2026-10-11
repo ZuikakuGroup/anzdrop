@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -16,14 +17,12 @@ import {
 } from "@/test/env";
 import { verifyAccessJwt } from "@/lib/access";
 import { INDEFINITE_PLAN_EXPIRES_AT } from "@/lib/plan";
-import type { AdminAccountInfo } from "@/app/api/admin/accounts/[accountId]/schema";
+import type { AdminAccountInfo } from "@/lib/api/schemas/admin/accounts/[accountId]/schema";
 
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 const mockSubscriptionsRetrieve = vi.fn();
 
@@ -76,9 +75,7 @@ function authorize() {
 }
 
 async function getRoute(accountId: string): Promise<Response> {
-  const { GET } = await import(
-    "@/app/api/admin/accounts/[accountId]/route"
-  );
+  const { GET } = bindRouteHandlers(await import("@/server/routes/admin/accounts/[accountId]/route"), testRuntime);
 
   return GET(
     new Request(`http://localhost/api/admin/accounts/${accountId}`),
@@ -91,9 +88,7 @@ async function postRoute(
   body: unknown,
   headers: Record<string, string> = {}
 ): Promise<Response> {
-  const { POST } = await import(
-    "@/app/api/admin/accounts/[accountId]/route"
-  );
+  const { POST } = bindRouteHandlers(await import("@/server/routes/admin/accounts/[accountId]/route"), testRuntime);
 
   return POST(
     new Request(`http://localhost/api/admin/accounts/${accountId}`, {
@@ -109,9 +104,7 @@ async function deleteRoute(
   accountId: string,
   headers: Record<string, string> = {}
 ): Promise<Response> {
-  const { DELETE } = await import(
-    "@/app/api/admin/accounts/[accountId]/route"
-  );
+  const { DELETE } = bindRouteHandlers(await import("@/server/routes/admin/accounts/[accountId]/route"), testRuntime);
 
   return DELETE(
     new Request(`http://localhost/api/admin/accounts/${accountId}`, {

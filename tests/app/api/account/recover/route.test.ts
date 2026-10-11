@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -22,17 +23,13 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-let forceContextError = false;
+let forceBindingError = false;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
-    if (forceContextError) {
-      throw new Error("boom: unexpected internal failure");
-    }
-
-    return { env };
-  },
-}));
+const testRuntime = () => ({
+  env: forceBindingError ? new Proxy(env, {
+    get() { throw new Error("boom: unexpected internal failure"); },
+  }) : env,
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -53,7 +50,7 @@ afterEach(() => {
 });
 
 async function postRecover(body: unknown) {
-  const { POST } = await import("@/app/api/account/recover/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/account/recover/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/account/recover", {
@@ -137,7 +134,7 @@ describe("POST /api/account/recover", () => {
     expect(body.recoveryCode).not.toBe(recoveryCode);
 
     // 再設定前のセッションCookieはもう使えない。
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const meWithOldSession = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie: oldSessionCookie },
@@ -146,7 +143,7 @@ describe("POST /api/account/recover", () => {
     expect(meWithOldSession.status).toBe(401);
 
     // 古いパスワードではもうログインできない。
-    const { POST: login } = await import("@/app/api/account/login/route");
+    const { POST: login } = bindRouteHandlers(await import("@/server/routes/account/login/route"), testRuntime);
     const loginWithOldPassword = await login(
       new Request("http://localhost/api/account/login", {
         method: "POST",
@@ -207,7 +204,7 @@ describe("POST /api/account/recover", () => {
     expect(account?.locked_until).toBeNull();
 
     // ロックが解除されているので、新しいパスワードで即ログインできる。
-    const { POST: login } = await import("@/app/api/account/login/route");
+    const { POST: login } = bindRouteHandlers(await import("@/server/routes/account/login/route"), testRuntime);
     const loginResponse = await login(
       new Request("http://localhost/api/account/login", {
         method: "POST",
@@ -222,7 +219,7 @@ describe("POST /api/account/recover", () => {
   });
 
   it("returns a generic 500 (without leaking internal error details) on unexpected failure", async () => {
-    forceContextError = true;
+    forceBindingError = true;
 
     try {
       const response = await postRecover({
@@ -239,7 +236,7 @@ describe("POST /api/account/recover", () => {
       expect(body.success).toBe(false);
       expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
-      forceContextError = false;
+      forceBindingError = false;
     }
   });
 });

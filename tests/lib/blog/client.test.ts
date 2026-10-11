@@ -1,18 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, getPosts, isBlogSeedDataEnabled, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/client";
+import { createBlogClient, isBlogSeedDataEnabled, isMicrocmsNotFoundError, MicrocmsApiError } from "@/lib/blog/core";
+const { getAllAuthors, getAllCategories, getAllPosts, getAllTags, getPost, getPosts } = createBlogClient(() => ({ MICROCMS_SERVICE_DOMAIN: "example", MICROCMS_API_KEY: "api-key" }), () => isBlogSeedDataEnabled());
 import { getLocalSeedPosts, LOCAL_SEED_POSTS } from "@/lib/blog/seed";
 import { PAGE_SIZE } from "@/lib/blog/pagination";
 import { isAllowedExternalUrl } from "@/lib/blog/validation";
 
-vi.mock("server-only", () => ({}));
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({
-    env: {
-      MICROCMS_SERVICE_DOMAIN: "example",
-      MICROCMS_API_KEY: "api-key",
-    },
-  }),
-}));
 
 afterEach(() => {
   vi.unstubAllGlobals();

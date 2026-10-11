@@ -11,7 +11,7 @@ import { parseJsonBody } from "@/lib/api/validate";
 import {
   ChargeRequestSchema,
   type ChargeResponse,
-} from "@/app/api/billing/btc/charge/schema";
+} from "@/lib/api/schemas/billing/btc/charge/schema";
 
 const OPENNODE_BTC_CHARGE_AMOUNT_USD_BY_PLAN = {
   standard: "OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD",

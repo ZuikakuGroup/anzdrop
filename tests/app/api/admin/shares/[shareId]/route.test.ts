@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -13,9 +14,7 @@ import { verifyAccessJwt } from "@/lib/access";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 vi.mock("@/lib/access", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/access")>();
@@ -49,7 +48,7 @@ async function deleteShareRoute(
   shareId: string,
   headers: Record<string, string> = {}
 ): Promise<Response> {
-  const { DELETE } = await import("@/app/api/admin/shares/[shareId]/route");
+  const { DELETE } = bindRouteHandlers(await import("@/server/routes/admin/shares/[shareId]/route"), testRuntime);
 
   return DELETE(
     new Request(`http://localhost/api/admin/shares/${shareId}`, {
@@ -61,7 +60,7 @@ async function deleteShareRoute(
 }
 
 async function getShareRoute(shareId: string): Promise<Response> {
-  const { GET } = await import("@/app/api/admin/shares/[shareId]/route");
+  const { GET } = bindRouteHandlers(await import("@/server/routes/admin/shares/[shareId]/route"), testRuntime);
 
   return GET(new Request(`http://localhost/api/admin/shares/${shareId}`), {
     params: Promise.resolve({ shareId }),

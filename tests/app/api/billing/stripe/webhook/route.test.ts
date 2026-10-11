@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -18,9 +19,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 const mockSubscriptionsRetrieve = vi.fn();
 const mockInvoicesRetrieve = vi.fn();
@@ -89,7 +88,7 @@ async function postWebhook(
   eventOrBody: object | string,
   options?: { signature?: string | null }
 ) {
-  const { POST } = await import("@/app/api/billing/stripe/webhook/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/billing/stripe/webhook/route"), testRuntime);
   const rawBody =
     typeof eventOrBody === "string" ? eventOrBody : JSON.stringify(eventOrBody);
 
