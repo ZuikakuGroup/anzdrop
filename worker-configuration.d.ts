@@ -4,6 +4,7 @@
 interface __BaseEnv_CloudflareEnv {
 	FILES_BUCKET: R2Bucket;
 	DB: D1Database;
+	FORM_RATE_LIMITER: RateLimit;
 	FILE_RATE_LIMITER: RateLimit;
 	SHARE_RATE_LIMITER: RateLimit;
 	UPLOAD_RATE_LIMITER: RateLimit;

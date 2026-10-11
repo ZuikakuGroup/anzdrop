@@ -1,0 +1,28 @@
+{
+  "name": "Anzdrop API rate limiting",
+  "description": "IP-based API abuse protection (issue #81)",
+  "kind": "zone",
+  "phase": "http_ratelimit",
+  "rules": [
+    {
+      "ref": "anzdrop_api_ip_rate_limit",
+      "description": "API requests: 3000 per IP per 10 seconds; block for 10 seconds",
+      "expression": "starts_with(http.request.uri.path, \"/api/\") or http.request.uri.path eq \"/api\"",
+      "action": "block",
+      "enabled": true,
+      "action_parameters": {
+        "response": {
+          "status_code": 429,
+          "content_type": "application/json",
+          "content": "{\"success\":false,\"error\":\"リクエストが多すぎます。しばらく待ってから再試行してください\"}"
+        }
+      },
+      "ratelimit": {
+        "characteristics": ["cf.colo.id", "ip.src"],
+        "period": 10,
+        "requests_per_period": 3000,
+        "mitigation_timeout": 10
+      }
+    }
+  ]
+}

@@ -301,3 +301,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 | `POST /api/account/security/cancel` | `{}` → `{ success: true }`、設定途中情報とCookieを削除 |
 
 `action` は `passkey-add` / `passkey-delete` / `totp-enable` / `totp-disable`。削除では `targetId` に対象の認証情報IDを指定する。設定取得以外は有効なセッションと、同じ操作に対する再認証を要求する（再認証・中止API自体は証明不要）。コードは6桁の文字列。OTPはアカウント単位5分5回の上限で429、無効・期限切れ・再送・世代不一致は403、未ログインは401、不正本文は400。DB・暗号化・検証の障害時は認証を通さない。
+
+## 登録・通報・問い合わせの回数制限
+
+`POST /api/account/signup`・`POST /api/report`・`POST /api/contact` は、Turnstileに加えて `FORM_RATE_LIMITER` を適用する。APIごとに全利用者合計120回/60秒（Cloudflareのデータセンター単位）。超過時はDBへ保存せず429を返し、`Retry-After: 60` を付ける。キーは固定のAPI名だけで、利用者の情報を新たに保存しない。バインディング未設定や制限サービスの障害時は既存方針どおりフェイルオープン。外側のWAF制限は別の10秒窓で、超過時は429を返すが `Retry-After` は付かない。
