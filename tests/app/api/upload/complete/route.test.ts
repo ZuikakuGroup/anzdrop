@@ -377,7 +377,10 @@ describe("POST /api/upload/complete", () => {
     expect(downloadResponse.status).toBe(200);
 
     const downloaded = new Uint8Array(await downloadResponse.arrayBuffer());
-    expect(downloaded).toEqual(packed);
+    // 多MBのTypedArrayをtoEqualで比較すると要素列挙で時間・メモリを消費する。
+    // 実サイズの全バイト一致はネイティブ比較で検証する。
+    expect(downloaded.byteLength).toBe(packed.byteLength);
+    expect(Buffer.from(downloaded).equals(Buffer.from(packed))).toBe(true);
 
     await Promise.all(waitUntilPromises);
   });
