@@ -157,3 +157,25 @@ PUBLIC_ASTRO_TEST=true E2E_BASE_URL=http://localhost:4321 npx playwright test te
 実CMSを使う場合は `apps/public/.dev.vars` に `MICROCMS_API_KEY` を設定する（コミット禁止）。seedは開発・明示した監査環境だけで使用し、`DEPLOYMENT_ENV=production` では無効。生成物は `apps/public/dist`、`.astro`、`.wrangler` に出力し、Gitには含めない。
 
 `npm run test:public` はビルド・プレビューの起動と終了・上記ブラウザ検証をまとめて実行する。初回は `npx playwright install chromium` を実行する。CIでもこの手順で実Workersを検証する。
+
+## 3ブラウザのファイル共有 E2E (#238)
+
+隔離したローカル Astro/Hono・D1・R2 で、実際のアップロード、暗号化、別コンテキストからの復号、保存を検証する。本番 URL では共有スイートをスキップする。追加の依存・マイグレーション・テスト用 API は使わない。
+
+```sh
+npx playwright install chromium firefox webkit
+E2E_PROJECT=firefox E2E_WORKERS=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts npm run test:astro-hono -- --grep @sharing-core
+E2E_PROJECT=webkit E2E_WORKERS=1 E2E_EXTENDED=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts npm run test:astro-hono
+```
+
+`E2E_PROJECT` は chromium / firefox / webkit。省略時は Chromium。`--` 以降に Playwright の追加引数を渡せる。Firefox・WebKit は共有スイートだけを実行し、CDP を使う既存のパスキー検証は Chromium に限定する。
+
+基本ケースは 64KiB、誤ったパスワードからの再試行、日本語名を含む3ファイルの ZIP。拡張ケースは 16MiB＋1B、200MiB＋1B、Blob 強制、暗号文破損、通信失敗、保存キャンセルと再試行を追加する。大容量の結果は長さと全バイトを固定サイズの読み取りで比較する。
+
+通常保存は実際の転送可能ストリームと Service Worker の制御を確認し、ダウンロード URL が `/_anzdrop_download/` または `blob:` であることを検証する。能力と保存経路はレポートへ添付する。Blob 強制はコンテキストの `serviceWorkers: 'block'` を使う。受信コンテキストでは保存ピッカーを無効化し、OS の保存ダイアログは検証対象としない。File System Access API の分岐は既存の Vitest が検証する。
+
+障害注入は Blob 経路の対象 `/api/file/*` のみ。キャンセルケースは実際の Service Worker へ渡すストリームを最初のチャンク後で待機させ、未完了の `Download.cancel()` の結果が `canceled` になることを確認する。その後は待機を解除し、正常保存を再試行する。アプリがブラウザのキャンセルを検知するとは仮定しない。
+
+コピー URL は `navigator.clipboard.writeText` の呼び出しを捕捉する。OS のクリップボードは実機で確認する。送信リクエストの URL・ヘッダー・本文に、合成平文マーカー、ファイル名、保護パスワード、クライアントで実際にエクスポートした復号鍵が含まれないことも検証する。監視の添付には値を含めない。トレースには合成ファイル・合成鍵・合成パスワードが含まれるため、実ユーザーデータは使用しない。
+
+Safari 製品の確認は [実機確認表](safari-file-sharing-checklist.md) に記録する。Playwright WebKit の成功だけで #238 を完了扱いにしない。
