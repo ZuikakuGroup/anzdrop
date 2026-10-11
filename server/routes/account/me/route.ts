@@ -2,7 +2,7 @@ import { getWorkerRuntime } from "@/server/runtime";
 import { verifySession } from "@/lib/account/session";
 import { getAccountPlanInfo } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
-import type { MeResponse } from "@/app/api/account/me/schema";
+import type { MeResponse } from "@/lib/api/schemas/account/me/schema";
 
 export const GET = withApiHandler(
   "GET /api/account/me",

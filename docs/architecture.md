@@ -2,28 +2,27 @@
 
 ## 全体構成
 
-公開ページとアップロード・ダウンロード・マイページはAstroのSSRとReact islandsで提供します。APIはHonoで既存の`anzdrop` Worker上で実行し、D1/R2・認証Secret・Cronを引き継ぎます。管理・問い合わせ・通報画面はNext.js/OpenNextの互換経路に残します。状態は以下のCloudflareリソースに保存されます。
+公開ページとアップロード・ダウンロード・マイページはAstroのSSRとReact islandsで提供します。APIはHonoで既存の`anzdrop` Worker上で実行し、D1/R2・認証Secret・Cronを引き継ぎます。管理・問い合わせ・通報画面もAstroで提供します。状態は以下のCloudflareリソースに保存されます。
 
 ```
 ブラウザ (E2EE暗号化/復号はすべてここで行う)
    │
    ▼
 Cloudflare Workers
-   ├─ anzdrop-router … `/`・`/d/*`・`/mypage/*`と公開コンテンツをPUBLICへ、APIと互換画面をAPPへ転送
-   ├─ anzdrop-home … 旧`/_home-next/*`アセットの互換経路（トップページの新規リクエストはPUBLIC）
+   ├─ anzdrop-router … `/api`と`/api/*`をAPPへ、画面・アセットをPUBLICへ転送
    ├─ anzdrop-public … Astroの公開ページ・ブログSSR・React操作画面（永続ストレージ・認証Secretなし）
-   └─ anzdrop … Hono API・Next.js互換画面・D1/R2・Cron Trigger
+   └─ anzdrop … Hono API・Access JWT検証・D1/R2・Cron Trigger
        ├─ D1 (anzdrop-db)      … 共有・ファイル・アップロードセッション・通報・計測イベントのメタデータ
        ├─ R2 (anzdrop バケット) … 暗号化済みファイル本体
        ├─ Cron Trigger (6時間ごと) … 期限切れ共有・放置されたアップロードセッションの掃除
        └─ Cron Trigger (毎日UTC 00:10) … 計測基盤の日次集計・生イベントの保持期限切れ削除([`analytics.md`](./analytics.md)参照)
 ```
 
-エントリーポイントは [`custom-worker.ts`](../custom-worker.ts) で、`/api`をHono（[`server/app.ts`](../server/app.ts)）、その他をOpenNextへ振り分け、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
+エントリーポイントは [`server/worker.ts`](../server/worker.ts) で、リクエストをHonoへ渡し、`scheduled`ハンドラだけ追加してCronでの掃除処理([`lib/cleanup.ts`](../lib/cleanup.ts))と計測基盤の日次バッチ([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts) / [`lib/analytics/retention.ts`](../lib/analytics/retention.ts))を、`event.cron` の値で振り分けて呼び出しています。
 
 ## APIと操作画面の境界
 
-`server/routes/**/route.ts`はWeb標準のRequest/Responseを使う業務処理です。HonoはURL・HTTPメソッド・動的パラメータを振り分け、本文やCookieを加工しません。`server/runtime.ts`のAsyncLocalStorageにリクエスト単位のenvとExecutionContextを保持し、並行リクエストで共有しません。`app/api/**/route.ts`はNextの互換アダプター、`schema.ts`は引き続きクライアントと共有します。Honoの実行経路はNext.js/OpenNextをimportしません。Stripe通知はHibikiの初期化時Response生成をworkerdのリクエスト内で行うため、通知ハンドラーだけを遅延importします。
+`server/routes/**/route.ts`はWeb標準のRequest/Responseを使う業務処理です。HonoはURL・HTTPメソッド・動的パラメータを振り分け、本文やCookieを加工しません。`server/runtime.ts`のAsyncLocalStorageにリクエスト単位のenvとExecutionContextを保持し、並行リクエストで共有しません。`lib/api/schemas/**/schema.ts`はクライアントと共有するスキーマ・型です。Next.js/OpenNextへの依存はありません。Stripe通知はHibikiの初期化時Response生成をworkerdのリクエスト内で行うため、通知ハンドラーだけを遅延importします。
 
 Astroの操作画面は共通のReactコンポーネントを`client:load`でハイドレーションします。画面遷移は同一Originのフルドキュメント遷移です。外部スクリプトにはそのレスポンスのnonceを引き継ぎ、既存のnonce CSP・no-storeを維持します。復号鍵・ファイルの暗号化/復号は引き続きブラウザだけで扱います。新しい保存対象・テーブル・秘密鍵は追加しません。
 
@@ -31,7 +30,7 @@ Astroの操作画面は共通のReactコンポーネントを`client:load`でハ
 
 ## LPのフォント
 
-[`/lp/secure-file-sharing`](../app/lp/secure-file-sharing/page.tsx)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページと共通ヘッダー・フッターで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。見出し用の800ウェイトまで含みます。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`app/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
+[`/lp/secure-file-sharing`](../apps/public/src/pages/lp/secure-file-sharing.astro)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページと共通ヘッダー・フッターで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。見出し用の800ウェイトまで含みます。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`apps/public/src/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。
 
 ## Cloudflareバインディング
 
@@ -56,15 +55,15 @@ Astroの操作画面は共通のReactコンポーネントを`client:load`でハ
 | `/`(`apps/public/src/pages/index.astro`) | アップロード画面(`components/upload/uploadForm.tsx`) |
 | `/lp/secure-file-sharing`(`apps/public/src/pages/lp/secure-file-sharing.astro`) | Google検索広告向けのファイル共有LP。共通ヘッダーを使い、登録不要・送信前のブラウザ内暗号化・無料プランの条件を冒頭で示す。3段階の利用手順、通常の共有URLの鍵の位置、FAQを掲載して`/`へ案内する。最初の着地パスは既存のAnalyticsで計測。ヒーローのLoose Drawingイラスト1点をローカル同梱する。見出しアクセントとCTAは共通のブランド色(`#f15a22`)を使う |
 | `/d/[shareId]`(`apps/public/src/pages/d/[shareId].astro`) | ダウンロード画面(`components/download/DownloadPage.tsx`) |
-| `/report`(`app/report/page.tsx`) | 一般向け通報フォーム |
-| `/report/rights`(`app/report/rights/page.tsx`) | 権利者向け申し立てフォーム |
-| `/admin`(`app/admin/page.tsx`) | 通報管理画面(要Cloudflare Access認証) |
+| `/report`(`apps/public/src/pages/report.astro`) | 一般向け通報フォーム |
+| `/report/rights`(`apps/public/src/pages/report/rights.astro`) | 権利者向け申し立てフォーム |
+| `/admin`(`apps/public/src/pages/admin/index.astro`) | 通報管理画面(要Cloudflare Access認証) |
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
 | `/mypage`(`apps/public/src/pages/mypage/index.astro`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
 | `/mypage/billing`(`apps/public/src/pages/mypage/billing.astro`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。Standard・Premiumを購入できる（`lib/plan.ts`の`PURCHASABLE_PLANS`）。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
 | `/pricing`(`apps/public/src/pages/pricing.astro`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standard・Premiumのカードから購入画面へ案内する |
 | `/about`(`apps/public/src/pages/about.astro`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
-| `/contact`(`app/contact/page.tsx`) | 一般向けお問い合わせフォーム(`components/contact/ContactForm.tsx`)。共通ヘッダー・フッターから遷移 |
+| `/contact`(`apps/public/src/pages/contact.astro`) | 一般向けお問い合わせフォーム(`components/contact/ContactForm.tsx`)。共通ヘッダー・フッターから遷移 |
 | `/legal/terms`・`/legal/privacy`・`/legal/tokushoho` | 利用規約・プライバシーポリシー・特定商取引法に基づく表記([`legal.md`](./legal.md)) |
 
 API側の詳細は [`api.md`](./api.md) を参照。
@@ -124,7 +123,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## 掃除(Cleanup)
 
-[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`custom-worker.ts` の `scheduled` ハンドラ(6時間ごと、`wrangler.jsonc` の `triggers.crons`)から `runScheduledCleanup()` 経由で呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
+[`lib/cleanup.ts`](../lib/cleanup.ts) が以下の2種類の掃除を担当し、`server/worker.ts` の `scheduled` ハンドラ(6時間ごと、`wrangler.jsonc` の `triggers.crons`)から `runScheduledCleanup()` 経由で呼び出されます。また管理画面からの手動削除(`DELETE /api/admin/shares/[shareId]`)も同じ `deleteShare()` を利用します。
 
 - **期限切れ共有の削除**(`cleanupExpiredShares`): `shares.expires_at` を過ぎた共有をR2オブジェクト・D1レコードごと削除。
 - **放置されたアップロードセッションの削除**(`cleanupStaleUploads`): 通信断やタブを閉じるなどで `/api/upload/complete` まで到達しなかったセッションを、共有の有効期限とは無関係に、セッション自体の古さ(24時間)で判定して削除。R2の未完了マルチパートアップロードはabortしないと課金対象のストレージとして残り続けるため、DBレコードの削除前に必ずabortする。
@@ -174,17 +173,11 @@ Turnstile を含む濫用対策全体の位置づけは、アップロードが�
 
 ## セキュリティレスポンスヘッダ
 
-[`proxy.ts`](../proxy.ts)(Next.js 16 の Proxy。旧 `middleware.ts`)が、静的アセットを除く全レスポンスに以下を付与します。
+Astro middlewareがHTMLを`no-store`で返し、リクエストごとのnonce CSPと共通セキュリティヘッダーを付けます。HTMLRewriterでAstroのスクリプトへnonceを設定し、動的なTurnstile・Stripeスクリプトにもそのnonceを引き継ぎます。APIはHonoが`no-store`と共通ヘッダー（nosniff、frame拒否、Referrer-Policyなど）を設定します。HSTSは`DEPLOYMENT_ENV=production`でのみ有効です。CSPの定義は`lib/securityHeaders.ts`を参照してください。
 
-- **Content-Security-Policy**: nonce ベースの厳格な CSP。`script-src` は `'self' 'nonce-<リクエストごと>' 'strict-dynamic'` を基本とし、`'unsafe-inline'` を許可しません。ダウンロード画面が URL フラグメントの E2E 復号鍵をメモリに保持するため、この origin 上の XSS を多層防御で抑えることが目的です(`'strict-dynamic'` により、nonce 付きスクリプトが読み込む Turnstile / Stripe.js の子スクリプトは追加のホスト許可なしで動きます)。`connect-src` は R2 直接アップロード先のこのアカウントの S3 エンドポイントだけを許可します。アップロード先のアカウントを変える場合は `proxy.ts` の許可先も更新します。
-- **CSRF**: Cookie認証で決済・契約・アップロードを変更するPOST APIは、`SameSite=Strict` Cookieに加えて`Origin`がリクエスト自身のoriginと一致することを必須にする。サブドメイン分離時は、許可するoriginを明示的に設計してから変更する。
-- **frame-ancestors 'none' / X-Frame-Options: DENY**: クリックジャッキング対策。
-- **X-Content-Type-Options: nosniff**: 利用者アップロードのバイト列を配信する `/api/file/[fileId]` を含め、Content-Type の推測を全ルートで禁止。
-- **Referrer-Policy: no-referrer** / **Strict-Transport-Security** (`DEPLOYMENT_ENV=production` のみ) / **Permissions-Policy**(カメラ・マイク・位置情報などを無効化、`payment` は Stripe のみ許可)。
+Cookie認証の状態変更APIは既存のOrigin検証を維持します。暗号化・復号と復号鍵の扱いはブラウザだけで完結します。
 
-nonce はリクエストごとに `proxy.ts` が生成し、Next.js が SSR 時に取り出してフレームワークスクリプト・ページバンドル・`next/script` へ付与します。この仕組みは動的レンダリングを前提とするため、[`app/layout.tsx`](../app/layout.tsx) で `export const dynamic = "force-dynamic"` を宣言し、全ページを動的レンダリングにしています(法務ページなども含めて静的生成・CDN キャッシュは行われません。Workers 上の低トラフィックな用途なので影響は小さいと判断)。
-
-CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定すると `Content-Security-Policy-Report-Only` に切り替わり、違反をブロックせず観測だけできます(新しい外部フローを入れた直後のロールアウトや、OpenNext / Next 更新時の確認用の安全弁)。`proxy.ts` は OpenNext 上では「Node.js middleware」として動き OpenNext 側のサポートは実験的なため、更新時のリグレッション確認が必要です([`deployment.md`](./deployment.md#セキュリティレスポンスヘッダproxyts))。
+管理ページはAstro middlewareが描画前にAPP Service Bindingで`GET /__internal/admin/access`へ確認します。Honoが既存Access JWT検証を行い、成功時は本文なし204、失敗時は404を返します。Astroは204以外・通信例外・Binding欠落を拒否し、管理画面を描画しません。公開ルーターとAstroは`/__internal`以下を404で遮断します。認証確認はユーザー情報を返さず、永続保存も行いません。APPの直接公開を避ける`workers_dev=false`と既存Access保護を維持します。
 
 ## アカウント認証の境界
 
@@ -200,6 +193,6 @@ CSP は既定で enforce ですが、環境変数 `CSP_REPORT_ONLY=1` を設定�
 
 `/about` のFAQは、`::details-content` と `interpolate-size` に対応するブラウザーで高さ・透明度を300msで変化させる。JavaScriptや追加のデータ保存は不要。未対応のブラウザーは標準の開閉を維持し、`prefers-reduced-motion: reduce` ではアニメーションを無効にする。
 
-ブログ取得・検証は `lib/blog/core.ts` をNext/Astroで共有する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
+ブログ取得・検証は `lib/blog/core.ts` で共通化する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
 
-Nextの同名公開ルートは開発用とルーターを戻す際の互換経路として残す。公開ページへのリンクは通常のドキュメント遷移を使い、NextのRSCリクエストをWorker間に持ち越さない。
+旧互換ルートは撤去済みです。公開ページへのリンクは通常のドキュメント遷移を使います。

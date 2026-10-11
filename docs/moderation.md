@@ -22,7 +22,7 @@ Anzdropは認証なしで誰でもアップロードできる公開サービス�
 
 著作権・商標権・肖像権などの侵害を主張する権利者本人(またはその代理人)向けの専用フォーム。共有URL・理由に加え、申立者名・連絡先メールアドレス・権利の種類(`right_type`: `copyright`/`trademark`/`portrait`/`other`)、および「内容が真実であり正当な権利者/代理人である」ことの確認チェックボックスが必須。
 
-送信時、`category` はユーザーに選ばせず **サーバー側で自動的に `"rights_infringement"` に固定** される(`app/api/report/route.ts`)。これは一般向けフォームの `category` 選択肢(`csam`/`malware`/`privacy`/`spam`/`other`)には含まれない値で、クライアントから `rights_infringement` を指定しても一般通報のバリデーションには通らない(=なりすまし不可)。
+送信時、`category` はユーザーに選ばせず **サーバー側で自動的に `"rights_infringement"` に固定** される(`server/routes/report/route.ts`)。これは一般向けフォームの `category` 選択肢(`csam`/`malware`/`privacy`/`spam`/`other`)には含まれない値で、クライアントから `rights_infringement` を指定しても一般通報のバリデーションには通らない(=なりすまし不可)。
 
 ## お問い合わせフォーム(`/contact`, `components/contact/ContactForm.tsx`)
 
@@ -53,7 +53,7 @@ Cloudflare Access配下([`deployment.md`](./deployment.md#cloudflare-access管�
 
 運営者は共有URL(=どのファイル群を対象にするか)をもとに削除等の対応を行うのみで、**ファイルの中身を復号して確認することはない**(そもそも復号鍵をサーバーは持たない。詳細は [`crypto.md`](./crypto.md))。
 
-共有URLは `https://.../d/{shareId}#{復号鍵}` の形式で、復号鍵はURLフラグメント(`#`以降)に入る([`crypto.md`](./crypto.md)参照)。通報フォームの「共有URL」欄は `extractShareId()`(`app/api/report/route.ts`)でフラグメントを除いた `shareId` のみを抽出するが、自由記述の「理由」欄にユーザーが鍵(または鍵付きURL)を貼り付けてしまうケースに備え、保存前に [`lib/sanitize.ts`](../lib/sanitize.ts) の `sanitizeReportText()` で以下の2段階のサニタイズを行ってからD1へ保存している(送信直前のクライアント側と、受信時のサーバー側の両方で適用)。
+共有URLは `https://.../d/{shareId}#{復号鍵}` の形式で、復号鍵はURLフラグメント(`#`以降)に入る([`crypto.md`](./crypto.md)参照)。通報フォームの「共有URL」欄は `extractShareId()`(`server/routes/report/route.ts`)でフラグメントを除いた `shareId` のみを抽出するが、自由記述の「理由」欄にユーザーが鍵(または鍵付きURL)を貼り付けてしまうケースに備え、保存前に [`lib/sanitize.ts`](../lib/sanitize.ts) の `sanitizeReportText()` で以下の2段階のサニタイズを行ってからD1へ保存している(送信直前のクライアント側と、受信時のサーバー側の両方で適用)。
 
 1. URLらしき文字列の場合、フラグメント部分(`#`以降)を機械的に除去する。
 2. URLの形をしていなくても、復号鍵はbase64urlエンコードされた固定長文字列(AES-256-GCM鍵なら43文字、`AES_KEY_LENGTH`から導出)になるため、その文字種(英数字・`-`・`_`)が43文字以上連続する箇所があれば、そのひと続き全体を除去する。「鍵は○○です」のように鍵の文字列だけが書き写された場合にも対応するため。「ちょうど43文字」ではなく「43文字以上」を対象にしているのは、鍵の前後に別の文字が1つでもくっつくと完全一致条件から外れて鍵が丸ごと残ってしまう、という抜けを防ぐため。

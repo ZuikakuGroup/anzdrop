@@ -1,5 +1,3 @@
-/* eslint-disable @next/next/no-html-link-for-pages -- Shared with Astro; cross-Worker navigation requires a full document request. */
-/* eslint-disable @next/next/no-img-element -- Shared with Astro; serve this local illustration directly. */
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { ArrowRightIcon } from "@/components/brand/ShareIcons";

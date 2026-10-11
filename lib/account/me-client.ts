@@ -1,4 +1,4 @@
-import type { MeResponse } from "@/app/api/account/me/schema";
+import type { MeResponse } from "@/lib/api/schemas/account/me/schema";
 
 // 同じ画面でヘッダーとアップロードフォームが同時に呼んでも、認証状態と
 // プランの確認を1リクエストにまとめる。応答は保持しないため、SPA遷移後の

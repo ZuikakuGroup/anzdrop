@@ -31,7 +31,7 @@ export function buildContentSecurityPolicy(
   isDev: boolean,
   { skipUpgradeInsecureRequests = false }: { skipUpgradeInsecureRequests?: boolean } = {},
 ): string {
-  // strict-dynamic により、nonce を持つスクリプト(Next のバンドル、next/script
+  // strict-dynamic により、nonce を持つスクリプト(Astro のバンドル、外部スクリプト
   // 経由の Turnstile ローダ、@stripe/stripe-js のローダ)が動的に読み込む子
   // スクリプトは、追加のホスト許可なしで実行できる。末尾のホスト列挙は
   // strict-dynamic 非対応の古いブラウザ向けのフォールバック。
@@ -67,7 +67,7 @@ export function buildContentSecurityPolicy(
   const directives = [
     `default-src 'self'`,
     `script-src ${scriptSrc}`,
-    // React のインラインスタイル(style 属性)と next/font が挿入する <style> の
+    // React のインラインスタイル(style 属性)と コンポーネントが挿入する <style> の
     // ため style は unsafe-inline を許可する。スタイル注入はスクリプト実行に
     // 比べ危険度が低く、厳格な CSP でも一般的に許容される。
     `style-src 'self' 'unsafe-inline'`,

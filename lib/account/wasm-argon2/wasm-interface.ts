@@ -17,20 +17,11 @@
 // したもの。移植にあたっては、実際にhash-wasmの出力と全パラメータ組み合わせ
 // でバイト単位一致することを確認済み(lib/account/wasm-argon2/*.test.ts)。
 //
-// .wasmの静的importが実際にどんな値になるかはビルドツールによって異なり、
-// 統一できない:
-// - wrangler/esbuild本来の静的wasmモジュール規約: コンパイル済みの
-//   WebAssembly.Moduleをdefault exportとして渡してくる(呼び出しのたびに
-//   新しいInstanceを作れる)。
-// - next dev --webpack(experiments.asyncWebAssembly): その場で1回だけ
-//   Instance化し、以後は共有された同じexportsを返す。
-// - next build(Turbopack, type: "wasm"): 同じく1回だけInstance化して
-//   共有exportsを返す、かつCloudflare Workers本番でもこの経路を通る
-//   (Turbopackの非同期モジュールはESモジュールとしてキャッシュされ、
-//   Workerのisolateが再利用される限りexportsも使い回される)。
+// Wrangler/esbuildではコンパイル済みWebAssembly.Moduleを静的importし、
+// 呼び出しごとにInstanceを作る。Vitestもコンパイル済みModuleとして読み込む。
+// 共有exportsを渡す既存の呼び出しにも対応するため、以下のガードは維持する。
 //
-// つまり本番を含め「Instanceが複数回のハッシュ計算にまたがって共有され
-// うる」前提で実装する必要がある。argon2側はHash_SetMemorySizeで動的に
+// 「Instanceが複数回のハッシュ計算にまたがって共有されうる」入力にも対応する。argon2側はHash_SetMemorySizeで動的に
 // メモリを伸長する実装で、同一Instanceに対して既に確保済みのサイズ以下を
 // 再度要求すると内部のunsigned算術(bytes_required = total - B_size)が
 // アンダーフローしてメモリ破壊につながる。そのため「まだ確保していない

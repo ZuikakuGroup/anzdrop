@@ -4,6 +4,7 @@ declare namespace App {
 }
 declare namespace Cloudflare {
   interface Env {
+    APP?: import("@/lib/adminPageAccess").AdminAccessBinding;
     DEPLOYMENT_ENV?: string;
     BLOG_USE_SEED_DATA?: string;
     WEB_AUDIT?: string;

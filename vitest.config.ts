@@ -40,6 +40,8 @@ export default defineConfig({
     // (real CHUNK_SIZE boundaries) through AES-GCM; that's slow in this
     // environment's software crypto path, so the default 5s is too tight.
     testTimeout: 60_000,
+    // Miniflare starts real Workers and applies migrations in setup hooks.
+    hookTimeout: 60_000,
     // Node 22+ has its own experimental global `localStorage`, gated behind
     // `--localstorage-file`. It shadows jsdom's own Storage implementation
     // in `// @vitest-environment jsdom` test files (lib/analytics/*), making
@@ -57,7 +59,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
-      "next/font/google": path.resolve(__dirname, "test/nextFontGoogleMock.ts"),
     },
   },
 });

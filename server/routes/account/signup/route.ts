@@ -7,7 +7,7 @@ import { parseJsonBody } from "@/lib/api/validate";
 import {
   SignupRequestSchema,
   type SignupResponse,
-} from "@/app/api/account/signup/schema";
+} from "@/lib/api/schemas/account/signup/schema";
 
 export const POST = withApiHandler(
   "POST /api/account/signup",

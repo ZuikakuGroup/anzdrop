@@ -1,4 +1,4 @@
-import type { StripeSyncResponse } from "@/app/api/billing/stripe/sync/schema";
+import type { StripeSyncResponse } from "@/lib/api/schemas/billing/stripe/sync/schema";
 import { isIndefinitePlanExpiry, type Plan } from "@/lib/plan";
 import type { StripeSubscriptionSummary } from "@/lib/stripe-subscription";
 

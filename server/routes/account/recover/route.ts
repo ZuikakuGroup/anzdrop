@@ -11,7 +11,7 @@ import { parseJsonBody } from "@/lib/api/validate";
 import {
   RecoverRequestSchema,
   type RecoverResponse,
-} from "@/app/api/account/recover/schema";
+} from "@/lib/api/schemas/account/recover/schema";
 
 const INVALID_RECOVERY_ERROR = "アカウントIDまたはリカバリーコードが正しくありません";
 

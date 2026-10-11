@@ -1,6 +1,7 @@
 // Local Hono development and dry-run only. Production uses wrangler.jsonc.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  "dev": { "ip": "127.0.0.1", "port": 8788 },
   "name": "anzdrop",
   "main": "./server/worker.ts",
   "workers_dev": false,
@@ -10,6 +11,7 @@
     "nodejs_compat"
   ],
   "vars": {
+    "LOCAL_DEVELOPMENT": "true",
     "MICROCMS_SERVICE_DOMAIN": "anzdrop.microcms.io",
     "SITE_URL": "https://anzdrop.com",
     "CF_ACCESS_TEAM_DOMAIN": "dawn-union-04c8.cloudflareaccess.com",

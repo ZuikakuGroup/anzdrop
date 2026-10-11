@@ -52,7 +52,6 @@ export default function FilePreviewModal({
           <audio src={preview.url} controls autoPlay className="w-full" />
         )}
         {preview.kind === "image" && (
-          // eslint-disable-next-line @next/next/no-img-element -- blob: URLの表示なのでnext/imageの最適化対象外
           <img
             src={preview.url}
             alt={preview.file.name}

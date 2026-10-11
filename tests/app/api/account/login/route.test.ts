@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -23,9 +24,7 @@ import { verifyPassword } from "@/lib/account/password";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 // verifyPassword は既定では本物の実装をそのまま呼ぶ。並行リクエストの
 // レースを決定的に再現したいテストだけ、この関数の内部でリクエストの
@@ -66,7 +65,7 @@ afterEach(() => {
 });
 
 async function postLogin(body: unknown) {
-  const { POST } = await import("@/app/api/account/login/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/account/login/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/account/login", {
@@ -156,7 +155,7 @@ describe("POST /api/account/login", () => {
 
     // 発行されたCookieが/api/account/meで実際に有効であることまで確認する。
     const cookieValue = setCookie!.split(";")[0];
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const meResponse = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie: cookieValue },

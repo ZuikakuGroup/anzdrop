@@ -1,5 +1,5 @@
 import { parseJsonBody } from "@/lib/api/validate";
-import { LoginRequestSchema } from "@/app/api/account/login/schema";
+import { LoginRequestSchema } from "@/lib/api/schemas/account/login/schema";
 import { authenticateAccountPassword } from "@/lib/account/passwordAuthentication";
 import { grantAccountSession } from "@/lib/account/grantSession";
 import { withAccountAuthHandler, authJson } from "@/lib/account/authHttp";

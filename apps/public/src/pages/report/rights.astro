@@ -1,0 +1,7 @@
+---
+import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
+import Page from '@/components/report/RightsHolderReportForm';
+---
+<InteractiveLayout title="権利侵害の申し立て | Anzdrop">
+  <Page client:load initialShareId={Astro.url.searchParams.get("shareId") ?? ""} />
+</InteractiveLayout>

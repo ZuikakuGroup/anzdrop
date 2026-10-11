@@ -7,7 +7,7 @@
 // wrappedKey / keySalt に対して、弱いパスワードだと PBKDF2 のオフライン総当たりが
 // 現実的になり、「パスワード保護したから URL を公開しても安全」という前提が
 // 崩れるため(GitHub issue #80)。値はアカウントのパスワード
-// (app/api/account/signup/schema.ts)と揃えている。
+// (server/routes/account/signup/schema.ts)と揃えている。
 //
 // なおこれは「自分の共有を弱く作ってしまわないための UI 上のガードレール」で
 // あって、強制的な境界ではない。サーバーはパスワードを知らないので検証しようが

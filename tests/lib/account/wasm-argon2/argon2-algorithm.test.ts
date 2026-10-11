@@ -6,7 +6,7 @@ import { computeArgon2id } from "@/lib/account/wasm-argon2/argon2-algorithm";
 
 // このテストは、静的.wasm importの解決(バンドラ依存)を経由せず、
 // fs経由でコンパイルしたWebAssembly.Moduleを直接computeArgon2idへ渡す。
-// 静的importの解決確認は別途next dev/opennextjs-cloudflare buildの
+// 静的importの解決確認は別途Astro/Workers E2Eの
 // 実機確認で行う(vitest実行環境のバンドラ挙動に左右されるべきではないため)。
 let argon2Module: WebAssembly.Module;
 let blake2bModule: WebAssembly.Module;

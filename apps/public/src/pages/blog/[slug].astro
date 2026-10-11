@@ -4,8 +4,8 @@ import BlogCards from '../../components/BlogCards.astro';
 import { blog, isMicrocmsNotFoundError } from '../../lib/blog';
 import { formatDate } from '@/lib/blog/site';
 import { sanitizeArticleHtml } from '@/lib/blog/sanitize';
-import ArticleImageLightbox from '@/app/blog/[slug]/ArticleImageLightbox';
-import styles from '@/app/blog/[slug]/article-content.module.css';
+import ArticleImageLightbox from '@/components/blog/ArticleImageLightbox';
+import styles from '@/components/blog/article-content.module.css';
 let post;
 try { post = await blog.getPost(Astro.params.slug!); }
 catch (error) { if (isMicrocmsNotFoundError(error)) return Astro.rewrite('/404'); throw error; }

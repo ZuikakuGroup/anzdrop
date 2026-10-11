@@ -5,7 +5,7 @@ const INTERNAL_SERVER_ERROR_RESPONSE: ApiResponse = {
   error: "サーバー内部でエラーが発生しました",
 };
 
-// app/api/**/route.tsの全ハンドラーで手作業コピーされていた
+// server/routes/**/route.tsの全ハンドラーで手作業コピーされていた
 // 「try { ... } catch (error) { console.error(...); 汎用500応答 }」の定型を
 // まとめる。routeLabelはログの先頭に出す識別子(例: "GET /api/account/me")で、
 // 既存のconsole.errorの文言をそのまま踏襲する。

@@ -1,3 +1,4 @@
+import { canRenderAdminPage, isAdminPage } from '@/lib/adminPageAccess';
 import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import { buildStaticSecurityHeaders, buildContentSecurityPolicy, isLoopbackHost } from '@/lib/securityHeaders';
@@ -6,7 +7,11 @@ import { buildStaticSecurityHeaders, buildContentSecurityPolicy, isLoopbackHost 
 export const onRequest = defineMiddleware(async (context, next) => {
   const nonce = btoa(crypto.randomUUID());
   context.locals.nonce = nonce;
-  const response = await next();
+  const blockedInternal = context.url.pathname === '/__internal' || context.url.pathname.startsWith('/__internal/');
+  const deniedAdmin = isAdminPage(context.url.pathname) && !(await canRenderAdminPage(context.request, env.APP));
+  const response = blockedInternal || deniedAdmin
+    ? new Response(null, { status: 404 })
+    : await next();
   const headers = new Headers(response.headers);
   const production = env.DEPLOYMENT_ENV === 'production';
   const development = import.meta.env.DEV;

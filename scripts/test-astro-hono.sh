@@ -11,6 +11,7 @@ export CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false
 # Dedicated local database: never use --remote for this test.
 npx wrangler d1 migrations apply DB --local --config tmp/astro-hono/wrangler.json --persist-to tmp/astro-hono-state > tmp/astro-hono-migrations.log 2>&1
 npx wrangler dev --config tmp/astro-hono/wrangler.json --port 8791 --inspector-port 9241 --persist-to tmp/astro-hono-state \
+  --var LOCAL_ADMIN_BYPASS:${E2E_LOCAL_ADMIN_BYPASS:-false} \
   --var ACCOUNT_AUTH_LOCAL_ORIGIN:http://localhost:3310 \
   --var TURNSTILE_SECRET_KEY:1x0000000000000000000000000000000AA \
   --var ANALYTICS_SECRET:local-test-analytics-secret-only-not-production \
@@ -25,7 +26,9 @@ proxy_pid=$!
 trap 'kill -- "-$api_pid" "-$ui_pid" "-$proxy_pid" 2>/dev/null || true; wait "$api_pid" "$ui_pid" "$proxy_pid" 2>/dev/null || true' EXIT
 ready=false
 for attempt in $(seq 1 60); do
-  if curl --max-time 3 --silent --fail http://localhost:3310/about > /dev/null && [ "$(curl --max-time 3 --silent -o /dev/null -w '%{http_code}' http://localhost:3310/api/account/me)" = "401" ]; then
+  admin_ready=true
+  if [ "${E2E_LOCAL_ADMIN_BYPASS:-false}" = true ] && [ "$(curl --max-time 3 --silent -o /dev/null -w '%{http_code}' http://localhost:3310/admin)" != "200" ]; then admin_ready=false; fi
+  if [ "$admin_ready" = true ] && curl --max-time 3 --silent --fail http://localhost:3310/about > /dev/null && [ "$(curl --max-time 3 --silent -o /dev/null -w '%{http_code}' http://localhost:3310/api/account/me)" = "401" ]; then
     ready=true
     break
   fi
@@ -34,4 +37,4 @@ for attempt in $(seq 1 60); do
 done
 if [ "$ready" != true ]; then echo 'Local Astro/Hono preview did not become ready. See tmp/astro-hono-*-preview.log.'; exit 1; fi
 PUBLIC_ASTRO_TEST=true E2E_ACCOUNT_AUTH_LOCAL=1 E2E_ASTRO_HONO=1 E2E_BASE_URL=http://localhost:3310 \
-  npx playwright test tests/e2e/public-astro.spec.ts tests/e2e/account-security.spec.ts tests/e2e/smoke.spec.ts tests/e2e/astro-hono.spec.ts --workers=2
+  npx playwright test ${E2E_TEST_FILES:-tests/e2e/public-astro.spec.ts tests/e2e/account-security.spec.ts tests/e2e/smoke.spec.ts tests/e2e/astro-hono.spec.ts tests/e2e/support-admin-astro.spec.ts} --workers=2

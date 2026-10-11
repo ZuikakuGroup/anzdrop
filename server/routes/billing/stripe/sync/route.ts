@@ -20,7 +20,7 @@ import {
   unixSecondsToIso,
   type StripeSubscriptionSummary,
 } from "@/lib/stripe-subscription";
-import type { StripeSyncResponse } from "@/app/api/billing/stripe/sync/schema";
+import type { StripeSyncResponse } from "@/lib/api/schemas/billing/stripe/sync/schema";
 
 // プラン反映は通常 customer.subscription.updated / deleted の Webhook が行うが、
 // Webhook が一時的に届かない・失敗し続けると「課金されたのにプランが反映されない」

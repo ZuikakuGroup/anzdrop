@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -20,17 +21,13 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-let forceContextError = false;
+let forceBindingError = false;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
-    if (forceContextError) {
-      throw new Error("boom: unexpected internal failure");
-    }
-
-    return { env };
-  },
-}));
+const testRuntime = () => ({
+  env: forceBindingError ? new Proxy(env, {
+    get() { throw new Error("boom: unexpected internal failure"); },
+  }) : env,
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -51,7 +48,7 @@ afterEach(() => {
 });
 
 async function postCharge(cookie?: string, body: unknown = { plan: "premium" }) {
-  const { POST } = await import("@/app/api/billing/btc/charge/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/billing/btc/charge/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/billing/btc/charge", {
@@ -241,7 +238,7 @@ describe("POST /api/billing/btc/charge", () => {
     const { accountId } = await insertTestAccount(env);
     const cookie = await sessionCookieHeader(env, accountId);
 
-    forceContextError = true;
+    forceBindingError = true;
 
     try {
       const response = await postCharge(cookie, { plan: "premium" });
@@ -253,7 +250,7 @@ describe("POST /api/billing/btc/charge", () => {
       expect(body.success).toBe(false);
       expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
-      forceContextError = false;
+      forceBindingError = false;
     }
   });
 });

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import Script from "next/script";
+import Script from "@/components/brand/ExternalScript";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { sanitizeReportText } from "@/lib/sanitize";
 import { TURNSTILE_SITE_KEY, useTurnstile } from "@/lib/turnstile-client";
-import type { ContactResponse } from "@/app/api/contact/schema";
+import type { ContactResponse } from "@/lib/api/schemas/contact/schema";
 
 export default function ContactForm() {
   const [name, setName] = useState("");
@@ -129,7 +129,7 @@ export default function ContactForm() {
                     type="text"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    // app/api/contact/route.tsのMAX_NAME_LENGTHと合わせる。
+                    // server/routes/contact/route.tsのMAX_NAME_LENGTHと合わせる。
                     maxLength={200}
                     className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                   />
@@ -164,7 +164,7 @@ export default function ContactForm() {
                     type="text"
                     value={subject}
                     onChange={(event) => setSubject(event.target.value)}
-                    // app/api/contact/route.tsのMAX_SUBJECT_LENGTHと合わせる。
+                    // server/routes/contact/route.tsのMAX_SUBJECT_LENGTHと合わせる。
                     maxLength={200}
                     className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                   />
@@ -182,7 +182,7 @@ export default function ContactForm() {
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
                     rows={5}
-                    // app/api/contact/route.tsのMAX_MESSAGE_LENGTHと合わせる。
+                    // server/routes/contact/route.tsのMAX_MESSAGE_LENGTHと合わせる。
                     maxLength={2000}
                     className="w-full resize-none rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand sm:text-sm"
                   />
@@ -211,13 +211,7 @@ export default function ContactForm() {
       </main>
 
       <SiteFooter />
-
-      {TURNSTILE_SITE_KEY && (
-        <Script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          strategy="afterInteractive"
-        />
-      )}
+      {TURNSTILE_SITE_KEY && <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" strategy="afterInteractive" />}
     </div>
   );
 }

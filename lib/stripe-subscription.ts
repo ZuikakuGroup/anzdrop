@@ -2,8 +2,8 @@ import type Stripe from "stripe";
 import type { Plan } from "@/lib/plan";
 
 // Stripe SubscriptionをAnzdropのプラン状態へ落とし込む際の共通処理。
-// Webhook(app/api/billing/stripe/webhook)と、Webhook不達の保険である
-// 同期エンドポイント(app/api/billing/stripe/sync)の両方から使う。
+// Webhook(server/routes/billing/stripe/webhook)と、Webhook不達の保険である
+// 同期エンドポイント(server/routes/billing/stripe/sync)の両方から使う。
 
 export function unixSecondsToIso(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toISOString();

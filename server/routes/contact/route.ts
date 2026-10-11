@@ -4,7 +4,7 @@ import { requireTurnstile } from "@/lib/turnstile";
 import { isValidEmail } from "@/lib/email";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
-import { ContactRequestSchema, type ContactResponse } from "@/app/api/contact/schema";
+import { ContactRequestSchema, type ContactResponse } from "@/lib/api/schemas/contact/schema";
 
 const MAX_NAME_LENGTH = 200;
 const MAX_EMAIL_LENGTH = 200;

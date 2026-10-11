@@ -42,12 +42,15 @@ function isLocalHost(host: string | null): boolean {
 }
 
 // ローカルで管理画面のUIを確認するための明示的な開発専用バイパス。
-// 本番/PreviewではNODE_ENVがdevelopmentでないため、環境変数が誤って設定
-// されても有効にならない。さらにlocalhostからのリクエストに限定する。
-function canBypassAccessForLocalDevelopment(headers: Headers): boolean {
+// 本番では必ず無効。開発環境の明示とバイパス設定を要求し、
+// さらにループバックホストからのリクエストに限定する。
+type AccessEnv = CloudflareEnv & { DEPLOYMENT_ENV?: string; LOCAL_DEVELOPMENT?: string; LOCAL_ADMIN_BYPASS?: string };
+
+function canBypassAccessForLocalDevelopment(headers: Headers, env: AccessEnv): boolean {
   return (
-    process.env.NODE_ENV === "development" &&
-    process.env[LOCAL_ADMIN_BYPASS_ENV] === "true" &&
+    env.DEPLOYMENT_ENV !== "production" &&
+    (process.env.NODE_ENV === "development" || env.LOCAL_DEVELOPMENT === "true") &&
+    (env.LOCAL_ADMIN_BYPASS ?? process.env[LOCAL_ADMIN_BYPASS_ENV]) === "true" &&
     isLocalHost(headers.get("host"))
   );
 }
@@ -58,9 +61,9 @@ function canBypassAccessForLocalDevelopment(headers: Headers): boolean {
 // Cloudflare Access自体(Zero Trustダッシュボード側の設定)。
 export async function verifyAccessJwt(
   headers: Headers,
-  env: CloudflareEnv
+  env: AccessEnv
 ): Promise<AccessIdentity | null> {
-  if (canBypassAccessForLocalDevelopment(headers)) {
+  if (canBypassAccessForLocalDevelopment(headers, env)) {
     return LOCAL_ADMIN_IDENTITY;
   }
 

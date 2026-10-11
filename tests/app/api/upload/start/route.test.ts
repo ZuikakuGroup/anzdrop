@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -34,9 +35,7 @@ type StartResponseBody = {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -57,7 +56,7 @@ afterEach(() => {
 });
 
 async function postStart(body: unknown, headers: Record<string, string> = {}) {
-  const { POST } = await import("@/app/api/upload/start/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/upload/start", {

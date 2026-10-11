@@ -1,38 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import router from "@/workers/router";
-import { isHomeRequest, isPublicRequest } from "@/workers/router/routing";
+import { isApiRequest, isInternalRequest } from "@/workers/router/routing";
 
-describe("トップページWorkerのルーティング", () => {
-  it.each(["/_home-next/_next/static/chunk.js"])(
-    "%s をトップページWorkerへ送る",
-    (pathname) => {
-      expect(isHomeRequest(pathname)).toBe(true);
-    }
-  );
-
-  it.each(["/api/upload/start", "/_next/static/chunk.js", "/mypage"])(
-    "%s は既存アプリWorkerへ送る",
-    (pathname) => {
-      expect(isHomeRequest(pathname)).toBe(false);
-    }
-  );
-});
-
-describe("公開ページWorkerのルーティング", () => {
-  it.each(["/", "/mypage", "/mypage/", "/mypage/security", "/mypage/billing", "/d/share", "/about", "/about/", "/pricing", "/legal/privacy", "/lp/secure-file-sharing", "/blog", "/blog/", "/blog/article", "/blog/categories/topic", "/blog/authors/writer", "/blog/tags/topic", "/robots.txt", "/sitemap.xml", "/_public-astro/main.js"])("%s はAstroへ送る", pathname => {
-    expect(isPublicRequest(pathname)).toBe(true);
-    expect(isHomeRequest(pathname)).toBe(false);
-  });
-  it.each(["/api/account/login", "/api/me", "/mypage-secret", "/d-secret", "/admin", "/contact", "/report", "/about-secret", "/blogger", "/_next/static/chunk.js"])("%s はAstroへ送らない", pathname => {
-    expect(isPublicRequest(pathname)).toBe(false);
-  });
-  it.each([["/", "PUBLIC"], ["/blog/post", "PUBLIC"], ["/api/account/login", "APP"]] as const)("%s のRequestとResponseをそのまま渡す", async (pathname, target) => {
-    const request = new Request(`https://anzdrop.com${pathname}`, { method: "POST", headers: { Cookie: "session=test" }, body: "opaque body" });
-    const response = new Response("opaque response", { headers: { "Set-Cookie": "session=test" } });
-    const env = { HOME: { fetch: vi.fn(() => response) }, PUBLIC: { fetch: vi.fn(() => response) }, APP: { fetch: vi.fn(() => response) } };
+describe("three-Worker routing", () => {
+  it.each(["/api", "/api/", "/api/upload/start", "/api/admin/accounts"])("sends %s to Hono unchanged", async path => {
+    const request = new Request(`https://anzdrop.com${path}`, { method: "POST", headers: { Cookie: "session=example" }, body: "body" });
+    const response = new Response("api");
+    const env = { APP: { fetch: vi.fn().mockResolvedValue(response) }, PUBLIC: { fetch: vi.fn() } };
     expect(await router.fetch(request, env)).toBe(response);
-    expect(env[target].fetch).toHaveBeenCalledExactlyOnceWith(request);
-    expect(await request.text()).toBe("opaque body");
-    for (const key of ["HOME", "PUBLIC", "APP"] as const) if (key !== target) expect(env[key].fetch).not.toHaveBeenCalled();
+    expect(env.APP.fetch).toHaveBeenCalledWith(request);
+    expect(env.PUBLIC.fetch).not.toHaveBeenCalled();
+  });
+  it.each(["/", "/contact", "/report/rights", "/admin/accounts", "/mypage", "/d/share", "/blog/post", "/_public-astro/app.js", "/unknown", "/api-secret"])("sends %s to Astro", async path => {
+    const env = { APP: { fetch: vi.fn() }, PUBLIC: { fetch: vi.fn().mockResolvedValue(new Response("html")) } };
+    const request = new Request(`https://anzdrop.com${path}`);
+    await router.fetch(request, env);
+    expect(env.PUBLIC.fetch).toHaveBeenCalledWith(request);
+    expect(env.APP.fetch).not.toHaveBeenCalled();
+    expect(isApiRequest(path)).toBe(false);
+  });
+  it.each(["/__internal", "/__internal/admin/access", "/__internal/admin/access/"])("blocks %s before reaching either Worker", async path => {
+    const env = { APP: { fetch: vi.fn() }, PUBLIC: { fetch: vi.fn() } };
+    const response = await router.fetch(new Request(`https://anzdrop.com${path}`), env);
+    expect(isInternalRequest(path)).toBe(true);
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(env.APP.fetch).not.toHaveBeenCalled();
+    expect(env.PUBLIC.fetch).not.toHaveBeenCalled();
   });
 });

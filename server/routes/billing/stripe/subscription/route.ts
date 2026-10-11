@@ -17,7 +17,7 @@ import { isPurchasablePlan } from "@/lib/plan";
 import {
   SubscriptionRequestSchema,
   type SubscriptionResponse,
-} from "@/app/api/billing/stripe/subscription/schema";
+} from "@/lib/api/schemas/billing/stripe/subscription/schema";
 
 const STRIPE_PRICE_ID_BY_PLAN = {
   standard: "STRIPE_PRICE_ID_STANDARD",

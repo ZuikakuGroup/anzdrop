@@ -5,7 +5,7 @@ import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
 import { useTurnstile } from "@/lib/turnstile-client";
 import PasswordInput from "@/components/brand/PasswordInput";
-import type { RecoverResponse } from "@/app/api/account/recover/schema";
+import type { RecoverResponse } from "@/lib/api/schemas/account/recover/schema";
 
 const MIN_PASSWORD_LENGTH = 8;
 

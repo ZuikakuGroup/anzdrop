@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -13,9 +14,7 @@ import { verifyAccessJwt } from "@/lib/access";
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 vi.mock("@/lib/access", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/access")>();
@@ -49,7 +48,7 @@ async function suspendShare(
   shareId: string,
   headers: Record<string, string> = {}
 ): Promise<Response> {
-  const { POST } = await import("@/app/api/admin/shares/[shareId]/suspend/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/admin/shares/[shareId]/suspend/route"), testRuntime);
 
   return POST(
     new Request(`http://localhost/api/admin/shares/${shareId}/suspend`, {

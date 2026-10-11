@@ -9,9 +9,9 @@ import StripePaymentForm from "@/components/billing/StripePaymentForm";
 import SubscriptionManager from "@/components/billing/SubscriptionManager";
 import AdminGrantedPlanNotice from "@/components/billing/AdminGrantedPlanNotice";
 import PlanPicker from "@/components/billing/PlanPicker";
-import type { SubscriptionResponse } from "@/app/api/billing/stripe/subscription/schema";
-import type { CancellationResponse } from "@/app/api/billing/stripe/cancellation/schema";
-import type { ChargeResponse as BtcChargeResponse } from "@/app/api/billing/btc/charge/schema";
+import type { SubscriptionResponse } from "@/lib/api/schemas/billing/stripe/subscription/schema";
+import type { CancellationResponse } from "@/lib/api/schemas/billing/stripe/cancellation/schema";
+import type { ChargeResponse as BtcChargeResponse } from "@/lib/api/schemas/billing/btc/charge/schema";
 import {
   PURCHASABLE_PLANS,
   type PurchasablePlan,

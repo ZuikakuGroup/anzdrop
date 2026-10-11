@@ -12,7 +12,7 @@ import {
   type ReportResponse,
   type ReportType,
   type RightType,
-} from "@/app/api/report/schema";
+} from "@/lib/api/schemas/report/schema";
 
 const MAX_REASON_LENGTH = 1000;
 const MAX_NAME_LENGTH = 200;

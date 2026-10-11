@@ -6,7 +6,6 @@
   "workers_dev": false,
   "compatibility_date": "2026-09-17",
   "services": [
-    { "binding": "HOME", "service": "anzdrop-home" },
     { "binding": "APP", "service": "anzdrop" },
     { "binding": "PUBLIC", "service": "anzdrop-public" }
   ],

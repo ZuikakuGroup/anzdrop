@@ -10,7 +10,7 @@ import {
 import {
   UploadPartAckRequestSchema,
   type UploadPartAckResponse,
-} from "@/app/api/upload/part-ack/schema";
+} from "@/lib/api/schemas/upload/part-ack/schema";
 
 export const POST = withApiHandler(
   "POST /api/upload/part-ack",

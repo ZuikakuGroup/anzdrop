@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   afterEach,
@@ -19,9 +20,7 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => ({ env }),
-}));
+const testRuntime = () => ({ env });
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -50,7 +49,7 @@ type ContactRow = {
 };
 
 async function postContact(body: unknown) {
-  const { POST } = await import("@/app/api/contact/route");
+  const { POST } = bindRouteHandlers(await import("@/server/routes/contact/route"), testRuntime);
 
   return POST(
     new Request("http://localhost/api/contact", {

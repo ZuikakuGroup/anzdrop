@@ -1,4 +1,4 @@
-// Route Handler(app/api/**/route.ts)のテスト用に、Miniflareで実際のD1/R2の
+// Route Handler(server/routes/**/route.ts)のテスト用に、Miniflareで実際のD1/R2の
 // バインディングを起動し、migrations/配下のSQLをそのまま適用したCloudflareEnv
 // 相当のオブジェクトを作る。ハンドラ内のSQLは手書きモックではなく本物のSQLite
 // (MiniflareのD1エミュレーション)で実行されるため、WHERE句を使った二重処理

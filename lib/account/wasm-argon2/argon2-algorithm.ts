@@ -3,7 +3,7 @@
 // WASM側の呼び出しインターフェースはwasm-interface.tsを参照。
 //
 // このファイルは意図的に.wasmファイルを直接importしない
-// (静的.wasm importの解決のされ方はNext.js/webpack/vitest/tsxなどツールに
+// (静的.wasm importの解決のされ方はVite/Vitest/tsxなどツールに
 // よって異なるため、コンパイル済みWebAssembly.Moduleの入手経路をこのファイル
 // の外に切り出し、アルゴリズムの正しさをテストしやすくしている)。
 // 実際に.wasmを静的importして呼び出す薄いラッパーはargon2id.tsを参照。
@@ -79,7 +79,7 @@ async function hashFunc(
 
 // アルゴリズム本体。テストからは、静的importではなくfs経由でコンパイルした
 // WebAssembly.Moduleを直接渡して呼び出せるようにexportしてある
-// (静的.wasm importの解決のされ方はNext.js/webpack/vitestで異なりうるため、
+// (静的.wasm importの解決のされ方はVite/Vitestで異なりうるため、
 // アルゴリズムの正しさ自体をモジュールの入手経路に依存させたくない)。
 export async function computeArgon2id(
   argon2Module: WasmImport,

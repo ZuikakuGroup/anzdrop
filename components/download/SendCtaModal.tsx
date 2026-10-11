@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-html-link-for-pages -- Astro islands navigate using full documents. */
 import { useEffect, useRef } from "react";
 import { XIcon } from "@/components/brand/ShareIcons";
 

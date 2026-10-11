@@ -7,7 +7,7 @@ import Spinner from "@/components/brand/Spinner";
 import { useTurnstile } from "@/lib/turnstile-client";
 import { useRedirectIfLoggedIn } from "@/lib/account/useRedirectIfLoggedIn";
 import PasswordInput from "@/components/brand/PasswordInput";
-import type { LoginResponse } from "@/app/api/account/login/schema";
+import type { LoginResponse } from "@/lib/api/schemas/account/login/schema";
 import OtpInput from "./OtpInput";
 import { accountAuthRequest, isPasskeyCancellation, loginWithPasskey, passkeysSupported } from "@/lib/account/securityClient";
 

@@ -1,4 +1,3 @@
-@import "../../../app/globals.css";
+@import "./globals.css";
 @source "../../../components";
-@source "../../../app/blog";
 @source "./";

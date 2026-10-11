@@ -59,7 +59,7 @@ export const PLAN_MONTHLY_PRICE_JPY: Record<Exclude<Plan, "free">, number> = {
 };
 
 // 現在購入できる有料プラン。購入UI(components/billing/BillingPage.tsx)と
-// 決済API(app/api/billing/stripe/subscription・app/api/billing/btc/charge)が
+// 決済API(server/routes/billing/stripe/subscription・server/routes/billing/btc/charge)が
 // 共有する単一の情報源。料金ページでも両プランの購入導線を提供する。
 export const PURCHASABLE_PLANS = ["standard", "premium"] as const satisfies readonly Exclude<
   Plan,
@@ -123,7 +123,7 @@ export function isPreviewAllowedForPlan(plan: Plan): boolean {
   return PLAN_LIMITS[plan].previewEnabled;
 }
 
-// Turnstile認証(app/api/upload/start)が必要なプランか。Standard/Premiumは
+// Turnstile認証(server/routes/upload/start)が必要なプランか。Standard/Premiumは
 // 既にログイン済みアカウントであることが分かっているためスキップする。
 export function isTurnstileRequiredForPlan(plan: Plan): boolean {
   return !PLAN_LIMITS[plan].skipTurnstile;
@@ -191,8 +191,8 @@ export type AccountPlanInfo = {
 const FREE_PLAN_INFO: AccountPlanInfo = { plan: "free", planExpiresAt: null };
 
 // セッションが無い(未ログイン)・アカウントが見つからない場合は常にfree。
-// アップロード系ルート(app/api/upload/start, app/api/upload/complete)と
-// app/api/account/me の両方から共通で呼ばれる想定。
+// アップロード系ルート(server/routes/upload/start, server/routes/upload/complete)と
+// server/routes/account/me の両方から共通で呼ばれる想定。
 export async function getAccountPlanInfo(
   accountId: string | null,
   env: CloudflareEnv

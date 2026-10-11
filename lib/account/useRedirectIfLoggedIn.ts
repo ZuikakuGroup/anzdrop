@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "@/lib/browserNavigation";
-import type { MeResponse } from "@/app/api/account/me/schema";
+import type { MeResponse } from "@/lib/api/schemas/account/me/schema";
 
 // 既にログイン済みの場合はdestinationへリダイレクトする(ログイン/サインアップ
 // 画面に再度アクセスした場合の暫定挙動)。判定が済み、リダイレクトが不要と

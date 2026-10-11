@@ -1,3 +1,4 @@
+import { bindRouteHandlers } from "@/test/runtime";
 import {
   afterAll,
   beforeAll,
@@ -5,7 +6,6 @@ import {
   describe,
   expect,
   it,
-  vi,
 } from "vitest";
 import {
   createTestEnv,
@@ -19,17 +19,13 @@ import {
 let env: TestEnv;
 let dispose: () => Promise<void>;
 
-let forceContextError = false;
+let forceBindingError = false;
 
-vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: () => {
-    if (forceContextError) {
-      throw new Error("boom: unexpected internal failure");
-    }
-
-    return { env };
-  },
-}));
+const testRuntime = () => ({
+  env: forceBindingError ? new Proxy(env, {
+    get() { throw new Error("boom: unexpected internal failure"); },
+  }) : env,
+});
 
 beforeAll(async () => {
   const handle = await createTestEnv();
@@ -47,7 +43,7 @@ beforeEach(async () => {
 
 describe("GET /api/account/me", () => {
   it("returns 401 when there is no session cookie", async () => {
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(new Request("http://localhost/api/account/me"));
 
     expect(response.status).toBe(401);
@@ -59,7 +55,7 @@ describe("GET /api/account/me", () => {
     const { accountId } = await insertTestAccount(env, { plan: "free" });
     const cookie = await sessionCookieHeader(env, accountId);
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie },
@@ -84,7 +80,7 @@ describe("GET /api/account/me", () => {
     });
     const cookie = await sessionCookieHeader(env, accountId);
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie },
@@ -114,7 +110,7 @@ describe("GET /api/account/me", () => {
     });
     const cookie = await sessionCookieHeader(env, accountId);
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie },
@@ -134,7 +130,7 @@ describe("GET /api/account/me", () => {
     });
     const cookie = await sessionCookieHeader(env, accountId);
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie },
@@ -149,7 +145,7 @@ describe("GET /api/account/me", () => {
   it("returns 401 for a session cookie referencing a non-existent account", async () => {
     const cookie = await sessionCookieHeader(env, "no-such-account-id");
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie },
@@ -172,7 +168,7 @@ describe("GET /api/account/me", () => {
     const tampered =
       cookie.slice(0, midIndex) + replacement + cookie.slice(midIndex + 1);
 
-    const { GET } = await import("@/app/api/account/me/route");
+    const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
     const response = await GET(
       new Request("http://localhost/api/account/me", {
         headers: { cookie: tampered },
@@ -183,12 +179,12 @@ describe("GET /api/account/me", () => {
   });
 
   it("returns a generic 500 (without leaking internal error details) on unexpected failure", async () => {
-    forceContextError = true;
+    forceBindingError = true;
 
     try {
-      const { GET } = await import("@/app/api/account/me/route");
+      const { GET } = bindRouteHandlers(await import("@/server/routes/account/me/route"), testRuntime);
       const response = await GET(
-        new Request("http://localhost/api/account/me")
+        new Request("http://localhost/api/account/me", { headers: { cookie: "anzdrop_session=test-token" } })
       );
 
       expect(response.status).toBe(500);
@@ -198,7 +194,7 @@ describe("GET /api/account/me", () => {
       expect(body.success).toBe(false);
       expect(body.error).toBe("サーバー内部でエラーが発生しました");
     } finally {
-      forceContextError = false;
+      forceBindingError = false;
     }
   });
 });

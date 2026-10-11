@@ -10,7 +10,7 @@ import {
 import {
   MAX_PASSWORD_LENGTH as ACCOUNT_MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH as ACCOUNT_MIN_PASSWORD_LENGTH,
-} from "@/app/api/account/signup/schema";
+} from "@/lib/api/schemas/account/signup/schema";
 
 describe("validateSharePassword", () => {
   it("rejects passwords shorter than the minimum length", () => {
