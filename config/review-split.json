@@ -1,0 +1,7 @@
+{
+  "fileLimit": 100,
+  "maxFiles": 3000,
+  "maxSourceBytes": 20971520,
+  "maxGroups": 30,
+  "reviewBot": "coderabbitai[bot]"
+}
