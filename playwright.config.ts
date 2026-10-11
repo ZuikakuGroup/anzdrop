@@ -29,6 +29,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    ...(["firefox", "webkit"] as const).map(name => ({
+      name,
+      testMatch: "file-sharing.spec.ts",
+      use: { ...devices[name === "firefox" ? "Desktop Firefox" : "Desktop Safari"] },
+    })),
   ],
   outputDir: "test-results",
 });

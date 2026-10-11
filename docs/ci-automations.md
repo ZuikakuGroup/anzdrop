@@ -1,12 +1,13 @@
-# CI 自動化(リンク切れ / デプロイ後 E2E / 週次レポート)
+# CI 自動化
 
-このリポジトリは **Cloudflare Pages ではなく Cloudflare Workers** に、GitHub Actions の [`deploy.yml`](../.github/workflows/deploy.yml) 経由でデプロイする。以下の3つの Workflow はその前提に合わせて追加している(Pages への二重デプロイは行わない)。
+このリポジトリは **Cloudflare Pages ではなく Cloudflare Workers** に、GitHub Actions の [`deploy.yml`](../.github/workflows/deploy.yml) 経由でデプロイする。以下の Workflow はその前提に合わせて追加している(Pages への二重デプロイは行わない)。
 
 | Workflow | ファイル | 目的 |
 | --- | --- | --- |
 | Link Check | [`.github/workflows/link-check.yml`](../.github/workflows/link-check.yml) | Markdown / HTML / 公開 URL のリンク切れ検出 |
 | E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | 本番デプロイ成功後の Playwright スモーク |
 | Weekly Development Report | [`.github/workflows/weekly-report.yml`](../.github/workflows/weekly-report.yml) | 週次の開発活動レポート Issue |
+| File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
 | Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | レビュー省略の通知・大規模 PR の分割 |
 
 ## リンク切れチェック
@@ -177,3 +178,11 @@ npx vitest run tests/scripts/review-split --maxWorkers=1
 ```
 
 Git のテストは一時リポジトリを作り、API のテストは偽の応答で実行する。上のコマンドは GitHub に PR やブランチを作らない。実際の App 認証・レビュー・CI の確認は、main 反映後の検証用 PR で行う。運用中の不明点は #240 または後続 Issue に、秘密情報を除いて停止理由を記録する。
+
+## ファイル共有 E2E
+
+[File sharing E2E](../.github/workflows/file-sharing-e2e.yml) は PR と Merge Queue で Chromium・Firefox・WebKit を別ジョブ、各1ワーカーで実行する。64KiB の基本共有、パスワード、ZIP を対象とし、ジョブ上限は20分。毎日18:00 UTC（翌日03:00 JST）と手動実行では、大容量・Blob・障害・キャンセルを含む拡張スイートを実行し、上限は40分。各テストは基本60秒、拡張180秒、リトライ0回。
+
+書き込みトークンや本番ストレージを使わず、既存の隔離ローカル環境で実行する。失敗時のレポート・トレースはブラウザ別に7日間保存する。ブランチ保護は変更しない。既存の post-deploy は Chromium のみを明示し、共有スイートは本番では実行しない。
+
+実行コマンド・保存経路の判定・障害注入は [開発ガイド](development.md)、Safari 製品の確認状況は [実機確認表](safari-file-sharing-checklist.md) を参照する。

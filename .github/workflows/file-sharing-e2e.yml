@@ -1,0 +1,47 @@
+name: File sharing E2E
+
+on:
+  pull_request:
+  merge_group:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sharing-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sharing:
+    name: Sharing (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 40 || 20 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      E2E_PROJECT: ${{ matrix.browser }}
+      E2E_WORKERS: '1'
+      E2E_TEST_FILES: tests/e2e/file-sharing.spec.ts
+      E2E_EXTENDED: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run test:astro-hono
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sharing-${{ matrix.browser }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

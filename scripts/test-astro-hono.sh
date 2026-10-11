@@ -3,6 +3,8 @@ set -euo pipefail
 # Give each background service its own process group for complete cleanup.
 set -m
 cd "$(dirname "$0")/.."
+case "${E2E_PROJECT:-chromium}" in chromium|firefox|webkit) ;; *) echo 'Invalid E2E_PROJECT'; exit 1 ;; esac
+case "${E2E_WORKERS:-2}" in 1|2) ;; *) echo 'Invalid E2E_WORKERS'; exit 1 ;; esac
 mkdir -p tmp
 # Cloudflare official public testing keys; these are not production credentials.
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA npm run build:public
@@ -37,4 +39,4 @@ for attempt in $(seq 1 60); do
 done
 if [ "$ready" != true ]; then echo 'Local Astro/Hono preview did not become ready. See tmp/astro-hono-*-preview.log.'; exit 1; fi
 PUBLIC_ASTRO_TEST=true E2E_ACCOUNT_AUTH_LOCAL=1 E2E_ASTRO_HONO=1 E2E_BASE_URL=http://localhost:3310 \
-  npx playwright test ${E2E_TEST_FILES:-tests/e2e/public-astro.spec.ts tests/e2e/account-security.spec.ts tests/e2e/smoke.spec.ts tests/e2e/astro-hono.spec.ts tests/e2e/support-admin-astro.spec.ts} --workers=2
+  npx playwright test ${E2E_TEST_FILES:-tests/e2e/public-astro.spec.ts tests/e2e/account-security.spec.ts tests/e2e/smoke.spec.ts tests/e2e/astro-hono.spec.ts tests/e2e/support-admin-astro.spec.ts tests/e2e/file-sharing.spec.ts} --project="${E2E_PROJECT:-chromium}" --workers="${E2E_WORKERS:-2}" "$@"

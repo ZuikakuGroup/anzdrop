@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
 test.describe('Astro React islands with Hono API', () => {
@@ -22,39 +21,6 @@ test.describe('Astro React islands with Hono API', () => {
       await expect(page.locator('form')).toBeVisible();
     }
     expect(errors).toEqual([]);
-  });
-  test('uploads ciphertext through Hono and downloads identical plaintext in the React island', async ({ page, context }) => {
-    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    await page.addInitScript(() => { Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true }); });
-    const plaintext = Buffer.from('ASTRO_HONO_PRIVATE_CONTENT_4bf118c9\n'.repeat(128));
-    const transmitted: Buffer[] = [];
-    page.on('request', request => {
-      if (request.url().includes('/api/upload/')) {
-        const body = request.postDataBuffer();
-        if (body) transmitted.push(body);
-      }
-    });
-    await page.goto('/');
-    await expect(page.locator('astro-island')).not.toHaveAttribute('ssr');
-    await page.locator('input[type="file"]').setInputFiles({ name: 'migration.txt', mimeType: 'text/plain', buffer: plaintext });
-    await page.getByRole('button', { name: 'アップロードする', exact: true }).click();
-    await expect(page.getByText('共有リンクを発行しました')).toBeVisible();
-    await page.getByRole('button', { name: 'URLをコピー', exact: true }).click();
-    const url = await page.evaluate(() => navigator.clipboard.readText());
-    expect(new URL(url).hash).not.toBe('');
-    const fragment = new URL(url).hash.slice(1);
-    expect(transmitted.length).toBeGreaterThan(0);
-    for (const body of transmitted) {
-      expect(body.includes(Buffer.from('ASTRO_HONO_PRIVATE_CONTENT_4bf118c9'))).toBe(false);
-      expect(body.includes(Buffer.from(fragment))).toBe(false);
-      expect(body.includes(Buffer.from('migration.txt'))).toBe(false);
-    }
-    await page.goto(url);
-    const download = page.waitForEvent('download', { timeout: 15000 });
-    await page.getByRole('button', { name: /migration\.txt/ }).click();
-    const result = await download;
-    expect(result.suggestedFilename()).toBe('migration.txt');
-    expect(await readFile((await result.path())!)).toEqual(plaintext);
   });
   test('download island reads fragments locally and displays unavailable shares', async ({ page }) => {
     const errors: string[] = [];
