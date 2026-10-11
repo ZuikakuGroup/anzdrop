@@ -88,5 +88,5 @@ jobs:
           REVIEW_SPLIT_ENABLED: ${{ vars.REVIEW_SPLIT_ENABLED }}
           REVIEW_SPLIT_TOKEN: ${{ steps.app.outputs.token }}
           REVIEW_SPLIT_APP_BOT: ${{ steps.app.outputs.app-slug && format('{0}[bot]', steps.app.outputs.app-slug) || '' }}
-          REVIEW_SPLIT_STATE_KEY: ${{ secrets.REVIEW_SPLIT_APP_PRIVATE_KEY }}
+          REVIEW_SPLIT_STATE_KEY: ${{ secrets.REVIEW_SPLIT_STATE_KEY }}
         run: node tmp/review-split/run.mjs

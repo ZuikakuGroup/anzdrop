@@ -29,7 +29,7 @@ export function references(filename: string, text: string): { imports: string[];
   let dynamic = false;
   // Astro markup is not TS syntax. Parse frontmatter and explicit script blocks separately.
   const segments = filename.endsWith(".astro")
-    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi), m => m[1])]
+    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi), m => m[1])]
     : [text];
   for (const segment of segments) {
     const node = ts.createSourceFile(filename.endsWith(".astro") ? "component.tsx" : filename, segment, ts.ScriptTarget.Latest, true);
@@ -111,9 +111,14 @@ export function splitPlan(changes: Change[], before: Snapshot, after: Snapshot, 
   const byPath = new Map<string, number>();
   ordered.forEach((change, i) => { byPath.set(change.path, i); if (change.previous) byPath.set(change.previous, i); });
   const parents = ordered.map((_, i) => i);
-  const reasons = new Set<string>();
+  const reasons = new Map<number, Set<string>>();
   const root = (i: number): number => parents[i] === i ? i : (parents[i] = root(parents[i]));
-  const join = (a: number, b: number, reason: string) => { if (root(a) !== root(b)) { parents[root(b)] = root(a); reasons.add(reason); } };
+  const join = (a: number, b: number, reason: string) => {
+    const ra = root(a), rb = root(b);
+    parents[rb] = ra;
+    reasons.set(ra, new Set([...(reasons.get(ra) ?? []), ...(reasons.get(rb) ?? []), reason]));
+    if (ra !== rb) reasons.delete(rb);
+  };
   const all = (i: number, reason: string) => ordered.forEach((_, j) => join(i, j, reason));
   const aliasBefore = aliases(before), aliasAfter = aliases(after);
   // Analyze both trees, including unchanged callers that bridge changed modules.
@@ -152,14 +157,16 @@ export function splitPlan(changes: Change[], before: Snapshot, after: Snapshot, 
   }
   const components = new Map<number, string[]>();
   ordered.forEach((change, i) => components.set(root(i), [...(components.get(root(i)) ?? []), change.path]));
-  const units = [...components.values()].sort((a, b) => a[0].localeCompare(b[0], "en"));
+  const units = [...components].sort((a, b) => a[1][0].localeCompare(b[1][0], "en"));
   const groups: Group[] = [];
-  for (const paths of units) {
+  for (const [component, paths] of units) {
     const last = groups.at(-1);
     // Rename includes two paths in a conservative file count.
     const cost = (items: string[]) => items.reduce((n, p) => n + (ordered[byPath.get(p)!].previous ? 2 : 1), 0);
-    if (last && cost([...last.paths, ...paths]) <= limit) last.paths.push(...paths);
-    else groups.push({ paths, reasons: [...reasons].sort() });
+    if (last && cost([...last.paths, ...paths]) <= limit) {
+      last.paths.push(...paths);
+      last.reasons = [...new Set([...last.reasons, ...(reasons.get(component) ?? [])])].sort();
+    } else groups.push({ paths, reasons: [...(reasons.get(component) ?? [])].sort() });
   }
   const oversized = groups.find(g => g.paths.reduce((n, p) => n + (ordered[byPath.get(p)!].previous ? 2 : 1), 0) > limit);
   return { groups, stop: oversized ? `依存する変更の塊が ${limit} ファイルを超えています` : groups.length < 2 ? "変更全体が1グループのため分割できません" : undefined };

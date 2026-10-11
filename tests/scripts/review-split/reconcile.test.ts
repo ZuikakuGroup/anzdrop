@@ -147,7 +147,7 @@ describe("PR stack automation", () => {
     expect(f.state().head).toBe(f.pull.head.sha); expect(f.state().parts.map(p => p.pr)).toEqual(before.parts.map(p => p.pr));
     expect(f.git.treeId(f.state().parts.at(-1)!.sha)).toBe(f.git.treeId(f.pull.head.sha));
   });
-  it.each(["branch", "body", "base", "ready", "review", "comment"])("stops source updates after human %s changes, before any push", async kind => {
+  it.each(["branch", "body", "base", "ready", "review", "comment", "third-party-bot"])("stops source updates after human %s changes, before any push", async kind => {
     const f = fixture(); await reconcile(f.reader, f.git, config, 1, f.options);
     const part = f.state().parts[0], generated = f.store.pulls.get(part.pr!)!;
     if (kind === "branch") { generated.head.sha = f.pull.head.sha; f.store.refs.set(part.branch, f.pull.head.sha); }
@@ -156,6 +156,7 @@ describe("PR stack automation", () => {
     if (kind === "ready") generated.draft = false;
     if (kind === "review") f.store.reviews.set(generated.number, [{ user: { login: "reviewer" }, state: "COMMENTED", commit_id: part.sha, body: "review" }]);
     if (kind === "comment") f.store.comments.set(generated.number, [{ id: 999, body: "review started", user: { login: "human", type: "User" } }]);
+    if (kind === "third-party-bot") f.store.comments.set(generated.number, [{ id: 999, body: "review started", user: { login: "external-app[bot]", type: "Bot" } }]);
     const pushes = f.git.pushes.length;
     writeFileSync(path.join(f.directory, "a.txt"), "updated"); f.pull.head.sha = f.commit();
     expect(await reconcile(f.reader, f.git, config, 1, f.options)).toContain("停止"); expect(f.git.pushes).toHaveLength(pushes);

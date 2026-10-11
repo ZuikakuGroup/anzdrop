@@ -51,11 +51,12 @@ export class Git {
     return snapshot;
   }
   changes(base: string, head: string): Change[] {
-    const pieces = this.run(["diff", "--name-status", "-z", "-M", assertSha(base), assertSha(head), "--"]).toString("utf8").split("\0");
+    const pieces = this.run(["-c", "diff.renames=true", "diff", "--name-status", "-z", "-M", assertSha(base), assertSha(head), "--"]).toString("utf8").split("\0");
     const changes: Change[] = [];
     for (let i = 0; i < pieces.length - 1;) {
       const status = pieces[i++];
       if (status.startsWith("R")) changes.push({ status, previous: pieces[i++], path: pieces[i++] });
+      else if (status.startsWith("C")) { i++; changes.push({ status: "A", path: pieces[i++] }); }
       else changes.push({ status, path: pieces[i++] });
     }
     return changes;

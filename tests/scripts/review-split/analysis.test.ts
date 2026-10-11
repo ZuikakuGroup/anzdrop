@@ -52,7 +52,7 @@ describe("dependency grouping", () => {
     expect(references("page.astro", '---\nimport A from "@/a";\n---\n<A/><script>import("./b.ts");</script>')).toEqual({ imports: ["@/a", "./b.ts"], dynamic: false });
   });
   it("includes upper-case and mixed-case Astro script dependencies", () => {
-    expect(references("page.astro", '<SCRIPT>import "./a";</SCRIPT><Script>export { b } from "./b";</sCrIpT>')).toEqual({ imports: ["./a", "./b"], dynamic: false });
+    expect(references("page.astro", '<SCRIPT>import "./a";</SCRIPT><Script>export { b } from "./b";</sCrIpT \t>')).toEqual({ imports: ["./a", "./b"], dynamic: false });
   });
   it("preserves literal replacement characters in alias paths", () => {
     const files: Snapshot = new Map([
@@ -72,6 +72,16 @@ describe("dependency grouping", () => {
   it("recognizes unresolved custom aliases as local dependencies", () => {
     const files = new Map([["tsconfig.json", '{"compilerOptions":{"paths":{"~/*":["src/*"]}}}'], ["caller.ts", 'import "~/missing";'], ["a.txt", "x"], ["b.txt", "x"]]);
     expect(splitPlan(changes(["caller.ts", "a.txt", "b.txt"]), files, files, 2).stop).toMatch(/超え/);
+  });
+  it("keeps dependency reasons local to their groups", () => {
+    const files: Snapshot = new Map([
+      ["a.ts", 'import "./b";'], ["b.ts", "export {};"],
+      ["docs/c.md", "[source](../c.ts)"], ["c.ts", "export {};"], ["z.txt", "x"],
+    ]);
+    const plan = splitPlan(changes([...files.keys()]), files, files, 2);
+    expect(plan.groups.find(g => g.paths.includes("a.ts"))?.reasons).toEqual(["変更された参照元・参照先を同時に適用"]);
+    expect(plan.groups.find(g => g.paths.includes("c.ts"))?.reasons).toEqual(["ドキュメントの参照先と同時に適用"]);
+    expect(plan.groups.find(g => g.paths.includes("z.txt"))?.reasons).toEqual([]);
   });
   it("keeps a rename indivisible and charges both paths", () => {
     const plan = splitPlan([{ path: "new.txt", previous: "old.txt", status: "R100" }, ...changes(["other.txt"])], new Map([["old.txt", "x"]]), new Map([["new.txt", "x"], ["other.txt", "y"]]), 1);

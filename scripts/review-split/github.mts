@@ -80,5 +80,5 @@ export function canEdit(pull: Pull, part: Part, appBot: string, reviews: { user:
     && pull.body === part.body && pull.title === part.title
     && pull.requested_reviewers.length === 0 && pull.requested_teams.length === 0
     && reviews.every(r => r.user.login === appBot || r.user.login === "coderabbitai[bot]")
-    && comments.every(c => c.user.type === "Bot") && reviewComments.every(c => c.user.type === "Bot");
+    && [...comments, ...reviewComments].every(c => [appBot, "coderabbitai[bot]", "github-actions[bot]"].includes(c.user.login));
 }

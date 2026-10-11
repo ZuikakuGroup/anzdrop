@@ -36,6 +36,19 @@ describe("Git object-only split construction", () => {
     expect(() => git.build(base, head, changes, [groups[0], groups[0]], 42)).toThrow(/重複/);
     expect(() => git.build(base, head, changes, [groups[0]], 42)).toThrow(/一致/);
   });
+  it("handles copied files despite repository copy-detection settings", () => {
+    const { git, directory, commit } = fixture();
+    writeFileSync(path.join(directory, "original.txt"), "copy me\n".repeat(20));
+    const base = commit("base");
+    writeFileSync(path.join(directory, "copy.txt"), "copy me\n".repeat(20));
+    writeFileSync(path.join(directory, "z.txt"), "new"); const head = commit("copies");
+    git.run(["config", "diff.renames", "copies"]);
+    const changes = git.changes(base, head);
+    expect(changes).toEqual([{ status: "A", path: "copy.txt" }, { status: "A", path: "z.txt" }]);
+    const commits = git.build(base, head, changes, changes.map(c => ({ paths: [c.path], reasons: [] })), 42);
+    expect(git.treeId(commits.at(-1)!)).toBe(git.treeId(head));
+    expect(git.tree(commits.at(-1)!).has("original.txt")).toBe(true);
+  });
   it("restacks only remaining changes after squash and retains unrelated main changes", () => {
     const { git, directory, commit } = fixture();
     writeFileSync(path.join(directory, "base.txt"), "base"); const base = commit("base");
