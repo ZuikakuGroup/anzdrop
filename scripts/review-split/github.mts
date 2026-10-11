@@ -48,6 +48,12 @@ export class Github {
     try { return (await this.api<{ object: { sha: string } }>(`/git/ref/heads/${encodeURIComponent(branch)}`)).object.sha; }
     catch (error) { if (error instanceof ApiError && error.status === 404) return null; throw error; }
   }
+  async removeComment(number: number, marker: string, owner: string): Promise<void> {
+    const comments = await this.list<Comment>(`/issues/${number}/comments`);
+    for (const comment of comments.filter(c => c.user.login === owner && c.body.startsWith(marker))) {
+      await this.api(`/issues/comments/${comment.id}`, "DELETE");
+    }
+  }
   async comment(number: number, marker: string, body: string, owner: string): Promise<Comment> {
     const comments = await this.list<Comment>(`/issues/${number}/comments`);
     const matches = comments.filter(c => c.user.login === owner && c.body.startsWith(marker));

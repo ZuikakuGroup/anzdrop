@@ -68,6 +68,10 @@ class FakeApi extends Github {
       if (parts[0] === "issues") {
         if (parts[1] === "comments") {
           const comment = [...this.store.comments.values()].flat().find(c => c.id === Number(parts[2]))!;
+          if (method === "DELETE") {
+            for (const [number, comments] of this.store.comments) this.store.comments.set(number, comments.filter(c => c.id !== comment.id));
+            return undefined;
+          }
           comment.body = data!.body!; return comment;
         }
         const number = Number(parts[1]);
@@ -120,6 +124,49 @@ function fixture(names = ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt"]) {
 afterEach(() => directories.splice(0).forEach(d => rmSync(d, { recursive: true, force: true })));
 
 describe("PR stack automation", () => {
+  it.each([false, true])("does not notify small unknown PRs, including API failure=%s", async fail => {
+    const f = fixture(["small.txt"]); f.store.failStatuses = fail;
+    await reconcile(f.reader, f.git, config, 1, f.options);
+    expect(f.store.writes).toHaveLength(0);
+    expect(f.git.pushes).toHaveLength(0);
+  });
+  it.each(["pending", "success"])("does not notify small PRs with %s review signals", async state => {
+    const f = fixture(["small.txt"]);
+    f.store.statuses = [{ sha: f.pull.head.sha, context: "CodeRabbit", state, description: "review", creator: { login: config.reviewBot }, created_at: "2026-10-12" }];
+    f.store.reviews.set(1, [{ user: { login: config.reviewBot }, state: "COMMENTED", commit_id: f.pull.head.sha, body: "reviewed" }]);
+    await reconcile(f.reader, f.git, config, 1, f.options);
+    expect(f.store.writes).toHaveLength(0);
+  });
+  it("still notifies explicit skipped reviews below the size limit", async () => {
+    const f = fixture(["small.txt"]);
+    f.store.statuses = [{ sha: f.pull.head.sha, context: "CodeRabbit", state: "success", description: "Review skipped", creator: { login: config.reviewBot }, created_at: "2026-10-12" }];
+    await reconcile(f.reader, f.git, config, 1, f.options);
+    expect(f.store.comments.get(1)?.[0].body).toContain("省略");
+    expect(f.git.pushes).toHaveLength(0);
+  });
+  it.each(["appBot", "stateKey"] as const)("keeps a stop notice when an operation record exists but %s is missing", async missing => {
+    const f = fixture(["small.txt"]);
+    f.store.comments.set(1, [{ id: 900, body: `${STATE_MARKER} record`, user: { login: appBot, type: "Bot" } }]);
+    const options = { ...f.options, [missing]: undefined };
+    expect(await reconcile(f.reader, f.git, config, 1, options)).toContain("設定が不足");
+    expect(f.store.comments.get(1)?.find(c => c.id === 900)).toBeDefined();
+    expect(f.store.writes.some(w => w.method === "DELETE")).toBe(false);
+    expect(f.git.pushes).toHaveLength(0);
+  });
+  it("removes only the automation's old notice on a small PR", async () => {
+    const f = fixture(["small.txt"]);
+    f.store.comments.set(1, [
+      { id: 900, body: `${NOTICE_MARKER} old`, user: { login: "github-actions[bot]", type: "Bot" } },
+      { id: 901, body: `${NOTICE_MARKER} human`, user: { login: "human", type: "User" } },
+      { id: 902, body: `${STATE_MARKER} record`, user: { login: "github-actions[bot]", type: "Bot" } },
+    ]);
+    await reconcile(f.reader, f.git, config, 1, f.options);
+    expect(f.store.comments.get(1)?.map(c => c.id)).toEqual([901, 902]);
+    expect(f.store.writes).toEqual([{ route: "/issues/comments/900", method: "DELETE" }]);
+    await reconcile(f.reader, f.git, config, 1, f.options);
+    expect(f.store.writes).toHaveLength(1);
+  });
+
   it("creates a draft stack with an exact final tree and reuses it without writes", async () => {
     const f = fixture();
     await reconcile(f.reader, f.git, config, 1, f.options);

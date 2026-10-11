@@ -147,11 +147,15 @@ export async function reconcile(api: Github, git: Git, config: Config, number: n
   const review = await inspectReview(api, source, config.reviewBot);
   let message = `レビュー状態: **${review}**\n対象 HEAD: \`${source.head.sha}\`\n変更数: ${source.changed_files}（上限 ${config.fileLimit}）`;
   let state: State | undefined;
+  let notify = source.changed_files > config.fileLimit || review === "省略";
   try {
-    if (options.appBot && options.stateKey) {
-      const records = (await api.list<Comment>(`/issues/${number}/comments`)).filter(c => c.user.login === options.appBot && c.body.startsWith(STATE_MARKER));
-      if (records.length > 1) throw new Error("操作記録が重複しています");
-      if (records[0]) state = decodeState(records[0].body, options.stateKey, number);
+    const records = (await api.list<Comment>(`/issues/${number}/comments`)).filter(c =>
+      c.body.startsWith(STATE_MARKER) && (options.appBot ? c.user.login === options.appBot : c.user.type === "Bot"));
+    if (records.length > 1) throw new Error("操作記録が重複しています");
+    if (records[0]) {
+      notify = true;
+      if (!options.appBot || !options.stateKey) throw new Error("操作記録がありますが GitHub App または状態署名鍵の設定が不足しています");
+      state = decodeState(records[0].body, options.stateKey, number);
     }
     if (state?.operation !== undefined && state.operation !== "idle") {
       if (!options.enabled || !options.writer) throw new Error("未完了の操作があります。自動作成を有効にして再実行してください");
@@ -201,9 +205,14 @@ export async function reconcile(api: Github, git: Git, config: Config, number: n
     }
     if (state) message += `\n\n分割 PR（先頭から取り込み）:\n${state.parts.map(p => `- ${p.pr ? `#${p.pr}` : p.branch}${p.merged ? "（取り込み済み）" : ""}`).join("\n")}\n元の解析 HEAD: \`${state.head}\``;
   } catch (error) {
+    notify = true;
     // Do not include REST response bodies, git stderr or tokens in notifications.
     const safe = error instanceof Error && !("stderr" in error) ? error.message : "Git 操作に失敗しました。競合・リモート更新を確認してください";
     message += `\n\n**自動処理を停止:** ${safe}`;
+  }
+  if (!notify) {
+    await api.removeComment(number, NOTICE_MARKER, options.noticeBot ?? "github-actions[bot]");
+    return "上限以下の PR の通常レビュー状態は通知しません";
   }
   const body = `${NOTICE_MARKER}\n${message}\n\nこの通知はレビュー完了の保証やマージ許可ではありません。`;
   await api.comment(number, NOTICE_MARKER, body, options.noticeBot ?? "github-actions[bot]");
