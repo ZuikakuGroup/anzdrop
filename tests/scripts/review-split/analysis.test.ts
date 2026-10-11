@@ -51,6 +51,18 @@ describe("dependency grouping", () => {
   it("handles Astro frontmatter and script imports without parsing markup as TypeScript", () => {
     expect(references("page.astro", '---\nimport A from "@/a";\n---\n<A/><script>import("./b.ts");</script>')).toEqual({ imports: ["@/a", "./b.ts"], dynamic: false });
   });
+  it("includes upper-case and mixed-case Astro script dependencies", () => {
+    expect(references("page.astro", '<SCRIPT>import "./a";</SCRIPT><Script>export { b } from "./b";</sCrIpT>')).toEqual({ imports: ["./a", "./b"], dynamic: false });
+  });
+  it("preserves literal replacement characters in alias paths", () => {
+    const files: Snapshot = new Map([
+      ["tsconfig.json", '{"compilerOptions":{"paths":{"~/*":["src/*"]}}}'],
+      ["caller.ts", 'import "~/$&";'], ["src/$&.ts", "export {};"], ["other.txt", "x"],
+    ]);
+    const plan = splitPlan(changes(["caller.ts", "src/$&.ts", "other.txt"]), files, files, 2);
+    expect(plan.stop).toBeUndefined();
+    expect(plan.groups.some(g => g.paths.includes("caller.ts") && g.paths.includes("src/$&.ts"))).toBe(true);
+  });
   it("keeps config/lockfile updates and unresolved dynamic dependencies conservative", () => {
     for (const [name, content] of [["package.json", "{}"], ["caller.ts", "import(variable)"], ["caller.ts", 'import "./missing";'], ["caller.ts", 'const plugins = import.meta.glob("./plugins/*.ts")']]) {
       const files = new Map([[name, content], ["a.txt", "x"], ["b.txt", "x"]]);

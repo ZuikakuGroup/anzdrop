@@ -29,7 +29,7 @@ export function references(filename: string, text: string): { imports: string[];
   let dynamic = false;
   // Astro markup is not TS syntax. Parse frontmatter and explicit script blocks separately.
   const segments = filename.endsWith(".astro")
-    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g), m => m[1])]
+    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi), m => m[1])]
     : [text];
   for (const segment of segments) {
     const node = ts.createSourceFile(filename.endsWith(".astro") ? "component.tsx" : filename, segment, ts.ScriptTarget.Latest, true);
@@ -83,7 +83,7 @@ function resolve(filename: string, specifier: string, snapshot: Snapshot, mappin
       const [prefix, suffix = ""] = key.split("*");
       if (key.includes("*") ? !specifier.startsWith(prefix) || !specifier.endsWith(suffix) : specifier !== key) continue;
       const middle = key.includes("*") ? specifier.slice(prefix.length, specifier.length - suffix.length) : "";
-      candidates.push(...targets.map(target => path.posix.join(root, target.replace("*", middle))));
+      candidates.push(...targets.map(target => path.posix.join(root, target.replaceAll("*", () => middle))));
       break;
     }
   }
