@@ -1,0 +1,92 @@
+name: Review coverage and split
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed, ready_for_review, converted_to_draft]
+  status:
+  check_run:
+    types: [completed]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number (blank: evaluate open PRs)"
+        required: false
+        type: string
+
+# Only protected main supplies executable code. No PR checkout or PR artifacts.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.discover.outputs.matrix }}
+      count: ${{ steps.discover.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: npx --no-install tsc -p scripts/review-split/tsconfig.json
+      - id: discover
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tmp/review-split/run.mjs discover
+
+  evaluate:
+    needs: discover
+    if: needs.discover.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    concurrency:
+      group: review-split-${{ github.repository }}-${{ matrix.pr }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Install/compile trusted code BEFORE injecting the App credentials.
+      - run: npm ci --ignore-scripts
+      - run: npx --no-install tsc -p scripts/review-split/tsconfig.json
+      - id: app
+        if: vars.REVIEW_SPLIT_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.REVIEW_SPLIT_APP_ID }}
+          private-key: ${{ secrets.REVIEW_SPLIT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Evaluate review and reconcile draft stack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_SPLIT_PR: ${{ matrix.pr }}
+          REVIEW_SPLIT_ENABLED: ${{ vars.REVIEW_SPLIT_ENABLED }}
+          REVIEW_SPLIT_TOKEN: ${{ steps.app.outputs.token }}
+          REVIEW_SPLIT_APP_BOT: ${{ steps.app.outputs.app-slug && format('{0}[bot]', steps.app.outputs.app-slug) || '' }}
+          REVIEW_SPLIT_STATE_KEY: ${{ secrets.REVIEW_SPLIT_STATE_KEY }}
+        run: node tmp/review-split/run.mjs

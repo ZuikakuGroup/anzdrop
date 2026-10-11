@@ -5,6 +5,9 @@ reviews:
   # マージのゲートにできるようにする(AGENTS.md のマージ条件と揃える)。
   request_changes_workflow: true
   auto_review:
+    drafts: true
+    base_branches:
+      - '^review-split/[0-9]+/[0-9]+$'
     # コミットが短期間に積み重なっても自動レビューを止めない
     # (0 で auto-pause を無効化)。
     auto_pause_after_reviewed_commits: 0
