@@ -29,7 +29,7 @@ export function references(filename: string, text: string): { imports: string[];
   let dynamic = false;
   // Astro markup is not TS syntax. Parse frontmatter and explicit script blocks separately.
   const segments = filename.endsWith(".astro")
-    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi), m => m[1])]
+    ? [text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "", ...Array.from(text.matchAll(/<script(?=[\t\n\f\r />])[^>]*>([\s\S]*?)<\/script(?=[\t\n\f\r />])[^>]*>/gi), m => m[1])]
     : [text];
   for (const segment of segments) {
     const node = ts.createSourceFile(filename.endsWith(".astro") ? "component.tsx" : filename, segment, ts.ScriptTarget.Latest, true);

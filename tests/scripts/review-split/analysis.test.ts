@@ -54,6 +54,12 @@ describe("dependency grouping", () => {
   it("includes upper-case and mixed-case Astro script dependencies", () => {
     expect(references("page.astro", '<SCRIPT>import "./a";</SCRIPT><Script>export { b } from "./b";</sCrIpT \t>')).toEqual({ imports: ["./a", "./b"], dynamic: false });
   });
+  it.each(["</script >", "</script\t\n bar>", '</SCRIPT foo="bar">', "</script/>"])("reads dependencies before a browser-accepted end tag: %s", ending => {
+    expect(references("page.astro", `<script>import "./first";${ending}<script>import "./second";</script>`)).toEqual({ imports: ["./first", "./second"], dynamic: false });
+  });
+  it.each(["scripture", "script-x", "script:foo"])("does not mistake %s for a script end tag", tag => {
+    expect(references("page.astro", `<script>const x = "</${tag}>"; import "./dependency";</script>`)).toEqual({ imports: ["./dependency"], dynamic: false });
+  });
   it("preserves literal replacement characters in alias paths", () => {
     const files: Snapshot = new Map([
       ["tsconfig.json", '{"compilerOptions":{"paths":{"~/*":["src/*"]}}}'],
