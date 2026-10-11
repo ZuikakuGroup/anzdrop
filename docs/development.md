@@ -86,6 +86,13 @@ npm run test:coverage # カバレッジ付き
 
 テストは `tests/` 以下に置く。共通処理はソースと同じ構成とし、APIテストは既存の `tests/app/api/` 配下に保持してHonoのWorkerランタイムで実行する(例: `lib/account/password.ts` のテストは `tests/lib/account/password.test.ts`)。暗号化(`tests/lib/crypto/*.test.ts`)・アクセス制御(`tests/lib/access.test.ts`)・掃除処理(`tests/lib/cleanup.test.ts`)・保存期間計算(`tests/lib/retention.test.ts`)・各APIルート(`tests/app/api/**/route.test.ts`)などをカバーしている。共有のテストヘルパー(`createTestEnv`など)は `test/env.ts`(単数形、`tests/`とは別)にある。
 
+大容量の `Uint8Array` は、長さを確認したうえで `Buffer.equals` による全バイト比較を使う。`toEqual` による要素列挙は、多MBの配列で時間・メモリを大きく消費するため避ける。マルチパートの最小サイズや暗号化チャンクの境界を検証するテストでは、比較を軽量化しても実データのサイズと検証内容は維持する。
+
+```ts
+expect(actual.byteLength).toBe(expected.byteLength);
+expect(Buffer.from(actual).equals(Buffer.from(expected))).toBe(true);
+```
+
 ## Lint・型チェック
 
 ```bash
