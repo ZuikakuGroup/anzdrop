@@ -93,6 +93,7 @@ describe("repartition", () => {
     const source = [ramp(4), ramp(4, 1), ramp(4, 2)];
     const parts = await collect(repartition(fromArray(source), 6));
 
+    expect(parts.map((part) => part.partNumber)).toEqual([1, 2]);
     expect(parts.map((part) => part.body.byteLength)).toEqual([6, 6]);
     expectBytesEqual(concat(parts.map((part) => part.body)), concat(source));
   });
@@ -106,6 +107,7 @@ describe("repartition", () => {
     const source = [new Uint8Array(0), ramp(6, 1), new Uint8Array(0), ramp(3, 2)];
     const parts = await collect(repartition(fromArray(source), 6));
 
+    expect(parts.map((part) => part.partNumber)).toEqual([1, 2]);
     expect(parts.map((part) => part.body.byteLength)).toEqual([6, 3]);
     expectBytesEqual(concat(parts.map((part) => part.body)), concat(source));
   });

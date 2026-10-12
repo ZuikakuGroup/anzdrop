@@ -10,6 +10,10 @@
 | File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
 | Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | レビュー省略の通知・大規模 PR の分割 |
 
+## ESLint の依存関係更新
+
+`eslint-plugin-react` が ESLint 10 に対応するまでは、ESLint と `@eslint/js` を 9 系に揃える。`@eslint/js` 10 系は ESLint 10 を要求するため、Dependabot では同パッケージのメジャー更新を一時的に除外している。React 用プラグインの対応後にこの除外を解除し、関連パッケージをまとめて更新して Lint とテストを確認する。
+
 ## リンク切れチェック
 
 ### 実行タイミング

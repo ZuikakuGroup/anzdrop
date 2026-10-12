@@ -57,7 +57,7 @@ export async function* repartition(
   }
 
   if (pendingLength > 0) {
-    yield { partNumber: partNumber++, body: take(pendingLength) };
+    yield { partNumber, body: take(pendingLength) };
   }
 }
 
