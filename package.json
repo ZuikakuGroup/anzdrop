@@ -41,7 +41,7 @@
     "@stripe/react-stripe-js": "^7.0.0",
     "@stripe/stripe-js": "^10.0.0",
     "@tailwindcss/vite": "^4.3.3",
-    "astro": "^7.3.6",
+    "astro": "^7.3.8",
     "aws4fetch": "^1.0.20",
     "chart.js": "^4.5.1",
     "fflate": "^0.8.3",
