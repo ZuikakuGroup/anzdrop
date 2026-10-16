@@ -1,6 +1,6 @@
 // 非同期イテラブルを、最大capacity件まで先読みしてバッファするジェネレータに変換する。
 // バッファが満杯の間は生成元(source)の消費を止める(バックプレッシャー)ため、
-// メモリ使用量をcapacity件分に抑えつつ、消費側の待ち時間を生成側の先行実行で隠せる。
+// 先読み分をcapacity件以内に抑えつつ、消費側の待ち時間を生成側の先行実行で隠せる。
 export function bufferAhead<T>(
   source: AsyncIterable<T>,
   capacity: number
@@ -27,13 +27,16 @@ export function bufferAhead<T>(
 
   const pump = (async (): Promise<void> => {
     try {
-      for await (const item of source) {
+      const iterator = source[Symbol.asyncIterator]();
+      while (true) {
         while (queue.length >= capacity) {
           await new Promise<void>((resolve) => {
             notifyProducer = resolve;
           });
         }
-        queue.push(item);
+        const { value, done } = await iterator.next();
+        if (done) break;
+        queue.push(value);
         wake("notifyConsumer");
       }
     } catch (err) {

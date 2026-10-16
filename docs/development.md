@@ -120,11 +120,15 @@ npm run test:coverage  # カバレッジ付きVitest
 
 `mountHook`からはフックの最新の戻り値を取得できます。操作と非同期応答はReactの`act`内で完了させ、テスト終了時にはアンマウントしてください。
 
-大容量の`Uint8Array`は、長さと全バイトを次のように比較します。`toEqual`で要素を列挙すると時間とメモリを多く使います。暗号化チャンクやマルチパートの境界を検証するときは、比較方法だけを軽くし、実データのサイズは維持してください。
+大容量の`Uint8Array`は、元の配列の範囲を共有するBufferビューで、長さと全バイトを比較します。`toEqual`で要素を列挙すると時間とメモリを多く使います。暗号化チャンクやマルチパートの境界を検証するときは、比較方法だけを軽くし、実データのサイズは維持してください。
 
 ```ts
 expect(actual.byteLength).toBe(expected.byteLength);
-expect(Buffer.from(actual).equals(Buffer.from(expected))).toBe(true);
+expect(
+  Buffer.from(actual.buffer, actual.byteOffset, actual.byteLength).equals(
+    Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength),
+  ),
+).toBe(true);
 ```
 
 ### 隔離環境で画面・認証・共有を通して確認する

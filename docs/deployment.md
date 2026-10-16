@@ -177,7 +177,14 @@ npm run preview # ビルド済みのルーター・Astro・Honoをローカル�
 
 本番反映はGitHub Actionsの監査付きデプロイ経路を使用する。`npm run deploy`も、信頼されたGitHub Actionsのmain push環境を確認して監査アーカイブの生成と配信を行うため、単独のローカル手動デプロイには使用しない。
 
-反映順はAPP、PUBLIC、ルーターです。APPのD1・R2・認証Secretと、PUBLICのmicroCMS読み取り用Secretを引き継ぎます。認証SecretをPUBLICへコピーしないでください。途中で失敗した場合は後続Workerの更新を中断し、同じ3 Worker構成の監査済みアーカイブで切り戻します。初回移行時の旧構成への切り戻しは、末尾の「過去の構成から移行するとき」を参照してください。
+反映順はAPP、PUBLIC、ルーターです。APPのD1・R2・認証Secretと、PUBLICのmicroCMS読み取り用Secretを引き継ぎます。認証SecretをPUBLICへコピーしないでください。途中で失敗した場合は後続Workerの更新を中断します。復旧は次の手順で行います。
+
+1. 失敗したWorkflowのログと、直近で成功したデプロイのmanifestを確認し、更新済みのWorkerとそのVersion IDを特定する。
+2. 最新の`main`から作業ブランチを作り、原因となる変更を修正するか、該当コミットをrevertする。OTP検証を外す変更や、適用済みD1マイグレーションと互換性のない変更は戻さず、互換性を保つ修正を行う。
+3. PRで検証・レビューを通し、`main`へマージする。通常のデプロイWorkflowが、新しい監査成果物を生成し、APP・PUBLIC・ルーターの順に配信する。
+4. デプロイの成功と各画面・APIの動作を確認し、生成されたmanifestで3 WorkerのVersion IDを確認する。
+
+現在のWorkflowは`main`へのpushだけで起動し、過去の監査アーカイブを選んで再配信する機能はありません。アーカイブの保管・検証だけでは切り戻しは実行できません。手元で本番用の環境変数を偽装して`deploy-audited.mjs`を動かさないでください。
 
 ## OTP暗号化鍵を設定してから導入する
 
@@ -204,13 +211,15 @@ OTP有効化後は、OTPを要求しない旧コードへロールバックし�
 
 初回は公開Workerを作成してmicroCMS Secretを設定・確認した後、PUBLIC service bindingを持つルーターを切り替える。未設定のままルーターを切り替えるとブログ取得は失敗する。ローカル実装は本番設定を変更しない。
 
-監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。3 WorkerをAPP、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。通常の切り戻しは同じ構成の監査済みアーカイブを使います。
+監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。3 WorkerをAPP、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。通常の復旧は前述の修正・revertのPRによる再デプロイで行います。
 
 ### Next.js撤去後の反映・切り戻し
 
 初回は内部認証経路を持つAPP、全画面を持つPUBLIC、ルーターの順で同じ監査済みアーカイブから反映します。D1/R2・認証/決済Secret・Cronは既存APPに残し、追加マイグレーションはありません。CIの既存公開ビルド値も引き継ぎます。
 
-旧Next.js経路はソース・ビルド・監査成果物から撤去します。初回移行の切り戻しは以前の監査アーカイブと当時のデプロイ手順を使い、APP・HOME・PUBLIC・ルーターの旧構成全体を復元します。ルーターだけを戻しても新APPは旧画面を提供できません。現在の3 Worker用スクリプトで古い4 Worker成果物を反映しないでください。この移行手順では旧HOME Worker自体を削除しません。
+旧Next.js経路はソース・ビルド・監査成果物から撤去済みです。旧構成はAPP・HOME・PUBLIC・ルーターの4 Workerで、新APPは旧画面を提供しないため、ルーターだけを戻しても復旧しません。
+
+旧構成への復元には、当時のコード・設定・成果物と対応する配信経路が必要ですが、現在のWorkflowにはその手順を実装していません。現在の3 Worker用スクリプトで古い4 Worker成果物を配信しないでください。この移行では旧HOME Worker自体を削除していません。
 
 ## CIとローカルで同じ検証を実行する
 
