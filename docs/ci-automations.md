@@ -1,6 +1,6 @@
 # CI 自動化
 
-このリポジトリは **Cloudflare Pages ではなく Cloudflare Workers** に、GitHub Actions の [`deploy.yml`](../.github/workflows/deploy.yml) 経由でデプロイする。以下の Workflow はその前提に合わせて追加している(Pages への二重デプロイは行わない)。
+GitHub Actionsで検証・レビュー補助・Cloudflare Workersへのデプロイを行います。本番反映は[`deploy.yml`](../.github/workflows/deploy.yml)、Secretと監査成果物の扱いは[デプロイガイド](./deployment.md)を参照してください。ここでは補助Workflowの実行条件と、失敗時の確認先を説明します。
 
 | Workflow | ファイル | 目的 |
 | --- | --- | --- |

@@ -30,7 +30,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 /admin/analytics (Cloudflare Access 保護)
 ```
 
-計測APIへの送信は常に非同期・fire-and-forestで行われ、失敗してもアップロード・ダウンロード・共有といった本来の機能は一切ブロックされません([`lib/analytics/client.ts`](../lib/analytics/client.ts))。
+計測APIへの送信は非同期で行います。送信の完了を待たずに、アップロード・ダウンロード・共有を続けます([`lib/analytics/client.ts`](../lib/analytics/client.ts))。
 
 送信失敗（fetchの拒否・非成功レスポンス、同期例外）時は、バッチをメモリ内キューの先頭へ戻し、3秒後の再送を予約します。sendBeaconが拒否・例外を返した場合は、まずfetchへフォールバックします。再送時も同じevent_idを使用します。キューはページ終了後には保持されず、sendBeaconが受理した後の配送失敗は検出できません。
 
@@ -51,11 +51,11 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 | イベント | 発火箇所 |
 | --- | --- |
-| `landing_view` | LPまたは`components/upload/uploadForm.tsx`の初回表示時。ブラウザ内の`localStorage`でセッションごとに1回だけ送信し、最初の着地パスを記録する |
+| `landing_view` | LPまたはアップロード画面（`lib/upload/useUploadSession.tsx`）の初回表示時。ブラウザ内の`localStorage`でセッションごとに1回だけ送信し、最初の着地パスを記録する |
 | `file_select` | ファイル選択・ドロップ時 |
-| `upload_start` / `upload_success` / `upload_error` | `lib/upload/uploadFile.ts` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
+| `upload_start` / `upload_success` / `upload_error` | `lib/upload/useUploadSession.tsx` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
 | `share_link_copy` / `share_native` | 共有リンクコピー・Web Share API利用時 |
-| `download_start` / `download_success` / `download_error` | `components/download/DownloadPage.tsx` |
+| `download_start` / `download_success` / `download_error` | `lib/download/useDownloadActions.ts` |
 | `recipient_send_cta_view` / `recipient_send_cta_click` | 全ファイルのダウンロード完了から1.5秒後にモーダル表示される「Anzdropでファイルを送る」導線。利用者が「次から表示しない」を選ぶと、このブラウザの`localStorage`だけへ設定を保存し、以後は表示・計測しない |
 
 ## データベース

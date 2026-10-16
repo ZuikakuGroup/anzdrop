@@ -1,171 +1,159 @@
 # ローカル開発環境
 
-## 前提
+Node.js 22.12以降とnpmで、Astroの画面とHono APIをローカル起動します。CIはNode.js 24系です。初めて起動するときは、次の「初回セットアップ」の手順を順に実行してください。テストや機能別の確認は、後半の節から必要な手順を選べます。
 
-- Node.js 22.12以降（CIは24系。Astroの最低要件に合わせる）
-- Cloudflareアカウント(D1・R2・Access・Turnstileを利用する場合。ローカルのD1/R2はwranglerのローカル永続化機能で完結するため、実際にAPIを叩く動作確認だけならCloudflareアカウント無しでも一部可能だが、本番デプロイやCloudflare Access連携の確認にはアカウントが必要)
+D1・R2はWranglerのローカル環境で動きます。Cloudflareアカウントや外部サービスの認証情報は、本番反映やそのサービスとの連携確認に必要です。
 
-## Astro＋React / Honoの開発
+## 初回セットアップ
 
-すべての画面は次の構成で起動します。初回のみ既存マイグレーションをローカルD1へ適用してください。
+### 依存関係を入れる
+
+```sh
+npm ci
+```
+
+ロックファイルに記録した依存関係をインストールします。
+
+### 確認する機能の環境変数を設定する
+
+ローカル設定は次のファイルに分けます。いずれもGitの管理対象外です。
+
+| ファイル | 用途 | 主な設定 |
+| --- | --- | --- |
+| ルートの`.env.local` | ブラウザ向けの公開値・開発設定 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`、`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`、`LOCAL_ADMIN_BYPASS` |
+| ルートの`.dev.vars` | API Workerが使うSecret | 以下の機能別の表を参照 |
+| `apps/public/.dev.vars` | Astro Workerが使うCMS読取キー | `MICROCMS_API_KEY` |
+
+Astroのブラウザ向けビルドに埋め込むのは、TurnstileのサイトキーとStripeの公開可能キーだけです。APIのSecretを`.env.local`へ移したり、Astroへコピーしたりしないでください。
+
+| 確認する機能 | `.dev.vars`の設定 |
+| --- | --- |
+| 匿名アップロード・アカウント登録 | `TURNSTILE_SECRET_KEY` |
+| アカウント・OTP | `TURNSTILE_SECRET_KEY`、`SESSION_SECRET`、`ACCOUNT_AUTH_ENCRYPTION_KEY` |
+| R2への直接アップロード | `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`CLOUDFLARE_ACCOUNT_ID`の3つすべて |
+| microCMSのWebhook受信 | `MICROCMS_WEBHOOK_SECRET`。記事取得の`MICROCMS_API_KEY`は`apps/public/.dev.vars`へ設定 |
+| Stripe決済 | `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET` |
+| Bitcoin決済 | `OPENNODE_API_KEY` |
+| 分析用の相関ID | `ANALYTICS_SECRET` |
+
+Turnstileには[公式テストキー](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)も使えます。Stripeの公開可能キーにはテスト用の`pk_test_...`を使ってください。OTP専用鍵の形式は[デプロイガイド](./deployment.md#otp暗号化鍵を設定してから導入する)を参照してください。本番のSecretはローカル確認に流用しません。
+
+R2の3つの設定が揃わない場合、アップロードはWorker経由の`proxy`へ切り替わります。microCMSを使わない場合は、そのSecretを省略できます。環境変数を変更したら、開発サーバーを再起動してください。
+
+`wrangler.jsonc`には`secrets.required`を設定していません。この指定は、ローカルで読み込むSecretも一覧内のキーに制限するため、任意機能のSecretが読み込まれなくなることがあります。
+
+### ローカルD1へマイグレーションを適用する
 
 ```sh
 npx wrangler d1 migrations apply DB --local --config wrangler.api.jsonc
+```
+
+初回とマイグレーション追加時に実行します。通常開発のD1・R2は`.wrangler/state`に保存します。旧開発環境の一時DBは自動移行しません。
+
+### 開発サーバーを起動する
+
+```sh
 npm run dev
 ```
 
-ブラウザは`http://localhost:3000`を開きます。AstroのVite proxyが`/api`をHonoの8788番ポートへ送り、Host・Origin・Cookieを維持します。`dev:api`と`dev:app`を別々に起動することもできます。APIはループバックのみで待ち受け、WebAuthnは明示した`http://localhost:3000`だけを許可します。`127.0.0.1`のURLではパスキーを登録しないでください。
+[http://localhost:3000](http://localhost:3000) を開いてください。画面はAstro、APIはHonoで動きます。
 
-公開用ビルド値はルートの`.env.local`またはシェルに`NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`を設定します。Astroのブラウザ向けdefineにはこの2値だけを含めます。APIのSecretはルートの`.dev.vars`から読み、Astroへコピーしません。ローカルHonoのD1/R2は`.wrangler/state`に保存します。管理画面もAstroで提供し、APP Service BindingでHonoに認証を確認します。
+| 処理 | 待ち受け先 |
+| --- | --- |
+| 画面・ブラウザからの接続 | `localhost:3000` |
+| Hono API | `127.0.0.1:8788` |
+
+Astroが`/api`をHonoへ転送し、Host・Origin・Cookieを維持します。管理画面の認証はAPP Service Binding経由でHonoへ確認します。APIはループバックアドレスだけで待ち受けます。
+
+`npm run dev:api`と`npm run dev:app`で別々に起動することもできます。`wrangler.api.jsonc`はローカル開発・ビルド検証用です。本番への反映には使いません。
+
+パスキーの確認には`http://localhost:3000`を使ってください。`127.0.0.1`やリクエストのHostから認証先を自動判定する設計にはしていません。
+
+## 機能別の確認
+
+### 管理画面をローカルで開く
+
+`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定して`npm run dev`を起動します。開発用のHono設定（`LOCAL_DEVELOPMENT=true`）または`NODE_ENV=development`であり、接続先が`localhost`・`127.0.0.1`・`::1`の場合だけ、Cloudflare Access検証を迂回します。`DEPLOYMENT_ENV=production`では無効です。確認後は設定を外してください。
+
+実際のCloudflare Access連携をローカルで確認する場合は、`wrangler.api.jsonc`の`CF_ACCESS_TEAM_DOMAIN`と`CF_ACCESS_AUD`を検証用アプリに合わせます。検証用Workerへデプロイする場合は、配信に使う`wrangler.jsonc`側の設定を確認してください。JWT検証だけなら、`tests/lib/access.test.ts`のようにモックしたテストでも確認できます。
+
+### ブログを確認用データで開く
+
+`.env.local`に`BLOG_USE_SEED_DATA=true`を設定すると、開発時は15件の確認用記事を使います。microCMSへ書き込まずに、記事一覧の2ページ目、詳細、関連記事、カテゴリ・タグ・著者ページを確認できます。
+
+本番・通常のプレビューでは有効になりません。Web監査では`WEB_AUDIT=true`との併用時に限り、production起動でも確認用データを使えます。ただし`DEPLOYMENT_ENV=production`では無効です。詳細は[Web監査](./web-audit.md)を参照してください。
+
+### 公開ページだけを開発する
 
 ```sh
-npm run build:api       # アップロードしないWrangler dry-run
-npm run check:public
-npm run test:astro-hono
+npm run dev:public
 ```
 
-`test:astro-hono`は本番とは別のローカルD1/R2（`tmp/astro-hono-state`）、公式のTurnstileテストキー、ローカル専用認証鍵でworkerdを起動します。rootの`.dev.vars`を読み込まない隔離設定を生成します。3310番ポートでパスキー・OTP・復旧、CSP、React画面、ファイル暗号化/復号をChromiumで確認し、終了時にテストサーバーを停止します。API/画面の内部ポートは8791/4324です。本番へのデプロイや新しいマイグレーションは行いません。`wrangler.api.jsonc`はローカル開発・dry-run専用で、本番デプロイには使わないでください。
+`http://localhost:4321/about`を開きます。APIも必要な場合は、別のターミナルで`npm run dev:api`を起動してください。Astroは`/api`を8788番ポートへ転送します。
 
-## セットアップ手順
+実際のCMSから取得する場合は、通常の`npm run dev`でも`apps/public/.dev.vars`に`MICROCMS_API_KEY`を設定します。生成物は`apps/public/dist`、`.astro`、`.wrangler`に出力し、Gitには含めません。
 
-```bash
-npm install
+### ビルド済みの構成を確認する
+
+```sh
+npm run build
+npm run preview
 ```
 
-### 環境変数
+ビルドはCloudflareへアップロードせず、3つのWorkerをローカルで検証します。プレビューは本番と同じルーター経由でAstro・Honoを起動します。`npm run start -- --hostname 127.0.0.1 --port 3000`も同じプレビューです。設定とSecretは通常開発用を使うため、隔離テストが必要な場合は次のE2Eコマンドを使ってください。
 
-| ファイル | 用途 | 主な変数 |
-| --- | --- | --- |
-| `.env.local`(gitignore対象) | 公開ビルド値・ローカル開発設定 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY`・`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`・`LOCAL_ADMIN_BYPASS` |
-| `.dev.vars`(gitignore対象) | ローカルのWorkers実行時シークレット(wranglerが読む) | `TURNSTILE_SECRET_KEY` |
+## 変更を検証する
 
-いずれもリポジトリには含まれないため、各自発行して設定する。`NEXT_PUBLIC_TURNSTILE_SITE_KEY`/`TURNSTILE_SECRET_KEY`は[Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)から発行する(開発用にはテスト用の常時成功/失敗キーも利用可能)。`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`はStripeダッシュボード(テストモード)の「開発者」→「APIキー」から取得できる公開可能キー(`pk_test_...`)を使う。
-
-ローカルで管理画面を確認する場合だけ、`.env.local`に`LOCAL_ADMIN_BYPASS=true`を設定できる。これは開発用のHono設定（`LOCAL_DEVELOPMENT=true`）または`NODE_ENV=development`、かつ`localhost`/`127.0.0.1`/`::1`からのリクエストでのみCloudflare Access検証を迂回してローカル管理者として扱う。開発サーバー自体もループバックアドレスにだけ待ち受けるため、LANなど外部からは到達できない。本番・外部Hostでは有効にならない。プレビューでも明示設定が必要。確認後は設定を外す。
-
-ブログのページネーションをmicroCMSへ書き込まずに確認する場合は、`.env.local`に`BLOG_USE_SEED_DATA=true`を設定する。ローカル開発時だけ15件の確認用記事へ切り替わり、`/blog`の2ページ目、記事詳細、関連記事、カテゴリ・タグ・著者ページを確認できる。本番・Previewでは同じ値が設定されても有効にならない。例外として、SEO/Lighthouse 監査用に `WEB_AUDIT=true` と併用した場合だけ production 起動でも seed が有効になる(手順は [`docs/web-audit.md`](./web-audit.md))。確認後はこの設定を外して開発サーバーを再起動する。
-
-`wrangler.jsonc` の `vars`(`CF_ACCESS_TEAM_DOMAIN`/`CF_ACCESS_AUD`)はCloudflare Accessのチーム/アプリ設定に依存する値のため、自分の検証用Accessアプリを使う場合はここも書き換える。
-
-### 機能ごとのWorkers Secret
-
-`wrangler.jsonc` では `secrets.required` を定義しない。この指定はデプロイ時の必須チェックだけでなく、ローカルの `.dev.vars` / `.env` を一覧のキーだけに制限するため、任意機能のSecretが読み込まれなくなる。ローカルではリポジトリ直下のgitignore対象 `.dev.vars` に、検証する機能のSecretだけを設定し、開発サーバーを再起動する。別の開発用Workerや本番Secretの変更は不要。
-
-| 機能 | `.dev.vars` に設定する名前 |
-| --- | --- |
-| アカウント・OTP | `TURNSTILE_SECRET_KEY`、`SESSION_SECRET`、`ACCOUNT_AUTH_ENCRYPTION_KEY` |
-| R2直アップロード | `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、`CLOUDFLARE_ACCOUNT_ID`（3つすべて） |
-| microCMSの記事取得・Webhook | `MICROCMS_API_KEY`、`MICROCMS_WEBHOOK_SECRET` |
-| Stripe / OpenNode / 分析 | `STRIPE_SECRET_KEY`・`STRIPE_WEBHOOK_SECRET` / `OPENNODE_API_KEY` / `ANALYTICS_SECRET` |
-
-R2直アップロードのSecretが揃わない場合はproxyへフォールバックする。microCMSを使わない場合はそのSecretを省略できる。Webhookを検証する場合は `MICROCMS_WEBHOOK_SECRET` も設定する。実際の鍵はテスト用リソースのものを使い、ソースコード・ログ・コミットに含めない。OTP専用鍵の形式と本番への導入順は [deployment.md](./deployment.md) を参照。
-
-### D1・R2のローカル永続化
-
-HonoのWranglerが`.wrangler/state`を使います。初回と既存マイグレーションの追加時は`npx wrangler d1 migrations apply DB --local --config wrangler.api.jsonc`で同じ保存先に適用します。旧開発環境の一時DBは自動では移しません。
-
-### 開発サーバーとプレビュー
-
-`npm run dev`でAstroをlocalhost:3000、Honoを127.0.0.1:8788で起動します。管理画面の認証確認にはローカルAPP Service Bindingを使います。`.env.local`の`LOCAL_ADMIN_BYPASS=true`を読み込むのは`npm run dev`です。本番では`DEPLOYMENT_ENV=production`がバイパスを無効にします。
-
-`npm run build`はAstro・Hono・ルーターをビルドするだけで、アップロードしません。その後`npm run preview`でビルド済みルーター・Astro・Honoを起動します。`npm run start -- --hostname 127.0.0.1 --port 3000`も同じプレビューです。
-
-`.wasm`はWorkersが静的importするコンパイル済みモジュールとして扱います。変更時には`npm run test:astro-hono`で実際のworkerd上の登録・ログイン・復旧を確認してください。ブラウザ用バンドルには取り込みません。
-
-### Docker(任意)
-
-[`Dockerfile`](../Dockerfile) / [`compose.yaml`](../compose.yaml) に日本語ロケール入りの最小限の開発コンテナ定義がある。`docker compose up` でコンテナに入り、コンテナ内で上記と同じ手順(`npm install` → `npm run dev`)を実行する用途。
-
-## テスト
-
-```bash
-npm test              # Vitestでユニットテストを1回実行
-npm run test:watch    # ウォッチモード
-npm run test:coverage # カバレッジ付き
+```sh
+npm run check          # Lint、TypeScript、ルーター、Astro、Vitestの順
+npm run check -- types # TypeScriptだけ
+npm run check -- test  # Vitestだけ
+npm run test:watch     # Vitestのウォッチモード
+npm run test:coverage  # カバレッジ付きVitest
 ```
 
-テストは `tests/` 以下に置く。共通処理はソースと同じ構成とし、APIテストは既存の `tests/app/api/` 配下に保持してHonoのWorkerランタイムで実行する(例: `lib/account/password.ts` のテストは `tests/lib/account/password.test.ts`)。暗号化(`tests/lib/crypto/*.test.ts`)・アクセス制御(`tests/lib/access.test.ts`)・掃除処理(`tests/lib/cleanup.test.ts`)・保存期間計算(`tests/lib/retention.test.ts`)・各APIルート(`tests/app/api/**/route.test.ts`)などをカバーしている。共有のテストヘルパー(`createTestEnv`など)は `test/env.ts`(単数形、`tests/`とは別)にある。
+検証コマンドは`scripts/check.mjs`にまとめています。`lint`・`types`・`router`・`public`・`test`を個別に指定でき、失敗した時点で終了します。CIと本番デプロイも同じコマンドを使います。既存の`npm run lint`や`npx tsc --noEmit`も利用できます。
 
-大容量の `Uint8Array` は、長さを確認したうえで `Buffer.equals` による全バイト比較を使う。`toEqual` による要素列挙は、多MBの配列で時間・メモリを大きく消費するため避ける。マルチパートの最小サイズや暗号化チャンクの境界を検証するテストでは、比較を軽量化しても実データのサイズと検証内容は維持する。
+### テストの配置と共通ヘルパー
+
+テストは`tests/`に置きます。ライブラリのテストは実装と同じディレクトリ構成にし、APIテストは`tests/app/api/`でHonoのWorkerランタイムを使って実行します。環境作成は`test/env.ts`、ランタイムは`test/runtime.ts`、Reactの描画・破棄は`test/react.ts`に共通ヘルパーがあります。
+
+`mountHook`からはフックの最新の戻り値を取得できます。操作と非同期応答はReactの`act`内で完了させ、テスト終了時にはアンマウントしてください。
+
+大容量の`Uint8Array`は、長さと全バイトを次のように比較します。`toEqual`で要素を列挙すると時間とメモリを多く使います。暗号化チャンクやマルチパートの境界を検証するときは、比較方法だけを軽くし、実データのサイズは維持してください。
 
 ```ts
 expect(actual.byteLength).toBe(expected.byteLength);
 expect(Buffer.from(actual).equals(Buffer.from(expected))).toBe(true);
 ```
 
-## 変更前後の検証
-
-```bash
-npm run check          # Lint → TypeScript → ルーター → Astro → Vitest
-npm run check -- types # TypeScriptだけを確認
-npm run check -- test  # Vitestだけを確認
-```
-
-`scripts/check.mjs`に検証コマンドをまとめています。`lint`・`types`・`router`・`public`・`test`を個別に指定でき、失敗した時点で終了します。既存の`npm run lint`や`npx tsc --noEmit`も使えます。CIと本番デプロイは各ステップから同じコマンドを呼び出します。
-
-ReactのDOMテストは`test/react.ts`の生成・破棄ヘルパーを利用できます。`mountHook`はフックの最新の戻り値を取得するためのヘルパーで、操作と非同期応答はReactの`act`内で完了させます。テストが終わったら必ずアンマウントしてください。
-
-ローカル起動スクリプトは`scripts/run-command.mjs`で終了コードとシグナル転送を共通化しています。子プロセスの終了後は転送ハンドラを解除し、呼び出し元が登録したハンドラは維持します。プレビューと隔離E2Eの設定生成には`scripts/local-worker-config.mjs`を使い、使い捨て設定のパス解決とCron除去を行います。通常のAPIプレビューは従来どおりルートの設定から`.dev.vars`を読み、隔離E2Eは`tmp/astro-hono`内の設定を使用します。
-
-## トップページの合成計測
-
-トップページのTTFB、LCP、CLS、初期転送量を確認するには、Chromeを使える環境で次を実行する。結果は標準出力にだけ表示され、利用者の計測データやレポートファイルは保存しない。
-
-```bash
-SITE_URL=https://anzdrop.com npm run measure:home
-```
-
-ローカルを計測する場合は、別のターミナルで `npm run dev` を起動してから `npm run measure:home` を実行する。
-
-## SEO / Lighthouse 監査
-
-PR 時の自動検査とローカル実行手順は [`docs/web-audit.md`](./web-audit.md) を参照する。要約:
-
-```bash
-WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run build
-WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run start -- --hostname 127.0.0.1 --port 3000
-# 別ターミナル
-SITE_URL=http://127.0.0.1:3000 npm run audit:web
-```
-
-## 動作確認のコツ
-
-- ブラウザで実際にアップロード→共有URL発行→別タブでダウンロード、まで一通り試すのが最も確実。パスワード保護・保存期間「1回」・複数ファイル(相乗り)のケースも忘れずに。
-- `/admin` はCloudflare Access配下のため、通常は `lib/access.ts` の `verifyAccessJwt()` に有効なAccess設定が必要となる。ただし上記の開発専用バイパスの条件をすべて満たす場合は、ローカル管理者として確認できる。条件を満たさない場合は `tests/lib/access.test.ts` のようにモックしたテストで検証するか、実際にCloudflare Access配下にデプロイして確認する。
-
-## パスキー・OTPのローカル確認
-
-WebAuthnはlocalhostの明示設定のみを許可する。ブラウザでは `http://localhost:3000` を開く（既存devサーバーのバインド先は127.0.0.1でもよい）。別ポートでは `ACCOUNT_AUTH_LOCAL_ORIGIN=http://localhost:ポート` をサーバー環境に設定する。127.0.0.1やリクエストHostから認証先を自動判定しない。本番の `DEPLOYMENT_ENV=production` ではこのローカル設定があっても本番Originを使用する。
-
-ローカルD1にmigration 0018を適用し、gitignore対象の `.dev.vars` に32バイトの専用暗号化鍵を設定する。鍵形式・生成方法は [deployment.md](./deployment.md) を参照。ダミー鍵を本番に使わない。
-
-`tests/app/api/account/security.test.ts` はMiniflareの実D1と実際のWebAuthn署名で、4つの設定状態、OTP制限・再利用、チャレンジと復旧の競合を検証する。UIテストはOTP設定の中止・完了、非対応ブラウザ・キャンセルを検証する。
-
-ローカルのビルド成果物をworkerdで起動した後、次のコマンドでChromium仮想認証器による登録・ログイン・OTP設定・削除・復旧を確認する。テスト用Turnstileキーは [Cloudflare公式のダミーキー](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) をビルド時・サーバー側の両方に設定する。SecretとローカルD1は本番から分離する。このテストはlocalhostと明示フラグが揃わない場合はスキップする。
+### 隔離環境で画面・認証・共有を通して確認する
 
 ```sh
-E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test tests/e2e/account-security.spec.ts --workers=1
+npx playwright install chromium
+npm run test:astro-hono
 ```
 
-## Astro公開ページの開発
+このコマンドは、ビルド、既存マイグレーションのローカル適用、テストサーバーの起動、Chromiumでの検証、終了処理をまとめて実行します。パスキー・OTP・復旧、CSP、React画面、ファイルの暗号化・復号を確認します。
 
-`npm run dev:public` で `http://localhost:4321/about` を開く。アップロード・ダウンロード・マイページとAPIをまとめて確認する場合は `npm run dev`（3000番）を使う。Astroの開発サーバーは `/api` をローカルHono（8788番）へ転送するため、単独起動時にAPIも必要なら別ターミナルで `npm run dev:api` を起動する。
+| 用途 | 保存先・接続先 |
+| --- | --- |
+| テスト用D1・R2 | `tmp/astro-hono-state` |
+| テスト専用API設定 | `tmp/astro-hono/wrangler.json` |
+| ブラウザからの接続 | `http://localhost:3310` |
+| API・画面の内部ポート | 8791・4324 |
 
-```bash
-npm run check:public
-npm run build:public
-npx wrangler dev --config apps/public/dist/server/wrangler.json --port 4321 --var BLOG_USE_SEED_DATA:true --var WEB_AUDIT:true
-# 別ターミナル。実WorkersでSSR/CSP・FAQ・画像拡大・404・SEOを確認する
-PUBLIC_ASTRO_TEST=true E2E_BASE_URL=http://localhost:4321 npx playwright test tests/e2e/public-astro.spec.ts
+APIの設定はルートの`.dev.vars`を読み込まない場所に生成し、公式Turnstileテストキーとローカル専用の認証鍵を使います。本番へのデプロイや新しいマイグレーションの作成は行いません。
+
+認証済み管理画面は次のコマンドで確認します。
+
+```sh
+E2E_LOCAL_ADMIN_BYPASS=true E2E_TEST_FILES=tests/e2e/support-admin-astro.spec.ts npm run test:astro-hono
 ```
 
-実CMSを使う場合は `apps/public/.dev.vars` に `MICROCMS_API_KEY` を設定する（コミット禁止）。seedは開発・明示した監査環境だけで使用し、`DEPLOYMENT_ENV=production` では無効。生成物は `apps/public/dist`、`.astro`、`.wrangler` に出力し、Gitには含めない。
+`.wasm`は、Workersが静的importするコンパイル済みモジュールとして扱います。変更時はこのE2Eで、実際のworkerd上の登録・ログイン・復旧を確認してください。ブラウザ向けバンドルには含めません。
 
-`npm run test:public` はビルド・プレビューの起動と終了・上記ブラウザ検証をまとめて実行する。初回は `npx playwright install chromium` を実行する。CIでもこの手順で実Workersを検証する。
-
-## 3ブラウザのファイル共有 E2E (#238)
-
-隔離したローカル Astro/Hono・D1・R2 で、実際のアップロード、暗号化、別コンテキストからの復号、保存を検証する。本番 URL では共有スイートをスキップする。追加の依存・マイグレーション・テスト用 API は使わない。
+### 3ブラウザでファイル共有を確認する
 
 ```sh
 npx playwright install chromium firefox webkit
@@ -173,14 +161,71 @@ E2E_PROJECT=firefox E2E_WORKERS=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts 
 E2E_PROJECT=webkit E2E_WORKERS=1 E2E_EXTENDED=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts npm run test:astro-hono
 ```
 
-`E2E_PROJECT` は chromium / firefox / webkit。省略時は Chromium。`--` 以降に Playwright の追加引数を渡せる。Firefox・WebKit は共有スイートだけを実行し、CDP を使う既存のパスキー検証は Chromium に限定する。
+`E2E_PROJECT`は`chromium`・`firefox`・`webkit`から選びます。省略時はChromiumです。`--`以降にPlaywrightの引数を渡せます。CDPを使うパスキー検証はChromiumに限定し、Firefox・WebKitは共有スイートを実行します。本番URLでは共有スイートをスキップします。
 
-基本ケースは 64KiB、誤ったパスワードからの再試行、日本語名を含む3ファイルの ZIP。拡張ケースは 16MiB＋1B、200MiB＋1B、Blob 強制、暗号文破損、通信失敗、保存キャンセルと再試行を追加する。大容量の結果は長さと全バイトを固定サイズの読み取りで比較する。
+| ケース | 確認内容 |
+| --- | --- |
+| 基本 | 64KiB、誤ったパスワードからの再試行、日本語名を含む3ファイルのZIP |
+| 拡張（`E2E_EXTENDED=1`） | 16MiB＋1B、200MiB＋1B、Blob保存、暗号文破損、通信失敗、保存キャンセル後の再試行 |
 
-通常保存は実際の転送可能ストリームと Service Worker の制御を確認し、ダウンロード URL が `/_anzdrop_download/` または `blob:` であることを検証する。能力と保存経路はレポートへ添付する。Blob 強制はコンテキストの `serviceWorkers: 'block'` を使う。受信コンテキストでは保存ピッカーを無効化し、OS の保存ダイアログは検証対象としない。File System Access API の分岐は既存の Vitest が検証する。
+大容量の結果は、固定サイズずつ読み取って長さと全バイトを比較します。通常保存は転送可能ストリームとService Workerの制御を確認し、保存URLが`/_anzdrop_download/`または`blob:`であることを検証します。ブラウザの能力と保存経路はレポートに添付します。
 
-障害注入は Blob 経路の対象 `/api/file/*` のみ。キャンセルケースは実際の Service Worker へ渡すストリームを最初のチャンク後で待機させ、未完了の `Download.cancel()` の結果が `canceled` になることを確認する。その後は待機を解除し、正常保存を再試行する。アプリがブラウザのキャンセルを検知するとは仮定しない。
+Blob保存の強制には`serviceWorkers: 'block'`を使います。受信側では保存ピッカーを無効にするため、OSの保存ダイアログはこのE2Eの対象外です。File System Access APIの分岐はVitestで確認します。
 
-コピー URL は `navigator.clipboard.writeText` の呼び出しを捕捉する。OS のクリップボードは実機で確認する。送信リクエストの URL・ヘッダー・本文に、合成平文マーカー、ファイル名、保護パスワード、クライアントで実際にエクスポートした復号鍵が含まれないことも検証する。監視の添付には値を含めない。トレースには合成ファイル・合成鍵・合成パスワードが含まれるため、実ユーザーデータは使用しない。
+障害注入はBlob保存時の対象`/api/file/*`に限ります。キャンセルのテストでは、Service Workerへ渡すストリームを最初のチャンク後で待機させ、未完了の`Download.cancel()`が`canceled`になることを確認します。その後、待機を解除して保存を再試行します。アプリがブラウザのキャンセルを検知する前提は置いていません。
 
-Safari 製品の確認は [実機確認表](safari-file-sharing-checklist.md) に記録する。Playwright WebKit の成功だけで #238 を完了扱いにしない。
+共有URLのコピーは`navigator.clipboard.writeText`の呼び出しを捕捉します。OSのクリップボードは実機で確認してください。送信リクエストのURL・ヘッダー・本文に、テスト用に生成した平文、ファイル名、保護パスワード、実際にエクスポートした復号鍵が含まれないことも検証します。通信監視の結果をレポートへ添付するときは、検査対象の値を含めません。トレースには合成データや鍵が含まれるため、実ユーザーのデータは使わないでください。
+
+手動確認では、保存期間「1回」のダウンロード完了後に再取得できないことと、既存共有への追加アップロードも確認してください。
+
+Safari製品の確認は[実機確認表](./safari-file-sharing-checklist.md)に記録します。Playwright WebKitの成功だけで実機確認を完了扱いにはしません。
+
+### 公開ページだけをWorker上で検証する
+
+```sh
+npm run test:public
+```
+
+Astroのビルド、Workerの起動・終了、Chromiumでの公開ページ検証をまとめて実行します。対象はSSR、CSP、FAQ、画像拡大、404、SEOです。
+
+### パスキー・OTPを別ポートで確認する
+
+`ACCOUNT_AUTH_LOCAL_ORIGIN=http://localhost:ポート`をAPI側に明示します。本番の`DEPLOYMENT_ENV=production`では、本番Originを使います。127.0.0.1や任意のHostは認証先に使いません。
+
+手動起動したローカル環境では、テスト用Turnstileキーをブラウザ・APIの両方に設定し、次のように接続先を指定します。通常は、設定と起動をまとめた`npm run test:astro-hono`を使ってください。
+
+```sh
+E2E_ACCOUNT_AUTH_LOCAL=1 E2E_BASE_URL=http://localhost:8787 npx playwright test tests/e2e/account-security.spec.ts --workers=1
+```
+
+## 計測・Web監査
+
+トップページのTTFB、LCP、CLS、初期転送量は、Chromeを使える環境で次のように測定します。結果は標準出力に表示し、利用者の計測データやレポートファイルは保存しません。
+
+```sh
+SITE_URL=https://anzdrop.com npm run measure:home
+```
+
+ローカル環境では、開発サーバーを起動して`SITE_URL`をそのURLに変えてください。SEO・Lighthouseの手順、対象ページ、閾値は[Web監査](./web-audit.md)を参照してください。
+
+## ローカル起動の共通処理
+
+`scripts/run-command.mjs`は子プロセスの終了コードとシグナル転送を共通化します。子プロセス終了時には転送ハンドラを解除し、呼び出し元のハンドラは残します。`scripts/local-worker-config.mjs`は、プレビューと隔離E2Eの使い捨て設定についてパス解決とCron除去を行います。
+
+通常のAPIプレビューはルートの設定から`.dev.vars`を読み、隔離E2Eは`tmp/astro-hono`内の設定を使います。
+
+Dockerを使う場合は、[Dockerfile](../Dockerfile)と[compose.yaml](../compose.yaml)を利用できます。日本語ロケールを含む開発コンテナで、`docker compose up`後に同じセットアップ手順を実行します。
+
+## 用語
+
+| 用語 | このガイドでの意味 |
+| --- | --- |
+| Worker / workerd | Cloudflareの実行単位と、そのローカル実行にも使うランタイム |
+| D1 / R2 | 共有・認証などのメタデータを保存するDB / 暗号化済みファイルを保存するストレージ |
+| Service Binding | Worker同士を接続する仕組み。AstroからHonoへの認証確認にも使う |
+| Secret / 公開値 | Worker側だけで使う認証情報などの設定 / ブラウザへ渡して使うサイトキーなどの設定 |
+| CSP / nonce | スクリプトなどの実行を制限する応答ヘッダー / 許可するスクリプトに付けるリクエストごとの値 |
+| E2E / CDP | ブラウザ操作から結果までを通して確かめるテスト / Chromiumの制御に使うプロトコル |
+| TTFB / LCP / CLS | 応答の先頭が届くまでの時間 / 主な内容が表示されるまでの時間 / 画面のレイアウトのずれ |
+
+手順と実際の動きが食い違う場合は、使ったコマンドと機能を添えてリポジトリのIssueで報告してください。秘密情報や実ユーザーのデータは含めないでください。

@@ -1,28 +1,48 @@
 # アカウント・有料プラン
 
-Anzdropは元々、認証もアカウントも一切ない匿名の公開サービスとして運用されている。収益化のため有料プラン(容量上限緩和・保存期間延長)を導入するにあたり、**メールアドレスは一切収集しない**という前提でアカウント機能を追加した。
+アカウントなしでも無料でファイルを送受信できます。有料プランを使う場合は、アカウントIDとパスワードで登録します。登録にメールアドレスは使いません。
 
-アカウント画面はAstro内のReact islands、認証APIは既存Worker内のHonoで提供する。同じOrigin・セッションCookie・認証途中Cookie・session_versionを継承し、移行でパスキー/OTPやリカバリーコードをリセットしない。
+アカウント画面はAstro内のReact islands、認証APIはHonoで提供します。以下では、認証・復旧の条件、プランの上限、課金と管理者付与の仕組みを説明します。
 
 ## アカウントの考え方
 
-- アカウントは**本人が設定するアカウントID + パスワード**を基本とし、パスキー・認証アプリのOTPを任意で追加できる。メールアドレスやその他の個人情報は保存しない。
+- アカウントは**本人が設定するアカウントID + パスワード**を基本とし、パスキー・認証アプリのOTPを任意で追加できる。アカウント登録ではメールアドレス・氏名・住所を求めない。
 - アカウントIDはサインアップ時に本人が自由に決める(`lib/account/id.ts`の`isValidAccountId()`、3〜32文字・半角英数字とハイフン・アンダースコアのみ)。一意性はDB(`accounts.id` PRIMARY KEY)への`INSERT ... ON CONFLICT (id) DO NOTHING`の結果(`changes`)で判定し、既に使われていれば409を返す。後から変更する手段はない。
 - パスワードを忘れた場合の再設定は、サインアップ時に1回だけ表示される**リカバリーコード**でのみ行える。メールでの再設定手段は存在しないため、リカバリーコードを紛失すると運営側でも復旧できない(共有の復号鍵と同じ扱い)。
 - ログインセッションはHttpOnly・Secure・SameSite=StrictなCookie(`anzdrop_session`)に、`jose`で署名したJWTを保存する形で管理する(`lib/account/session.ts`)。
 - 未ログイン時は常に無料プラン(free)として扱われ、既存の匿名アップロードの挙動は一切変わらない。
 - JWTには`accounts.session_version`の値を埋め込み、検証のたびにDBの現在値と比較する。パスワード再設定(`/api/account/recover`)は`session_version`をインクリメントするため、それより前に発行済みのセッションCookie(盗まれている可能性がある)は再設定と同時に全て失効する。ログイン自体はこの値を変えない(他デバイスの既存セッションを意図せず切断しないため)。
 
-### ログイン状態に応じた画面遷移・ヘッダー表示
+### ログイン状態に応じた画面と操作
 
-- アカウント関連の画面は、いずれも`/mypage`配下(`/mypage`〈マイページ〉・`/mypage/login`・`/mypage/signup`・`/mypage/recover`・`/mypage/security`・`/mypage/billing`)にまとめて配置している(`apps/public/src/pages/mypage/`)。`apps/public/src/layouts/InteractiveLayout.astro`で配下すべてを`noindex, nofollow`にしている。画面名は「マイページ」で統一する(h1・ヘッダーメニュー・`/mypage/billing`の戻りリンク)。
-- **`/mypage`(マイページ)は状態確認専用**。表示するのはアカウントID・現在のプランと契約状態(「カードで自動更新中」「解約予約中」「有効期限あり（自動更新なし）」「無料プラン」＋次回更新日/有効期限)・現プランの主な内容(最大ファイルサイズ・最大保存期間・ブラウザ内プレビュー可否)・パスワード再設定の注意書き(リカバリーコードのみ・紛失時は復旧不可。コード自体は出さない)と、`/mypage/billing`へのリンク。プラン選択・決済・解約などの操作は一切持たず、`/mypage/billing`へ誘導する。誘導ボタンは契約状態に合わせて変える(`describeBillingCta()`。カードで自動更新中は「解約する」、解約予約中は「解約を取り消す」、それ以外は「プラン・お支払いへ」)が、遷移先は常に`/mypage/billing`で、実際の解約・再開は遷移先の`SubscriptionManager`で行う。トーンは、自動更新中(`active`)のみこのボタンが「解約」の入り口になるため前進系CTAのブランドカラー塗りではなく控えめなアウトライン(`tone: "neutral"`)にし`/mypage/billing`側の解約ボタンと揃える。解約予約中(`canceling`)は「解約を取り消す=契約を続ける」復帰系の操作で、期限を過ぎると無料に戻るため見つけやすい`primary`にする。
-- 読み込み(`loadPlanStatus()` = `POST /api/billing/stripe/sync`)に失敗した場合、`/mypage`・`/mypage/billing`とも「一時的に読み込めませんでした。」の文言と**再読み込みボタン**を出す(`sync`は毎回Stripeを叩くため一時的な失敗がありうる。手動リロードしか手段がないと詰むため)。
-- `/mypage`と`/mypage/billing`はどちらも初回表示時に`POST /api/billing/stripe/sync`を呼ぶ。契約状態(「自動更新中」か「解約予約中」か)と次回更新日は`GET /api/account/me`(純粋DB、`subscription`要約を返さない)では出せないため。**401**なら`/mypage/login`へリダイレクト、それ以外の失敗(500等)は「読み込みに失敗しました。」表示に留める(`sync`は毎回Stripeを叩くため500がありうる。500でリダイレクトすると`/mypage/login`側がログイン済みを見て戻しループになる)。この「sync取得＋401/500ハンドリング＋契約状態ラベル判定」は`lib/account/planStatus.ts`(`loadPlanStatus()` / `describeContract()`)に集約し、`/mypage`と`/mypage/billing`(初回＋決済後ポーリング)で共有する。
-- カード契約の**解約・再開の操作(SubscriptionManager)は`/mypage/billing`にのみ置く**。`/mypage`は契約状態を表示し、`/mypage/billing`への誘導ボタンをその状態に合わせるだけ(操作自体は持たない)。`/mypage/billing`の戻りリンクは「← マイページ」。
-- 逆に`/mypage/login`・`/mypage/signup`はログイン済み(`GET /api/account/me`が成功)なら`/mypage`へリダイレクトする(`lib/account/useRedirectIfLoggedIn.ts`)。ログイン成功後の遷移先も`/mypage`。行き先は暫定で、将来変更の可能性がある。
-- いずれもサーバー側でのリダイレクト(Server Component等)ではなく、マウント後にAPIを呼んでクライアント側で判定する方式。判定が終わるまでは対象画面の代わりにスピナーを表示する。
-- 共通ヘッダー(`components/brand/SiteHeader.tsx`)もマウント時に`GET /api/account/me`を呼び、ログイン中はアカウントIDのプルダウン(クリックで「マイページ」〈`/mypage`〉「プラン・お支払い」〈`/mypage/billing`〉「ログアウト」を表示。モバイルはアカウントID行が`/mypage`リンク)を、未ログイン時は「ログイン」「アカウント作成」のリンクを表示する。判定が終わるまではどちらも表示しない(ログイン中の一瞬だけ未ログイン用ボタンが見えてしまうのを防ぐため)。
+アカウント画面は`apps/public/src/pages/mypage/`に置き、`InteractiveLayout.astro`で`noindex, nofollow`にする。画面名は「マイページ」で統一する。
+
+| 画面 | 表示・操作 |
+| --- | --- |
+| `/mypage` | アカウントID、プラン・契約状態、次回更新日または有効期限、容量・保存期間・プレビュー条件、復旧時の注意。リカバリーコード自体は表示しない |
+| `/mypage/billing` | プラン選択・決済と、`SubscriptionManager`によるカード契約の解約・再開。戻り先はマイページ |
+| `/mypage/login`・`/mypage/signup` | 未ログイン時の入力画面。ログイン済みなら`/mypage`へ遷移 |
+
+マイページから支払い画面へのボタンは、`describeBillingCta()`で契約状態に合わせる。実際の解約・再開は、遷移先の`SubscriptionManager`で行う。
+
+| 契約状態 | ボタン | 表示 |
+| --- | --- | --- |
+| 自動更新中（`active`） | 解約する | `neutral`のアウトライン |
+| 解約予約中（`canceling`） | 解約を取り消す | `primary` |
+| その他 | プラン・お支払いへ | 通常の主要操作 |
+
+`/mypage`と`/mypage/billing`は初回に`POST /api/billing/stripe/sync`で契約状態を取得する。`GET /api/account/me`はDBを参照し、Stripeの契約要約を返さない。取得・状態ラベル・エラー判定は`lib/account/planStatus.ts`の`loadPlanStatus()`と`describeContract()`で共有し、決済後のポーリングにも使う。
+
+401の場合だけログイン画面へ遷移する。それ以外の失敗ではエラーと再読み込みボタンを表示する。Stripe側の一時的な失敗でもログイン画面へ戻すと、ログイン済み判定でマイページへ戻され、遷移がループするためである。
+
+ログイン・登録画面のログイン済み判定は`useRedirectIfLoggedIn`で行う。画面をマウントしてからAPIへ問い合わせ、判定中はスピナーを表示する。ログイン成功後の遷移先は`/mypage`。
+
+共通ヘッダーは`GET /api/account/me`の結果に合わせる。判定中はアカウント用リンクを表示しない。
+
+| 状態 | ヘッダー |
+| --- | --- |
+| ログイン中 | アカウントIDのメニューに「マイページ」「プラン・お支払い」「ログアウト」。モバイルのアカウントID行は`/mypage`へのリンク |
+| 未ログイン | 「ログイン」「アカウント作成」 |
 
 ### ログインのロックアウト(総当たり対策)
 
@@ -111,7 +131,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 - `plan_expires_at` は他の書き込み経路と同じく `toISOString()` の固定フォーマットで格納する(ルート側で正規化)。「無期限」は `INDEFINITE_PLAN_EXPIRES_AT` を入れ、ユーザーの `/mypage`(`describeContract()`)はこの番兵を検知して「利用中（無期限）」と表示し、期限日や更新の催促を出さない。
 - `/admin` 付与中(実効有料プランがあり、生きているカード契約も有効な Bitcoin 前払いも無い状態。`isAdminGrantedPaidPlan()`([`lib/billing/cardPlan.ts`](../lib/billing/cardPlan.ts)))は、`POST /api/billing/stripe/sync` が `adminGranted: true` を返す。`/mypage/billing` は現在のプラン表示だけを出し、カード/Bitcoin の契約ボタンをグレーアウトする。`POST /api/billing/stripe/subscription` と `POST /api/billing/btc/charge` も 409 で拒否する。Bitcoin で有効期間がある場合は admin 付与とはみなさず、従来どおり更新できる。
 
-## 新規APIエンドポイント
+## 関連API
 
 詳細は[`api.md`](./api.md)を参照。
 
@@ -120,7 +140,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 - `POST /api/billing/btc/charge` / `POST /api/billing/btc/webhook`
 - `GET /api/admin/accounts/[accountId]` / `POST /api/admin/accounts/[accountId]`(プラン付与) / `DELETE /api/admin/accounts/[accountId]`(無料プランへ戻す)
 
-## 新規テーブル
+## 関連テーブルとマイグレーション
 
 `accounts` / `btc_payments` / `stripe_events`(migration 0009)。詳細は[`database.md`](./database.md)を参照。
 
@@ -128,7 +148,7 @@ Standardプラン新設(migration 0013・0014)で、`accounts.plan`の値域が3
 
 ## パスキー・OTPを任意で設定する
 
-マイページの「ログイン・セキュリティ」から `/mypage/security` を開く。既存アカウントも初期状態は未設定で、全員のパスワードは維持する。
+マイページの「ログイン・セキュリティ」から `/mypage/security` を開く。既存アカウントも初期状態は未設定で、パスワードによるログインも引き続き使える。
 
 | 設定 | パスワードでログイン | パスキーでログイン |
 | --- | --- | --- |
@@ -153,8 +173,6 @@ OTPは20バイトの秘密、SHA-1、6桁、30秒周期のTOTP。QRコードは�
 
 モーダルは背景操作とスクロールを止め、閉じた際は起点のボタンにフォーカスを戻す。処理中は閉じられない。閉じるボタン・Escape・背景クリックによる中止は同じAPIで設定途中情報を削除し、画面からパスワード・OTP秘密を取り除く。中止時はモーダルを即座に閉じ、通信中の表示は出さない。中止APIの処理完了まで次の設定操作を無効にし、完了時に起点へフォーカスを戻す。Turnstileの対話表示もモーダル内に配置する。変更成功後は完了モーダルから再ログインへ進む。
 
-セキュリティ画面の外枠はマイページ・プラン管理と同じ中央カード（最大幅 `max-w-md`、外枠 `rounded-lg`）に揃えています。設定項目は薄い背景と `rounded` の枠、操作ボタン・入力欄も既存のアカウント画面に合わせ、登録・本人確認はモーダル内で行います。
+セキュリティ画面は、他のマイページと同じ中央カード（`max-w-md`・`rounded-lg`）を使う。設定項目は薄い背景と`rounded`の枠、モーダルは区切り線のない見出しと共通の余白を使う。進行段階は左のアクセント線で示し、実行ボタンを強調する。
 
-操作モーダルは区切り線のない見出しと共通の余白を使い、進行段階を左のアクセント線で表示します。実行ボタンを強調し、キャンセルは控えめな表示にしています。
-
-モーダルは開く際に180ms、閉じる際に120msのフェードと小さな移動を使います。`prefers-reduced-motion: reduce` ではアニメーションを省略します。中止時の秘密の消去とサーバー側の中止処理はアニメーションを待ちません。
+モーダルの開閉は180ms・120msのフェードと小さな移動を使い、`prefers-reduced-motion: reduce`では省略する。中止時の秘密の消去とサーバー側の中止処理は、アニメーションを待たない。文言と共通部品の基準は[UIデザインシステム](../DESIGN.md)を参照。

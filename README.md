@@ -1,86 +1,66 @@
 # Anzdrop
 
-Anzdrop(あんずどろっぷ)は、Cloudflare Workers上で動くエンドツーエンド暗号化(E2EE)のファイル共有サービスです。ファイルはブラウザ上で暗号化してからアップロードされ、復号鍵はURLのフラグメント(`#`以降)にのみ含まれるため、サーバー(運営者)は平文はもちろん復号鍵も一度も目にしません。
+Anzdrop（あんずどろっぷ）は、ブラウザでファイルを暗号化して共有するサービスです。ファイルの中身と名前を暗号化してから送信し、復号も受信者のブラウザで行います。この仕組みをエンドツーエンド暗号化（E2EE）と呼びます。
 
-## 特徴
+パスワードを設定しない共有では、復号鍵を共有URLの`#`以降に含めます。この部分はHTTPリクエストに含まれないため、サーバーには届きません。パスワードを設定した共有では、ブラウザで鍵をパスワード保護し、生の復号鍵をURLに含めません。
 
-- **E2EE**: ファイルはブラウザでAES-256-GCM暗号化してからアップロード。復号鍵はURLフラグメントに載るのみで、サーバーへは送信されません。
-- **チャンク分割・マルチパートアップロード**: 8MiB単位で暗号化・アップロードするため大容量ファイルにも対応(最大5GB)。
-- **保存期間の選択**: 「1回」「1日」「3日」「7日」から選択可能。「1回」はファイルごとに1回ダウンロードされると即座に削除されます。
-- **パスワード保護(任意)**: 設定するとパスワード由来の鍵で実際の暗号化キーをラップして保存します。パスワードなしではサーバーが侵害されても復号できません。
-- **通報・モデレーション**: 誰でも共有URLを通報でき、通報時に種類(児童ポルノ等の違法コンテンツ・マルウェア・個人情報の無断掲載・スパム・その他)を選択できます。児童ポルノ等の通報は管理画面で自動的に最優先表示されます。著作権など権利者からの申し立ては専用フォーム(`/report/rights`)で受け付けます。
-- **管理画面**: `/admin`でCloudflare Access配下の通報一覧・共有削除ができます。
-- **自動掃除**: 期限切れの共有や、完了しなかったアップロードセッションをCronで定期的に削除します。
+## 利用できる機能
 
-詳しい設計は [`docs/`](./docs) を参照してください。
+アカウントを作らずにファイルを送受信できます。無料プランは1ファイル5GBまで、保存期間は「1回」「1日」「3日」「7日」から選べます。「1回」のファイルは、1回のダウンロード完了後に削除され、ダウンロードされない場合も7日で期限切れになります。
 
-## 技術スタック
+Standardは1ファイル20GB・最長15日、Premiumは50GB・最長30日に対応します。アカウント登録にメールアドレスは使いません。プランの条件と課金の仕組みは[アカウント・有料プラン](./docs/accounts.md)を参照してください。
 
-- [Astro](https://astro.build/)(すべての画面) / React / [Hono](https://hono.dev/)(API・管理画面の認証) / TypeScript
-- [Cloudflare Workers](https://workers.cloudflare.com/)（ルーター・Astro・Honoの3 Worker）
-- [Cloudflare D1](https://developers.cloudflare.com/d1/)(メタデータ)/ [Cloudflare R2](https://developers.cloudflare.com/r2/)(暗号化済みファイル本体)
-- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)(管理画面の認証)/ [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/)(アップロード時のBot対策)
-- Tailwind CSS v4 / Vitest
+ファイルは8MiBずつ暗号化・転送するため、送信前にファイル全体をメモリへ読み込む必要はありません。パスワード保護、複数ファイルの共有、受信時のZIP保存に対応しています。通報・問い合わせの受付と管理画面、期限切れデータの自動削除も備えています。
 
-## セットアップ
+## 開発環境を起動する
 
-```bash
-npm install
-```
+Node.js 22.12以降とnpmを使います。CIはNode.js 24系です。初回の環境設定とローカルD1へのマイグレーション適用は、[開発ガイド](./docs/development.md)に従ってください。
 
-Cloudflareの各種バインディング(D1・R2)や認証(Cloudflare Access・Turnstile)の準備が必要です。手順は [`docs/development.md`](./docs/development.md) を参照してください。
-
-### 開発サーバー
-
-```bash
+```sh
+npm ci
+# 開発ガイドに沿って環境変数とローカルD1を準備する
 npm run dev
 ```
 
-[http://localhost:3000](http://localhost:3000) で確認できます。ローカルのD1/R2はwranglerのローカル永続化機能を利用します。
+ブラウザで [http://localhost:3000](http://localhost:3000) を開きます。APIはローカルのHono Workerで動き、D1・R2もローカル環境を使います。認証や外部サービス連携の設定は、確認したい機能に応じて追加します。
 
-### 主なスクリプト
-
-| コマンド | 内容 |
+| コマンド | 用途 |
 | --- | --- |
-| `npm run dev` | Astro＋React（localhost:3000）とHono API（8788）を起動 |
-| `npm run test:astro-hono` | ローカルworkerdとChromiumで移行画面・認証・ファイル共有を検証 |
-| `npm run build` | Astro・Hono・ルーターのローカルビルド（アップロードなし） |
-| `npm run dev:public` | Astro公開ページの開発サーバー（4321番） |
-| `npm run build:public` | Astro公開Workerのビルド |
-| `npm run check:public` | Astroの型・テンプレート検証 |
-| `npm run test:public` | 実WorkersとChromiumで公開ページを検証 |
-| `npm run check` | Lint・各型チェック・Vitestを順に実行 |
-| `npm run lint` | ESLint |
-| `npm run measure:home` | Lighthouseによるトップページの合成計測。`SITE_URL`で対象を指定可能 |
-| `npm run audit:seo` | 起動中のサイトに対する SEO 自動検査(詳細は [`docs/web-audit.md`](./docs/web-audit.md)) |
-| `npm run audit:lighthouse` | 起動中のサイトに対する Lighthouse CI(閾値・対象 URL は `config/web-audit.json`) |
-| `npm run audit:web` | SEO + Lighthouse をまとめて実行 |
-| `npm test` | Vitestによるユニットテスト実行 |
-| `npm run test:coverage` | カバレッジ付きテスト実行 |
-| `npm run test:e2e` | Playwright による本番/指定URL向け E2E(`E2E_BASE_URL`で対象変更可) |
-| `npm run preview` | ビルド済み3 Workerをローカルでプレビュー（先に `npm run build`） |
-| `npm run deploy` | GitHub Actionsのmain push環境で監査アーカイブを生成・デプロイ |
+| `npm run dev` | Astro＋Reactの画面とHono APIを起動 |
+| `npm run check` | Lint、各型チェック、Vitestを順に実行 |
+| `npm test` | Vitestだけを実行 |
+| `npm run test:astro-hono` | 隔離したローカル環境で画面・認証・ファイル共有を検証 |
+| `npm run build` | 3つのWorkerをビルド。Cloudflareにはデプロイしない |
+| `npm run preview` | ビルド済みのWorkerをローカルで起動 |
+| `npm run audit:web` | 起動中のサイトをSEO・Lighthouseで検査 |
 
-`main`ブランチへのpushで GitHub Actions が自動的にD1マイグレーション適用とデプロイを行います([`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml))。
+公開ページだけの開発、3ブラウザのE2E、計測コマンドの使い方は[開発ガイド](./docs/development.md)にまとめています。
 
-本番デプロイでは、ビルドした3つのWorkersのバンドルと静的アセットをtarに固定し、SHA-256とGitHub Artifact Attestationを記録します。デプロイ後には各WorkerのVersion ID・Deployment IDを含むmanifestをActions Artifactへ保存します。検証手順は[`docs/deployment.md`](./docs/deployment.md#監査用artifactとmanifest)を参照してください。これはソースからCloudflareのデプロイ記録までの来歴を追跡する仕組みであり、Cloudflareの実サーバーで今動くコードを暗号学的に証明するRemote Attestationではありません。Cloudflare自体も信頼境界に残ります。
+## 構成とデプロイ
 
-## ドキュメント
+画面はAstroとReact、APIはHonoで実装しています。Cloudflare上では、リクエストを振り分けるルーター、画面を返すAstro、APIを処理するHonoの3つのWorkerを使います。D1には共有・認証などのメタデータ、R2には暗号化済みファイルを保存します。管理画面はCloudflare Accessで保護し、Bot対策にはTurnstileを使います。
 
-| ドキュメント | 内容 |
+`main`へのPRマージ後、GitHub Actionsが検証・ビルド・D1マイグレーション・デプロイを実行します。配信した成果物は、SHA-256とGitHub Artifact Attestation、WorkerのVersion ID・Deployment IDで追跡できます。これはデプロイの来歴を確認する仕組みで、Cloudflare上の実行コードを暗号学的に証明するものではありません。運用手順は[デプロイガイド](./docs/deployment.md)を参照してください。
+
+## 目的別のドキュメント
+
+| 知りたいこと | ドキュメント |
 | --- | --- |
-| [`docs/architecture.md`](./docs/architecture.md) | システム構成・リクエストの流れ・Cloudflareバインディング |
-| [`docs/crypto.md`](./docs/crypto.md) | E2EEの設計(鍵の生成・共有・パスワード保護の仕組み) |
-| [`docs/api.md`](./docs/api.md) | APIエンドポイント一覧 |
-| [`docs/database.md`](./docs/database.md) | D1のテーブル定義・マイグレーション |
-| [`docs/analytics.md`](./docs/analytics.md) | 計測・分析基盤の設計・イベント一覧・KPI定義 |
-| [`docs/development.md`](./docs/development.md) | ローカル開発環境の構築手順 |
-| [`docs/deployment.md`](./docs/deployment.md) | デプロイ・CI/CD・必要なシークレット |
-| [`docs/moderation.md`](./docs/moderation.md) | 通報・モデレーション機能の仕様 |
-| [`docs/legal.md`](./docs/legal.md) | 利用規約・プライバシーポリシー・特定商取引法に基づく表記の各ページ |
-| [`docs/media.md`](./docs/media.md) | microCMS を使った `/blog` オウンドメディアの運用 |
-| [`docs/web-audit.md`](./docs/web-audit.md) | PR 時の SEO / Lighthouse 自動検査・閾値・ローカル実行方法 |
-| [`docs/ci-automations.md`](./docs/ci-automations.md) | リンク切れチェック・デプロイ後 E2E・週次開発レポートの自動化 |
+| ローカル起動・テスト・動作確認 | [開発ガイド](./docs/development.md) |
+| 全体構成・処理の流れ・コードの責務 | [アーキテクチャ](./docs/architecture.md) |
+| 暗号化・復号・鍵の受け渡し | [E2EEの設計](./docs/crypto.md) |
+| APIの入力・応答・認証条件 | [APIリファレンス](./docs/api.md) |
+| D1のテーブル・保持データ・マイグレーション | [データベース](./docs/database.md) |
+| アカウント・パスキー・OTP・有料プラン | [アカウント・有料プラン](./docs/accounts.md) |
+| 本番環境・Secret・反映・切り戻し | [デプロイガイド](./docs/deployment.md) |
+| CIの実行条件・失敗時の対応・PR自動分割 | [CI自動化](./docs/ci-automations.md) |
+| イベント・識別子・分析指標 | [計測・分析基盤](./docs/analytics.md) |
+| 通報・問い合わせ・管理画面 | [通報・モデレーション](./docs/moderation.md) |
+| 規約・ポリシーページの更新 | [規約・ポリシーページ](./docs/legal.md) |
+| microCMS・ブログ配信 | [オウンドメディア](./docs/media.md) |
+| SEO・Lighthouseの検査 | [Web監査](./docs/web-audit.md) |
+| Safari製品での実機確認 | [Safari実機確認表](./docs/safari-file-sharing-checklist.md) |
+| 色・文字・レイアウト・共通部品 | [UIデザインシステム](./DESIGN.md) |
 
 ## ライセンス
 

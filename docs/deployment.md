@@ -97,7 +97,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
-`npm run deploy` は Wrangler の `--var` を通じて `DEPLOYMENT_ENV=production` を本番 Worker にだけ注入する。共有の `wrangler.jsonc` には定義しないため、ローカルプレビューや未指定の環境には引き継がれない。
+監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`はこの成果物を配信する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
 
 ## Cloudflareリソース
 
@@ -177,9 +177,7 @@ npm run preview # ビルド済みのルーター・Astro・Honoをローカル�
 
 本番反映はGitHub Actionsの監査付きデプロイ経路を使用する。`npm run deploy`も、信頼されたGitHub Actionsのmain push環境を確認して監査アーカイブの生成と配信を行うため、単独のローカル手動デプロイには使用しない。
 
-初回の反映順は、内部認証経路を備えたAPP、APPへのService Bindingを備えたPUBLIC、最後にルーターとする。APPの既存D1・R2・認証Secretと、PUBLICの既存microCMS読み取り用Secretを引き継ぐ。今回の移行に新しいマイグレーションはない。Astroへ認証Secretをコピーしない。
-
-途中で失敗した場合は後続Workerの更新を中断する。旧ルーターを維持していても、先に更新したAPPの旧画面は利用できなくなるため、以前の監査アーカイブから旧構成全体を復元する。切り戻し手順は後述する。
+反映順はAPP、PUBLIC、ルーターです。APPのD1・R2・認証Secretと、PUBLICのmicroCMS読み取り用Secretを引き継ぎます。認証SecretをPUBLICへコピーしないでください。途中で失敗した場合は後続Workerの更新を中断し、同じ3 Worker構成の監査済みアーカイブで切り戻します。初回移行時の旧構成への切り戻しは、末尾の「過去の構成から移行するとき」を参照してください。
 
 ## OTP暗号化鍵を設定してから導入する
 
@@ -196,6 +194,10 @@ rm /安全な一時ディレクトリ/account-auth-key
 
 OTP有効化後は、OTPを要求しない旧コードへロールバックしない。修正はOTP検証を維持する対応コードで行う。`ACCOUNT_AUTH_LOCAL_ORIGIN` はローカル検証専用で、本番には配置しない。
 
+## 過去の構成から移行するとき
+
+以下はAstro導入・Next.js撤去時の記録です。通常の反映には前述の3 Worker構成を使います。OTP有効化後は、ここでもOTP検証を持たない旧コードへ戻してはいけません。
+
 ### Astro公開ページWorkerの導入
 
 `anzdrop-public` を追加する。`apps/public/astro.config.mjs` はCloudflare adapterでSSRし、`session: false` と画像パススルーを明示するため、追加ストレージやImages bindingは不要。ブログ用の `MICROCMS_API_KEY` を新Workerへ設定する必要がある。既存アプリの認証・決済・E2EE用Secretをコピーしない。
@@ -208,8 +210,8 @@ OTP有効化後は、OTPを要求しない旧コードへロールバックし�
 
 初回は内部認証経路を持つAPP、全画面を持つPUBLIC、ルーターの順で同じ監査済みアーカイブから反映します。D1/R2・認証/決済Secret・Cronは既存APPに残し、追加マイグレーションはありません。CIの既存公開ビルド値も引き継ぎます。
 
-旧Next.js経路はソース・ビルド・監査成果物から撤去します。初回移行の切り戻しは以前の監査アーカイブと当時のデプロイ手順を使い、APP・HOME・PUBLIC・ルーターの旧構成全体を復元します。ルーターだけを戻しても新APPは旧画面を提供できません。現在の3 Worker用スクリプトで古い4 Worker成果物を反映しないでください。旧HOME Worker自体は今回削除しません。
+旧Next.js経路はソース・ビルド・監査成果物から撤去します。初回移行の切り戻しは以前の監査アーカイブと当時のデプロイ手順を使い、APP・HOME・PUBLIC・ルーターの旧構成全体を復元します。ルーターだけを戻しても新APPは旧画面を提供できません。現在の3 Worker用スクリプトで古い4 Worker成果物を反映しないでください。この移行手順では旧HOME Worker自体を削除しません。
 
 ## CIとローカルで同じ検証を実行する
 
-PRのCIとmain更新時のデプロイは、`npm run check -- lint`のように検証名を指定します。指定できる名前は`lint`・`types`・`router`・`public`・`test`です。ローカルでは`npm run check`で全項目を順に実行できます。ジョブ・ステップ名、GitHub Tokenの権限、署名対象のアーカイブ、D1マイグレーションとデプロイの順序は従来どおりです。
+PRのCIとmain更新時のデプロイは、`npm run check -- lint`のように検証名を指定します。指定できる名前は`lint`・`types`・`router`・`public`・`test`です。ローカルでは`npm run check`で全項目を順に実行できます。CIの実行条件と失敗時の確認先は[CI自動化](./ci-automations.md)を参照してください。
