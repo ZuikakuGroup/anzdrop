@@ -24,36 +24,35 @@ describe("bufferAhead", () => {
     expect(result).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
-  it("does not read more than `capacity` items ahead of the consumer", async () => {
+  it.each([1, 3, 8])("stops reading at capacity %i until the consumer takes an item", async (capacity) => {
     const produced: number[] = [];
-    const iterator = bufferAhead(range(10, produced), 3);
+    const iterator = bufferAhead(range(12, produced), capacity);
 
-    // consumerがまだ何も取り出していない間、先読みは高々capacity+1件で止まるはず
-    // (+1は、キューに空きがあるか確認する前に生成元から1件引いてしまう分)。
+    // Let the producer fill its queue while the consumer is paused.
     await sleep(10);
-    expect(produced.length).toBeLessThanOrEqual(4);
+    expect(produced).toHaveLength(capacity);
 
-    await iterator.next();
+    expect(await iterator.next()).toEqual({ value: 0, done: false });
     await sleep(10);
-    // 1件消費した分、また1件先読みが進む。
-    expect(produced.length).toBeLessThanOrEqual(5);
+    // Only the newly freed slot may be filled, with no extra item held outside the queue.
+    expect(produced).toHaveLength(capacity + 1);
 
-    // 残りを全部消費すれば、生成元も最後まで進む。
     const rest: number[] = [];
     for await (const item of iterator) {
       rest.push(item);
     }
-    expect(produced).toHaveLength(10);
+    expect(rest).toEqual(Array.from({ length: 11 }, (_, i) => i + 1));
+    expect(produced).toHaveLength(12);
   });
 
-  it("propagates errors from the source", async () => {
+  it.each([1, 5])("propagates source errors after draining a queue of capacity %i", async (capacity) => {
     async function* failing(): AsyncGenerator<number> {
       yield 1;
       yield 2;
       throw new Error("boom");
     }
 
-    const iterator = bufferAhead(failing(), 5);
+    const iterator = bufferAhead(failing(), capacity);
     const result: number[] = [];
 
     await expect(async () => {

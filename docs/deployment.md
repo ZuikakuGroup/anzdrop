@@ -97,7 +97,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
-`npm run deploy` は Wrangler の `--var` を通じて `DEPLOYMENT_ENV=production` を本番 Worker にだけ注入する。共有の `wrangler.jsonc` には定義しないため、ローカルプレビューや未指定の環境には引き継がれない。
+監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`はこの成果物を配信する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
 
 ## Cloudflareリソース
 
@@ -177,9 +177,14 @@ npm run preview # ビルド済みのルーター・Astro・Honoをローカル�
 
 本番反映はGitHub Actionsの監査付きデプロイ経路を使用する。`npm run deploy`も、信頼されたGitHub Actionsのmain push環境を確認して監査アーカイブの生成と配信を行うため、単独のローカル手動デプロイには使用しない。
 
-初回の反映順は、内部認証経路を備えたAPP、APPへのService Bindingを備えたPUBLIC、最後にルーターとする。APPの既存D1・R2・認証Secretと、PUBLICの既存microCMS読み取り用Secretを引き継ぐ。今回の移行に新しいマイグレーションはない。Astroへ認証Secretをコピーしない。
+反映順はAPP、PUBLIC、ルーターです。APPのD1・R2・認証Secretと、PUBLICのmicroCMS読み取り用Secretを引き継ぎます。認証SecretをPUBLICへコピーしないでください。途中で失敗した場合は後続Workerの更新を中断します。復旧は次の手順で行います。
 
-途中で失敗した場合は後続Workerの更新を中断する。旧ルーターを維持していても、先に更新したAPPの旧画面は利用できなくなるため、以前の監査アーカイブから旧構成全体を復元する。切り戻し手順は後述する。
+1. 失敗したWorkflowのログと、直近で成功したデプロイのmanifestを確認し、更新済みのWorkerとそのVersion IDを特定する。
+2. 最新の`main`から作業ブランチを作り、原因となる変更を修正するか、該当コミットをrevertする。OTP検証を外す変更や、適用済みD1マイグレーションと互換性のない変更は戻さず、互換性を保つ修正を行う。
+3. PRで検証・レビューを通し、`main`へマージする。通常のデプロイWorkflowが、新しい監査成果物を生成し、APP・PUBLIC・ルーターの順に配信する。
+4. デプロイの成功と各画面・APIの動作を確認し、生成されたmanifestで3 WorkerのVersion IDを確認する。
+
+現在のWorkflowは`main`へのpushだけで起動し、過去の監査アーカイブを選んで再配信する機能はありません。アーカイブの保管・検証だけでは切り戻しは実行できません。手元で本番用の環境変数を偽装して`deploy-audited.mjs`を動かさないでください。
 
 ## OTP暗号化鍵を設定してから導入する
 
@@ -196,20 +201,26 @@ rm /安全な一時ディレクトリ/account-auth-key
 
 OTP有効化後は、OTPを要求しない旧コードへロールバックしない。修正はOTP検証を維持する対応コードで行う。`ACCOUNT_AUTH_LOCAL_ORIGIN` はローカル検証専用で、本番には配置しない。
 
+## 過去の構成から移行するとき
+
+以下はAstro導入・Next.js撤去時の記録です。通常の反映には前述の3 Worker構成を使います。OTP有効化後は、ここでもOTP検証を持たない旧コードへ戻してはいけません。
+
 ### Astro公開ページWorkerの導入
 
 `anzdrop-public` を追加する。`apps/public/astro.config.mjs` はCloudflare adapterでSSRし、`session: false` と画像パススルーを明示するため、追加ストレージやImages bindingは不要。ブログ用の `MICROCMS_API_KEY` を新Workerへ設定する必要がある。既存アプリの認証・決済・E2EE用Secretをコピーしない。
 
 初回は公開Workerを作成してmicroCMS Secretを設定・確認した後、PUBLIC service bindingを持つルーターを切り替える。未設定のままルーターを切り替えるとブログ取得は失敗する。ローカル実装は本番設定を変更しない。
 
-監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。3 WorkerをAPP、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。通常の切り戻しは同じ構成の監査済みアーカイブを使います。
+監査成果物にはAstroのWrangler dry-runで検証した `entry.mjs` と全チャンク、および `dist/client` を含める。3 WorkerをAPP、PUBLIC、ルーターの順に同じ検証済みアーカイブからデプロイする。Astroも `DEPLOYMENT_ENV=production` を成果物内で固定する。公開Workerの設定にはD1/KV/R2/認証Secretを追加しない。通常の復旧は前述の修正・revertのPRによる再デプロイで行います。
 
 ### Next.js撤去後の反映・切り戻し
 
 初回は内部認証経路を持つAPP、全画面を持つPUBLIC、ルーターの順で同じ監査済みアーカイブから反映します。D1/R2・認証/決済Secret・Cronは既存APPに残し、追加マイグレーションはありません。CIの既存公開ビルド値も引き継ぎます。
 
-旧Next.js経路はソース・ビルド・監査成果物から撤去します。初回移行の切り戻しは以前の監査アーカイブと当時のデプロイ手順を使い、APP・HOME・PUBLIC・ルーターの旧構成全体を復元します。ルーターだけを戻しても新APPは旧画面を提供できません。現在の3 Worker用スクリプトで古い4 Worker成果物を反映しないでください。旧HOME Worker自体は今回削除しません。
+旧Next.js経路はソース・ビルド・監査成果物から撤去済みです。旧構成はAPP・HOME・PUBLIC・ルーターの4 Workerで、新APPは旧画面を提供しないため、ルーターだけを戻しても復旧しません。
+
+旧構成への復元には、当時のコード・設定・成果物と対応する配信経路が必要ですが、現在のWorkflowにはその手順を実装していません。現在の3 Worker用スクリプトで古い4 Worker成果物を配信しないでください。この移行では旧HOME Worker自体を削除していません。
 
 ## CIとローカルで同じ検証を実行する
 
-PRのCIとmain更新時のデプロイは、`npm run check -- lint`のように検証名を指定します。指定できる名前は`lint`・`types`・`router`・`public`・`test`です。ローカルでは`npm run check`で全項目を順に実行できます。ジョブ・ステップ名、GitHub Tokenの権限、署名対象のアーカイブ、D1マイグレーションとデプロイの順序は従来どおりです。
+PRのCIとmain更新時のデプロイは、`npm run check -- lint`のように検証名を指定します。指定できる名前は`lint`・`types`・`router`・`public`・`test`です。ローカルでは`npm run check`で全項目を順に実行できます。CIの実行条件と失敗時の確認先は[CI自動化](./ci-automations.md)を参照してください。

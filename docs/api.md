@@ -1,16 +1,18 @@
 # API リファレンス
 
-すべてのAPIはHono（`server/app.ts`）で振り分け、`server/routes/**/route.ts`のWeb標準Request/Responseハンドラーを既存Cloudflare Worker上で実行します。共有スキーマ・型は`lib/api/schemas`に置きます。URL・本文・Cookie・署名検証の仕様は維持します。既知のURLへの未対応メソッドは405、OPTIONSはAllow付き204、未定義URLはJSONの404を返し、APIレスポンスはno-storeです。特記のない限り認証不要です。
+APIはHono（`server/app.ts`）で振り分け、`server/routes/**/route.ts`のRequest/ResponseハンドラーをCloudflare Worker上で実行します。共有スキーマとルートごとの入出力型は`lib/api/schemas`、`RouteContext`などのAPI共通型は`lib/api/types.ts`に置きます。特記のない限り認証不要です。
+
+既知のURLへの未対応メソッドは405、OPTIONSはAllow付き204、未定義URLはJSONの404を返します。APIレスポンスには`no-store`を設定します。
 
 エラーレスポンスの `error` フィールドはクライアント側でそのまま表示されうるため、原則として日本語のメッセージを返す(zodスキーマの`{ error: "..." }`も含む)。
 
-APIを追加するときは`server/routes`のハンドラーと`server/app.ts`のメソッド/URL登録を追加し、共有スキーマ・型は`lib/api/schemas`へ追加します。
+APIを追加するときは`server/routes`にハンドラーを置き、`server/app.ts`の`registerRoute`でメソッドとURLを登録します。動的パラメータ名はパスから型として取得します。共有スキーマとルートごとの入出力型は`lib/api/schemas`へ、API共通型は`lib/api/types.ts`へ追加します。
 
 各ルートの実装は以下の共通ヘルパーを利用し、定型的なエラーハンドリング・検証・認可チェックを重複させない構成になっています。
 
 - [`lib/api/handler.ts`](../lib/api/handler.ts) の `withApiHandler()`: try/catchと汎用500応答の共通化。
-- [`lib/api/validate.ts`](../lib/api/validate.ts) の `parseJsonBody()`: [zod](https://zod.dev/) スキーマ(各ルートに置かれた `schema.ts`)によるリクエストボディの検証と400応答の共通化。リクエストボディのレスポンス型・リクエスト型も同じ `schema.ts` からエクスポートし、対応するクライアントコンポーネントと共有する。
-- [`lib/api/adminAuth.ts`](../lib/api/adminAuth.ts) の `requireAdmin()`: 管理画面APIの認可チェック共通化(詳細は「管理画面API」の節を参照)。
+- [`lib/api/validate.ts`](../lib/api/validate.ts) の `parseJsonBody()`: [zod](https://zod.dev/) スキーマ（`lib/api/schemas/**/schema.ts`）によるリクエストボディの検証。JSON解析後のスキーマ検証エラーには400、本文上限超過には413を返す。不正なJSON構文は例外として呼び出し元へ伝わり、`withApiHandler()`では汎用500応答になる。リクエスト型・レスポンス型も同じ `schema.ts` からエクスポートし、対応するクライアントコンポーネントと共有する。
+- [`lib/api/adminAuth.ts`](../lib/api/adminAuth.ts) の `withAdminHandler()` / `requireAdmin()`: `requireAdmin()`が管理者認証と既定で有効なOrigin検証を行い、`withAdminHandler()`が例外処理もまとめる。`verifyOrigin: false`でOrigin検証を省略できる（詳細は「管理画面API」の節を参照）。
 - [`lib/turnstile.ts`](../lib/turnstile.ts) の `requireTurnstile()`: Turnstile検証+403応答の共通化。
 - [`lib/rateLimit.ts`](../lib/rateLimit.ts) の `checkRateLimit()`: Workersのレート制限バインディングの消費+429応答の共通化(GitHub issue #81)。適用先・キー・設計方針は[`architecture.md`](./architecture.md#レート制限)を参照。
 - [`lib/share-auth.ts`](../lib/share-auth.ts) の `checkShareAccessible()`: 共有の有効期限切れ・一時停止判定の共通化(`GET /api/download/[shareId]` と `GET /api/file/[fileId]` で共用)。

@@ -22,11 +22,15 @@ Cloudflare Workers
 
 ## APIと操作画面の境界
 
-`server/routes/**/route.ts`はWeb標準のRequest/Responseを使う業務処理です。HonoはURL・HTTPメソッド・動的パラメータを振り分け、本文やCookieを加工しません。`server/runtime.ts`のAsyncLocalStorageにリクエスト単位のenvとExecutionContextを保持し、並行リクエストで共有しません。`lib/api/schemas/**/schema.ts`はクライアントと共有するスキーマ・型です。Next.js/OpenNextへの依存はありません。Stripe通知はHibikiの初期化時Response生成をworkerdのリクエスト内で行うため、通知ハンドラーだけを遅延importします。
+`server/routes/**/route.ts`はWeb標準のRequest/Responseを使う業務処理です。HonoはURL・HTTPメソッド・動的パラメータを振り分け、本文やCookieを加工しません。クライアントと共有するスキーマ・型は`lib/api/schemas/**/schema.ts`に置きます。
 
-Astroの操作画面は共通のReactコンポーネントを`client:load`でハイドレーションします。画面遷移は同一Originのフルドキュメント遷移です。外部スクリプトにはそのレスポンスのnonceを引き継ぎ、既存のnonce CSP・no-storeを維持します。復号鍵・ファイルの暗号化/復号は引き続きブラウザだけで扱います。新しい保存対象・テーブル・秘密鍵は追加しません。
+Honoの`registerRoute`はパスからパラメータ名を型として取り出し、既存ハンドラーへRequestとパラメータを渡します。リクエスト単位のenvとExecutionContextは引き続きAsyncLocalStorageで分離します。`withAdminHandler`は既存の管理者認証・Origin検証・例外処理をまとめ、読み取りルートだけが明示的にOrigin検証を省略します。課金APIは`requireBillingSession`でセッション確認と厳密なOrigin検証を行い、その後のレート制限や入力検証は各ルートの順序を維持します。
 
-ファイル保存のブラウザ検証で、Service WorkerのEOF通知直後に隠しiframeを撤去すると、小ファイルのダウンロード開始がキャンセルされる既存の競合を確認しました。通知後も1秒だけiframeを保持してブラウザの開始処理を待ち、復号バイト列が一致するE2Eで確認しています。
+Stripe通知は、Hibikiが初期化時にResponseを生成するため、ハンドラーを遅延importします。これにより初期化もworkerdのリクエスト内で実行します。
+
+Astroの操作画面は共通のReactコンポーネントを`client:load`でハイドレーションします。画面遷移は同一Originのフルドキュメント遷移です。外部スクリプトにはそのレスポンスのnonceを引き継ぎ、既存のnonce CSP・no-storeを維持します。復号鍵とファイルの暗号化・復号はブラウザだけで扱います。
+
+Service Workerによる保存では、EOF通知後も隠しiframeを1秒間保持します。通知直後に撤去すると、小ファイルのダウンロード開始がキャンセルされることがあるためです。保存したバイト列の一致はE2Eで検証します。
 
 ## LPのフォント
 
@@ -70,7 +74,15 @@ API側の詳細は [`api.md`](./api.md) を参照。
 
 ## フロントエンドのロジック配置
 
-`components/upload/uploadForm.tsx`・`components/download/DownloadPage.tsx`・`components/admin/AdminReportsPage.tsx`は、UIの状態管理・JSX以外の非UIロジック(暗号化呼び出し・ネットワーク呼び出し・純粋な整形関数など)を対応する`lib/`配下に切り出しており、`lib/`側は個別にVitestテストを持つ(`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`)。画面の見た目部品は同ディレクトリ内の兄弟コンポーネントへ分割している(`components/upload/`の共有結果・進捗・ファイル一覧、`components/download/`のパスワード解除・プレビュー・送信CTA、`components/billing/`のプラン選択・契約管理、`components/admin/StatusFilterTabs.tsx`など)。アカウント作成・ログイン・再設定と通報フォームは中央カード型の外枠を[`CenteredFormShell`](../components/brand/CenteredFormShell.tsx)に共有する。カード契約のDB更新(`downgradeExpiredCardPlan`・admin付与判定など)は[`lib/billing/cardPlan.ts`](../lib/billing/cardPlan.ts)に、プラン上限・実効プラン判定は[`lib/plan.ts`](../lib/plan.ts)に置く。オーケストレーター側のエントリ(`uploadForm.tsx`・`DownloadPage.tsx`・`BillingPage.tsx`)は従来どおり。
+Reactの画面コンポーネントは表示と操作の接続を担当します。アップロードの鍵・共有セッション・キュー・進捗は`lib/upload/useUploadSession.tsx`、ドラッグ操作と共有操作は同ディレクトリの専用フックで扱います。先行暗号化はキュー先頭の1チャンク、送信中の先読みキューは最大8チャンクです。キューが満杯の間は次のチャンクを取得しません。ダウンロードは`lib/download/useSharedFiles.ts`が共有取得とパスワード解除、`useDownloadActions.ts`が保存・プレビュー・受信後の送信案内を担当します。鍵と平文はブラウザ内で扱い、保存経路や暗号化形式は変更しません。
+
+管理画面は`AdminShell`で外枠を共有します。問い合わせ・通報一覧は`useAdminList`で取得し、初回表示・タブ切替・操作後の再取得に通し番号を付けます。最新のリクエストへの応答だけを反映し、アンマウント後の応答は破棄します。`useAdminAction`は操作ごとの連打を防ぎ、成功後に現在のフィルターで一覧を再取得します。
+
+`lib/api/client.ts`はブラウザのJSON送信と成功判定を共通化します。HTMLや空の本文など、JSONとして読めない応答には呼び出し元の汎用エラーメッセージを使います。業務固有の入力検証・必須フィールド・エラー表示は呼び出し元で扱います。バイナリ転送や署名付きWebhookの本文には使いません。
+
+画面の見た目は`components/`配下の部品に分けます。アカウントと通報フォームの外枠は`CenteredFormShell`を共有します。プランの上限・実効プラン判定は`lib/plan.ts`、カード契約のDB更新は`lib/billing/cardPlan.ts`に置きます。関連テストは`tests/lib/upload/`・`tests/lib/download/`・`tests/lib/admin/`にあります。
+
+### 転送・暗号化ライブラリ
 
 - [`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts): チャンクの並列アップロードワーカー(`uploadChunksFromStream`)。`start` が返す `uploadMode` で経路を切り替える。`direct` では `part-urls` で署名付きURLをバッチ取得→ブラウザからR2へPUT→`part-ack` でETag記録。直接経路が失敗したパートは同じマルチパートセッションへ `/api/upload/chunk` で再送し、後続パートもこの経路を使う。`proxy` では最初から `/api/upload/chunk`。各パートは一時エラー(通信断・408・425・429・500・502・503・504・Cloudflare の 520-524)時に指数バックオフ付きで数回リトライする(どちらの経路も同じパート番号の再送に冪等。GitHub issue #65)。
 - [`lib/upload/uploadFile.ts`](../lib/upload/uploadFile.ts): 1 ファイル分の「start → チャンク送信 → complete」を通しで実行する `uploadEncryptedFile`。暗号化チャンクストリームは受け取らず、「その場で新規生成するファクトリ」を受け取る。アップロード画面はキュー先頭のファイルだけ、選択直後に先頭の8MiBチャンクをクライアント内で先行暗号化し、アップロード開始後は同じストリームの続きへつなぐ。選択数に比例してメモリが増えないよう、他のファイルは順番が来てから準備する。失敗時は呼び出し側が再試行でき、使用済みストリームは再利用せず、ファイル先頭から新しいストリームを作る(途中まで消費したストリームを使い回すとサイレント破損する。GitHub issue #58)。
@@ -91,7 +103,7 @@ API側の詳細は [`api.md`](./api.md) を参照。
 新しい共有の保存期間は無料・未ログインでは7日、Standardでは15日、Premiumでは30日を初期選択する。ログイン中の実効プランを取得して適用し、手動で選んだ期間や開始済みアップロードの期間は遅れて届いたプラン取得結果で上書きしない。「新しく送る」で初期化する際も現在のプランの初期値へ戻す。詳細設定での期間変更とサーバー側のプラン上限検証は従来どおり。
 
 
-1. ブラウザでファイルを8MiB単位に分割し、チャンクごとにAES-256-GCMで暗号化(鍵生成・暗号化の詳細は [`crypto.md`](./crypto.md))。ファイル本体の暗号化は「アップロードする」を押したあと、`upload()` がそのファイルを処理する直前に開始する。先読みバッファ(最大64MiB)が同時に走るのは常に1ファイル分だけで、数十〜数百ファイルのフォルダを追加してもメモリが `64MiB × ファイル数` にならない(GitHub issue #60)。
+1. キュー先頭のファイルは、選択直後に最初の8MiBチャンクだけをブラウザで先行暗号化する。「アップロードする」を押すと同じストリームの続きから処理する。後続ファイルは順番が来てから暗号化を始める。チャンクごとにAES-256-GCMを使い、送信中の先読みキューは1ファイル・最大8チャンク（平文換算64MiB）に限る。暗号化の付加データや、キューから取り出して送信処理中のデータは別に保持する。選択数に比例して先読みバッファが増えることはない。鍵生成と暗号化形式は[E2EEの設計](./crypto.md)を参照。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。レスポンスの `uploadMode` が `"direct"` か `"proxy"` かを返す(R2 S3 Secrets の有無で決定)。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
 3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、パートとしてR2へ送る(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
    - **direct**: `POST /api/upload/part-urls` で署名付きPUT URLを取得(`contentLength` を署名に含め `UPLOAD_PART_SIZE` 超を拒否) → ブラウザからR2へ直接PUT → `POST /api/upload/part-ack` でETagを `upload_parts` に記録。暗号文はWorkerを往復しない。
@@ -198,13 +210,3 @@ Cookie認証の状態変更APIは既存のOrigin検証を維持します。暗�
 ブログ取得・検証は `lib/blog/core.ts` で共通化する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
 
 旧互換ルートは撤去済みです。公開ページへのリンクは通常のドキュメント遷移を使います。
-
-## 画面と共通処理の責務
-
-Reactの画面コンポーネントは表示と操作の接続を担当します。アップロードの鍵・共有セッション・キュー・進捗は`lib/upload/useUploadSession.tsx`、ドラッグ操作と共有操作は同ディレクトリの専用フックで扱います。先行暗号化はキュー先頭の1チャンク、送信中の先読みは従来どおり最大8チャンクです。ダウンロードは`lib/download/useSharedFiles.ts`が共有取得とパスワード解除、`useDownloadActions.ts`が保存・プレビュー・受信後の送信案内を担当します。鍵と平文はブラウザ内で扱い、保存経路や暗号化形式は変更しません。
-
-管理画面は`AdminShell`で外枠を共有します。問い合わせ・通報一覧は`useAdminList`で取得し、初回表示・タブ切替・操作後の再取得を同じリクエスト番号で管理します。最新の応答だけを反映し、アンマウント後の応答は破棄します。`useAdminAction`は操作ごとの連打を防ぎ、成功後に現在のフィルターで一覧を再取得します。
-
-`lib/api/client.ts`はブラウザのJSON送信と成功判定を共通化します。HTMLや空の本文など、JSONとして読めない応答には呼び出し元の汎用エラーメッセージを使います。業務固有の入力検証・必須フィールド・エラー表示は呼び出し元で扱います。バイナリ転送や署名付きWebhookの本文には使いません。
-
-Honoの`registerRoute`はパスからパラメータ名を型として取り出し、既存ハンドラーへRequestとパラメータを渡します。リクエスト単位のenvとExecutionContextは引き続きAsyncLocalStorageで分離します。`withAdminHandler`は既存の管理者認証・Origin検証・例外処理をまとめ、読み取りルートだけが明示的にOrigin検証を省略します。課金APIは`requireBillingSession`でセッション確認と厳密なOrigin検証を行い、その後のレート制限や入力検証は各ルートの順序を維持します。
