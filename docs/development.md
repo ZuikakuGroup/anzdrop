@@ -105,7 +105,7 @@ npm run check -- test  # Vitestだけを確認
 
 ReactのDOMテストは`test/react.ts`の生成・破棄ヘルパーを利用できます。`mountHook`はフックの最新の戻り値を取得するためのヘルパーで、操作と非同期応答はReactの`act`内で完了させます。テストが終わったら必ずアンマウントしてください。
 
-ローカル起動スクリプトは`scripts/run-command.mjs`で終了コードとシグナル転送を共通化しています。プレビューと隔離E2Eの設定生成には`scripts/local-worker-config.mjs`を使い、使い捨て設定のパス解決とCron除去を行います。通常のAPIプレビューは従来どおりルートの設定から`.dev.vars`を読み、隔離E2Eは`tmp/astro-hono`内の設定を使用します。
+ローカル起動スクリプトは`scripts/run-command.mjs`で終了コードとシグナル転送を共通化しています。子プロセスの終了後は転送ハンドラを解除し、呼び出し元が登録したハンドラは維持します。プレビューと隔離E2Eの設定生成には`scripts/local-worker-config.mjs`を使い、使い捨て設定のパス解決とCron除去を行います。通常のAPIプレビューは従来どおりルートの設定から`.dev.vars`を読み、隔離E2Eは`tmp/astro-hono`内の設定を使用します。
 
 ## トップページの合成計測
 

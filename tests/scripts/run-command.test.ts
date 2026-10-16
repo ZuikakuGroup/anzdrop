@@ -21,4 +21,31 @@ describe("local command lifecycle", () => {
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(23);
   });
+  it.each([false, true])("restores default termination after repeated child closes (spawn failure: %s)", (spawnFailure) => {
+    const command = spawnFailure
+      ? 'runCommand("/nonexistent/anzdrop-command", [])'
+      : 'runCommand(process.execPath, ["-e", "process.exit(0)"])';
+    const result = run(`
+      for (let index = 0; index < 3; index++) {
+        await new Promise(resolve => ${command}.once('close', resolve));
+      }
+      setTimeout(() => process.exit(31), 1000);
+      process.kill(process.pid, 'SIGTERM');
+    `);
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBe("SIGTERM");
+    expect(result.status).toBeNull();
+  });
+  it("preserves a caller's signal handler when a child closes", () => {
+    const result = run(`
+      const caller = () => process.stdout.write('caller-signal\\n');
+      process.on('SIGTERM', caller);
+      await new Promise(resolve => runCommand(process.execPath, ['-e', 'process.exit(0)']).once('close', resolve));
+      process.emit('SIGTERM');
+      process.off('SIGTERM', caller);
+    `);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("caller-signal\n");
+  });
 });

@@ -31,8 +31,14 @@ describe("JSON API client", () => {
     await expect(postJson("/api/example", {}, fallback)).rejects.toThrow("Network error");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
-  it("rejects malformed JSON without returning a successful value", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>unavailable</html>")));
-    await expect(requestJson("/api/example", undefined, fallback)).rejects.toThrow();
+  it.each([
+    [200, "<html>unavailable</html>"],
+    [502, "<html>unavailable</html>"],
+    [503, ""],
+    [200, ""],
+    [204, null],
+  ])("uses the fallback for a non-JSON response (%s, %j)", async (status, body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status })));
+    await expect(requestJson("/api/example", undefined, fallback)).rejects.toThrow(new Error(fallback));
   });
 });
