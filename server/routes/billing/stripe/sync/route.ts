@@ -1,7 +1,7 @@
+import { createStripeClient, stripeErrorStatus } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
-import Stripe from "stripe";
-import { verifySession } from "@/lib/account/session";
-import { verifySameOrigin } from "@/lib/access";
+import type Stripe from "stripe";
+import { requireBillingSession } from "@/lib/billing/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import {
@@ -41,21 +41,9 @@ export const POST = withApiHandler(
   "POST /api/billing/stripe/sync",
   async (request: Request): Promise<Response> => {
     const { env } = getWorkerRuntime();
-    const session = await verifySession(request, env);
-
-    if (!session) {
-      return Response.json(
-        { success: false, error: "ログインが必要です" },
-        { status: 401 }
-      );
-    }
-
-    if (!verifySameOrigin(request, { allowMissing: false })) {
-      return Response.json(
-        { success: false, error: "不正なオリジンからのリクエストです" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBillingSession(request, env);
+    if (!auth.ok) return auth.response;
+    const { session } = auth;
 
     // アカウント単位のレート制限(GitHub issue #81)。ログイン済みではあるが
     // 回数無制限だと、1アカウントから Stripe API のクォータを消費し続けられる。
@@ -119,9 +107,7 @@ async function reconcileFromStripe(
   subscriptionId: string,
   currentPlanExpiresAt: string | null
 ): Promise<StripeSubscriptionSummary | null> {
-  const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    httpClient: Stripe.createFetchHttpClient(),
-  });
+  const stripe = createStripeClient(env);
 
   let subscription: Stripe.Subscription;
 
@@ -129,9 +115,7 @@ async function reconcileFromStripe(
     subscription = await stripe.subscriptions.retrieve(subscriptionId);
   } catch (error) {
     const statusCode =
-      error && typeof error === "object" && "statusCode" in error
-        ? (error as { statusCode?: unknown }).statusCode
-        : undefined;
+      stripeErrorStatus(error);
 
     // retrieve が失敗した場合、accounts は一切書き換えない。
     //  - 404(Stripe 側に該当 Subscription が無い): 契約の削除だけでなく、

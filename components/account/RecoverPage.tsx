@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useState, type FormEvent } from "react";
 import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
@@ -59,22 +61,12 @@ export default function RecoverPage() {
     try {
       const turnstileToken = await getTurnstileToken();
 
-      const response = await fetch("/api/account/recover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await postJson<RecoverResponse>("/api/account/recover", {
           accountId: trimmedAccountId,
           recoveryCode: trimmedRecoveryCode,
           newPassword: submittedNewPassword,
           turnstileToken,
-        }),
-      });
-
-      const data = (await response.json()) as RecoverResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(!data.success ? data.error : "再設定に失敗しました。");
-      }
+        }, "再設定に失敗しました。");
 
       setNewRecoveryCode(data.recoveryCode);
     } catch (unknownErr) {

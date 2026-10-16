@@ -1,7 +1,6 @@
+import { createStripeClient, stripeErrorStatus } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
-import Stripe from "stripe";
-import { verifySession } from "@/lib/account/session";
-import { verifySameOrigin } from "@/lib/access";
+import { requireBillingSession } from "@/lib/billing/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -24,36 +23,13 @@ const STRIPE_PRICE_ID_BY_PLAN = {
   premium: "STRIPE_PRICE_ID_PREMIUM",
 } as const;
 
-// Stripe SDKの例外はHTTPステータスを statusCode で持つ。該当リソースが
-// 既に存在しない(404)ケースだけを他の失敗(429・5xx・タイムアウト等の
-// 一時障害)と区別するために使う。
-function getStripeErrorStatusCode(error: unknown): number | undefined {
-  if (error && typeof error === "object" && "statusCode" in error) {
-    const statusCode = (error as { statusCode?: unknown }).statusCode;
-    return typeof statusCode === "number" ? statusCode : undefined;
-  }
-  return undefined;
-}
-
 export const POST = withApiHandler(
   "POST /api/billing/stripe/subscription",
   async (request: Request): Promise<Response> => {
     const { env } = getWorkerRuntime();
-    const session = await verifySession(request, env);
-
-    if (!session) {
-      return Response.json(
-        { success: false, error: "ログインが必要です" },
-        { status: 401 }
-      );
-    }
-
-    if (!verifySameOrigin(request, { allowMissing: false })) {
-      return Response.json(
-        { success: false, error: "不正なオリジンからのリクエストです" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBillingSession(request, env);
+    if (!auth.ok) return auth.response;
+    const { session } = auth;
 
     // アカウント単位のレート制限(GitHub issue #81)。sync より重く、Stripe 側に
     // Customer / Subscription という実オブジェクトを作る経路なので、
@@ -103,9 +79,7 @@ export const POST = withApiHandler(
 
     // CloudflareWorkers上ではNode標準のHTTPクライアントが使えないため、
     // fetchベースのHTTPクライアントを明示的に指定する。
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      httpClient: Stripe.createFetchHttpClient(),
-    });
+    const stripe = createStripeClient(env);
 
     // 既に有効(active/trialing)なSubscriptionを持つ状態で新規作成を許すと、
     // 二重に課金対象のSubscriptionが残ってしまう。この呼び出し自体には
@@ -162,7 +136,7 @@ export const POST = withApiHandler(
             // 429・5xx・タイムアウト等の一時障害では、旧 "incomplete" の
             // client_secret(約23時間有効)が生きたまま2本目を作ってしまう
             // おそれがあるため、新規作成へ進まず失敗させる。
-            if (getStripeErrorStatusCode(cancelError) !== 404) {
+            if (stripeErrorStatus(cancelError) !== 404) {
               let stillBillable = true;
               try {
                 const recheck = await stripe.subscriptions.retrieve(
@@ -172,7 +146,7 @@ export const POST = withApiHandler(
                   !isDeadSubscriptionStatus(recheck.status) &&
                   !isNeverActivatedSubscriptionStatus(recheck.status);
               } catch (recheckError) {
-                if (getStripeErrorStatusCode(recheckError) === 404) {
+                if (stripeErrorStatus(recheckError) === 404) {
                   stillBillable = false;
                 } else {
                   throw recheckError;
@@ -204,7 +178,7 @@ export const POST = withApiHandler(
         // 場合のみ新規作成を妨げない。それ以外(Stripe側の一時的な障害等)まで
         // ここで握りつぶすと、実際には有効なSubscriptionがあるにも
         // かかわらず二重にSubscriptionを作成してしまいかねない。
-        if (getStripeErrorStatusCode(error) !== 404) {
+        if (stripeErrorStatus(error) !== 404) {
           throw error;
         }
       }

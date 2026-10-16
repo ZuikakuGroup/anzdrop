@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createReactHarness, disposeReactHarness } from "@/test/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const encryptionMocks = vi.hoisted(() => ({
@@ -36,7 +37,6 @@ vi.mock("@/lib/upload/uploadFile", () => ({ uploadEncryptedFile: vi.fn() }));
 import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
 import UploadForm from "@/components/upload/uploadForm";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
 let root: Root;
@@ -45,14 +45,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getCurrentAccount).mockReset().mockResolvedValue({ success: false } as MeResponse);
   vi.mocked(uploadEncryptedFile).mockReset().mockResolvedValue({ shareId: "test-share", uploadToken: "test-upload-token" });
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
+  ({ root, container } = createReactHarness());
 });
 
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await disposeReactHarness(root, container);
 });
 
 describe("UploadForm の詳細設定", () => {
@@ -129,6 +126,26 @@ describe("ファイル選択後の先行暗号化", () => {
   });
 });
 
+
+describe("送信の連打と再試行", () => {
+  it("同じ操作内の二重クリックを抑止し、失敗後は再試行できる", async () => {
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof uploadEncryptedFile>>>();
+    vi.mocked(uploadEncryptedFile).mockReturnValueOnce(pending.promise);
+    await act(async () => root.render(createElement(UploadForm, { header: null, footer: null })));
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["test"], "test.txt")] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    const upload = [...container.querySelectorAll("button")].find(button => button.textContent === "アップロードする")!;
+    await act(async () => { upload.click(); upload.click(); });
+    expect(uploadEncryptedFile).toHaveBeenCalledTimes(1);
+    await act(async () => pending.reject(new Error("temporary failure")));
+    expect(container.textContent).toContain("temporary failure");
+    await act(async () => upload.click());
+    expect(uploadEncryptedFile).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("共有リンクを発行しました");
+    expect(container.querySelector('button[aria-label="閉じる"]')).not.toBeNull();
+  });
+});
 
 describe("プランごとの保存期間の初期選択", () => {
   async function showSettings() {

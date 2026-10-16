@@ -39,19 +39,19 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run check -- lint
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: npm run check -- types
 
       - name: Type check router Worker
-        run: npm run check:router
+        run: npm run check -- router
 
       - name: Type check public Astro pages
-        run: npm run check:public
+        run: npm run check -- public
 
       - name: Test
-        run: npx vitest run
+        run: npm run check -- test
 
   public-pages:
     runs-on: ubuntu-latest

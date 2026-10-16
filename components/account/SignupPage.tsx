@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useState, type FormEvent } from "react";
 import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import Spinner from "@/components/brand/Spinner";
@@ -64,23 +66,11 @@ export default function SignupPage() {
     try {
       const turnstileToken = await getTurnstileToken();
 
-      const response = await fetch("/api/account/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await postJson<SignupResponse>("/api/account/signup", {
           accountId: submittedAccountId,
           password: submittedPassword,
           turnstileToken,
-        }),
-      });
-
-      const data = (await response.json()) as SignupResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(
-          !data.success ? data.error : "アカウント作成に失敗しました。"
-        );
-      }
+        }, "アカウント作成に失敗しました。");
 
       setResult({ accountId: data.accountId, recoveryCode: data.recoveryCode });
     } catch (unknownErr) {

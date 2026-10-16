@@ -1,7 +1,6 @@
+import { createStripeClient, stripeErrorStatus } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
-import Stripe from "stripe";
-import { verifySession } from "@/lib/account/session";
-import { verifySameOrigin } from "@/lib/access";
+import { requireBillingSession } from "@/lib/billing/session";
 import { createCharge } from "@/lib/opennode";
 import { isAdminGrantedPaidPlan } from "@/lib/billing/cardPlan";
 import { isPurchasablePlan, PLAN_LABELS } from "@/lib/plan";
@@ -22,21 +21,9 @@ export const POST = withApiHandler(
   "POST /api/billing/btc/charge",
   async (request: Request): Promise<Response> => {
     const { env } = getWorkerRuntime();
-    const session = await verifySession(request, env);
-
-    if (!session) {
-      return Response.json(
-        { success: false, error: "ログインが必要です" },
-        { status: 401 }
-      );
-    }
-
-    if (!verifySameOrigin(request, { allowMissing: false })) {
-      return Response.json(
-        { success: false, error: "不正なオリジンからのリクエストです" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBillingSession(request, env);
+    if (!auth.ok) return auth.response;
+    const { session } = auth;
 
     const parsed = await parseJsonBody(request, ChargeRequestSchema);
 
@@ -67,9 +54,7 @@ export const POST = withApiHandler(
 
     if (account?.stripe_subscription_id) {
       try {
-        const existing = await new Stripe(env.STRIPE_SECRET_KEY, {
-          httpClient: Stripe.createFetchHttpClient(),
-        }).subscriptions.retrieve(account.stripe_subscription_id);
+        const existing = await createStripeClient(env).subscriptions.retrieve(account.stripe_subscription_id);
         hasManageableStripeSubscription = isManageableSubscriptionStatus(
           existing.status
         );
@@ -77,9 +62,7 @@ export const POST = withApiHandler(
         // 404 だけ「契約なし」とみなす。レート制限・障害まで握りつぶすと、
         // カード契約中のアカウントを誤って admin 付与扱いにして 409 にする。
         const statusCode =
-          error && typeof error === "object" && "statusCode" in error
-            ? (error as { statusCode?: unknown }).statusCode
-            : undefined;
+          stripeErrorStatus(error);
 
         if (statusCode !== 404) {
           throw error;

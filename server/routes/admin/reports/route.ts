@@ -1,10 +1,9 @@
-import { getWorkerRuntime } from "@/server/runtime";
+import type { AdminReport } from "@/lib/admin/reportsApi";
 import {
   parseAdminStatusFilter,
   resolvedAtWhereClause,
 } from "@/lib/admin/statusFilter";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAdminHandler } from "@/lib/api/adminAuth";
 
 type ReportRow = {
   id: string;
@@ -26,26 +25,9 @@ type ShareInfoRow = {
   file_count: number;
 };
 
-type ReportShareInfo = {
-  exists: boolean;
-  expired: boolean;
-  suspended: boolean;
-  fileCount: number;
-};
 
-type AdminReport = {
-  id: string;
-  shareId: string;
-  reason: string;
-  createdAt: string;
-  resolvedAt: string | null;
-  reportType: string;
-  claimantName: string | null;
-  contactEmail: string | null;
-  rightType: string | null;
-  category: string;
-  share: ReportShareInfo;
-};
+
+
 
 async function fetchShareInfoByIds(
   env: CloudflareEnv,
@@ -79,17 +61,9 @@ async function fetchShareInfoByIds(
   return map;
 }
 
-export const GET = withApiHandler(
+export const GET = withAdminHandler(
   "GET /api/admin/reports",
-  async (request: Request): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env, { verifyOrigin: false });
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
+  async (request: Request, env: CloudflareEnv): Promise<Response> => {
     const url = new URL(request.url);
     const status = parseAdminStatusFilter(url.searchParams.get("status"));
 
@@ -138,5 +112,6 @@ export const GET = withApiHandler(
       { success: true, reports: responseReports },
       { headers: { "Cache-Control": "no-store" } }
     );
-  }
+  },
+  { verifyOrigin: false }
 );

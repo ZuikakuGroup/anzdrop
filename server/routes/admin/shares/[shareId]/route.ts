@@ -1,6 +1,4 @@
-import { getWorkerRuntime } from "@/server/runtime";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAdminHandler } from "@/lib/api/adminAuth";
 import type { RouteContext } from "@/lib/api/types";
 import { deleteShare } from "@/lib/cleanup";
 
@@ -17,20 +15,13 @@ export type ShareInfo = {
   fileCount: number;
 };
 
-export const GET = withApiHandler(
+export const GET = withAdminHandler(
   "GET /api/admin/shares/[shareId]",
   async (
-    request: Request,
+    _request: Request,
+    env: CloudflareEnv,
     context: RouteContext<{ shareId: string }>
   ): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env, { verifyOrigin: false });
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const { shareId } = await context.params;
 
     const share = await env.DB.prepare(
@@ -59,23 +50,17 @@ export const GET = withApiHandler(
       { success: true, share: info },
       { headers: { "Cache-Control": "no-store" } }
     );
-  }
+  },
+  { verifyOrigin: false }
 );
 
-export const DELETE = withApiHandler(
+export const DELETE = withAdminHandler(
   "DELETE /api/admin/shares/[shareId]",
   async (
-    request: Request,
+    _request: Request,
+    env: CloudflareEnv,
     context: RouteContext<{ shareId: string }>
   ): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env);
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const { shareId } = await context.params;
 
     // 既に(期限切れcronや二重クリックで)削除済みの共有に対しても、

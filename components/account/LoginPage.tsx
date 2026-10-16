@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "@/lib/browserNavigation";
 import CenteredFormShell from "@/components/brand/CenteredFormShell";
@@ -66,21 +68,11 @@ export default function LoginPage() {
     try {
       const turnstileToken = await getTurnstileToken();
 
-      const response = await fetch("/api/account/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const data = await postJson<LoginResponse>("/api/account/login", {
           accountId: trimmedAccountId,
           password: submittedPassword,
           turnstileToken,
-        }),
-      });
-
-      const data = (await response.json()) as LoginResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(!data.success ? data.error : "ログインに失敗しました。");
-      }
+        }, "ログインに失敗しました。");
 
       setPassword("");
       if (data.next === "otp") {

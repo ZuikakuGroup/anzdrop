@@ -1,10 +1,9 @@
 "use client";
 
+import AdminShell from "./AdminShell";
+
 import { useEffect, useState, type ReactNode } from "react";
-import SiteHeader from "@/components/brand/SiteHeader";
-import SiteFooter from "@/components/brand/SiteFooter";
 import Spinner from "@/components/brand/Spinner";
-import AdminNav from "@/components/admin/AdminNav";
 import { AnalyticsBarChart } from "@/components/admin/AnalyticsBarChart";
 import {
   fetchAnalytics,
@@ -406,91 +405,82 @@ export default function AdminAnalyticsPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteHeader />
+    <AdminShell active="analytics" wide>
 
-      <main className="flex min-h-[calc(100svh-4rem)] flex-1 justify-center p-4">
-        <div className="w-full max-w-5xl space-y-6 py-8">
-          <AdminNav active="analytics" />
+      <div className="space-y-1">
+        <h1 className="text-2xl font-black leading-snug tracking-normal">
+          計測ダッシュボード
+        </h1>
+        <p className="max-w-2xl text-xs leading-relaxed text-ink/50">
+          匿名化された利用状況の集計データです(ファイル内容・復号鍵・IPアドレス等は含まれません)
+        </p>
+      </div>
 
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
-              計測ダッシュボード
-            </h1>
-            <p className="max-w-2xl text-xs leading-relaxed text-ink/50">
-              匿名化された利用状況の集計データです(ファイル内容・復号鍵・IPアドレス等は含まれません)
-            </p>
-          </div>
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-ink/10 bg-paper p-4">
+        <label className="grid gap-1 text-xs font-bold">
+          開始日
+          <input type="date" value={range.from} min={earliestDate()} max={range.to} onChange={(event) => setRange((current) => ({ ...current, from: event.target.value }))} className="rounded border border-ink/20 bg-paper px-2 py-1.5 font-normal" />
+        </label>
+        <label className="grid gap-1 text-xs font-bold">
+          終了日
+          <input type="date" value={range.to} min={range.from} max={toDateInputValue(new Date())} onChange={(event) => setRange((current) => ({ ...current, to: event.target.value }))} className="rounded border border-ink/20 bg-paper px-2 py-1.5 font-normal" />
+        </label>
+        <button type="button" onClick={applyRange} className="rounded bg-ink px-3 py-2 text-xs font-bold text-paper">期間を適用</button>
+        <button type="button" onClick={downloadCsv} disabled={isLoading || isExporting} className="rounded border border-ink/20 px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">{isExporting ? "CSVを作成中..." : "全レポートをCSVでダウンロード"}</button>
+        <p className="basis-full text-xs text-ink/50">詳細レポートは生イベントの保持期限により直近1年まで確認できます。</p>
+      </div>
 
-          <div className="flex flex-wrap items-end gap-3 rounded-lg border border-ink/10 bg-paper p-4">
-            <label className="grid gap-1 text-xs font-bold">
-              開始日
-              <input type="date" value={range.from} min={earliestDate()} max={range.to} onChange={(event) => setRange((current) => ({ ...current, from: event.target.value }))} className="rounded border border-ink/20 bg-paper px-2 py-1.5 font-normal" />
-            </label>
-            <label className="grid gap-1 text-xs font-bold">
-              終了日
-              <input type="date" value={range.to} min={range.from} max={toDateInputValue(new Date())} onChange={(event) => setRange((current) => ({ ...current, to: event.target.value }))} className="rounded border border-ink/20 bg-paper px-2 py-1.5 font-normal" />
-            </label>
-            <button type="button" onClick={applyRange} className="rounded bg-ink px-3 py-2 text-xs font-bold text-paper">期間を適用</button>
-            <button type="button" onClick={downloadCsv} disabled={isLoading || isExporting} className="rounded border border-ink/20 px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">{isExporting ? "CSVを作成中..." : "全レポートをCSVでダウンロード"}</button>
-            <p className="basis-full text-xs text-ink/50">詳細レポートは生イベントの保持期限により直近1年まで確認できます。</p>
-          </div>
-
-          <nav
-            aria-label="分析レポートの種類"
-            className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0"
+      <nav
+        aria-label="分析レポートの種類"
+        className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0"
+      >
+        {VIEW_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => switchView(tab.value)}
+            aria-pressed={view === tab.value}
+            className={`shrink-0 rounded px-3 py-1.5 text-xs font-bold transition-colors ${
+              view === tab.value
+                ? "bg-ink text-paper shadow-sm"
+                : "border border-ink/20 text-ink/60 hover:bg-ink/[0.06]"
+            }`}
           >
-            {VIEW_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => switchView(tab.value)}
-                aria-pressed={view === tab.value}
-                className={`shrink-0 rounded px-3 py-1.5 text-xs font-bold transition-colors ${
-                  view === tab.value
-                    ? "bg-ink text-paper shadow-sm"
-                    : "border border-ink/20 text-ink/60 hover:bg-ink/[0.06]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
-          {error && (
-            <div className="rounded border-2 border-brand p-3 text-sm font-bold text-brand">
-              {error}
-            </div>
-          )}
-
-          {exportError && (
-            <div className="rounded border-2 border-brand p-3 text-sm font-bold text-brand">
-              {exportError}
-            </div>
-          )}
-
-          {isLoading ? (
-            <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
-              <Spinner className="mb-1 h-6 w-6 text-brand" />
-              <span className="text-xs font-bold text-ink/50">読み込み中...</span>
-            </div>
-          ) : !error && data ? (
-            <div className="rounded-xl border border-ink/10 bg-paper p-4 sm:p-6">
-              {view === "overview" && <OverviewView data={data as OverviewReport} />}
-              {view === "funnel" && <FunnelView data={data as FunnelReport} />}
-              {view === "reliability" && <ReliabilityView data={data as ReliabilityReport} />}
-              {view === "acquisition" && (
-                <AcquisitionView data={data as { rows: AcquisitionRow[] }} />
-              )}
-              {view === "retention" && <RetentionView data={data as RetentionReport} />}
-              {view === "recipient-growth" && (
-                <RecipientGrowthView data={data as RecipientGrowthReport} />
-              )}
-            </div>
-          ) : null}
+      {error && (
+        <div className="rounded border-2 border-brand p-3 text-sm font-bold text-brand">
+          {error}
         </div>
-      </main>
+      )}
 
-      <SiteFooter />
-    </div>
+      {exportError && (
+        <div className="rounded border-2 border-brand p-3 text-sm font-bold text-brand">
+          {exportError}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
+          <Spinner className="mb-1 h-6 w-6 text-brand" />
+          <span className="text-xs font-bold text-ink/50">読み込み中...</span>
+        </div>
+      ) : !error && data ? (
+        <div className="rounded-xl border border-ink/10 bg-paper p-4 sm:p-6">
+          {view === "overview" && <OverviewView data={data as OverviewReport} />}
+          {view === "funnel" && <FunnelView data={data as FunnelReport} />}
+          {view === "reliability" && <ReliabilityView data={data as ReliabilityReport} />}
+          {view === "acquisition" && (
+            <AcquisitionView data={data as { rows: AcquisitionRow[] }} />
+          )}
+          {view === "retention" && <RetentionView data={data as RetentionReport} />}
+          {view === "recipient-growth" && (
+            <RecipientGrowthView data={data as RecipientGrowthReport} />
+          )}
+        </div>
+      ) : null}
+    </AdminShell>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useState, type FormEvent } from "react";
 import Script from "@/components/brand/ExternalScript";
 import SiteHeader from "@/components/brand/SiteHeader";
@@ -37,25 +39,13 @@ export default function ContactForm() {
     try {
       const turnstileToken = await getTurnstileToken();
 
-      const response = await fetch("/api/contact", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      await postJson<ContactResponse>("/api/contact", {
           name: sanitizeReportText(name),
           email: sanitizeReportText(email),
           subject: sanitizeReportText(subject),
           message: sanitizeReportText(message),
           turnstileToken,
-        }),
-      });
-
-      const result = (await response.json()) as ContactResponse;
-
-      if (!response.ok || !result.success) {
-        throw new Error(!result.success ? result.error : "送信に失敗しました。");
-      }
+        }, "送信に失敗しました。");
 
       setSubmitted(true);
     } catch (unknownErr) {

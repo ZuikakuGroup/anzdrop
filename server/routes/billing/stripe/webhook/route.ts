@@ -1,7 +1,8 @@
+import { createStripeClient, stripeErrorStatus } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
 import { Hibiki } from "@hibiki-js/core";
 import { stripe as hibikiStripe } from "@hibiki-js/stripe";
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { withApiHandler } from "@/lib/api/handler";
 import { readBodyWithinLimit } from "@/lib/api/body";
 import {
@@ -163,9 +164,7 @@ async function applyEvent(
                 // 上書きしてしまいかねない。この場合はイベント全体を失敗させ、
                 // 完了マークは付けずに(POST側の共通処理)、Stripeの再送に賭ける。
                 const statusCode =
-                  error && typeof error === "object" && "statusCode" in error
-                    ? (error as { statusCode?: unknown }).statusCode
-                    : undefined;
+                  stripeErrorStatus(error);
 
                 if (statusCode !== 404) {
                   throw error;
@@ -347,9 +346,7 @@ export const POST = withApiHandler(
       body: Uint8Array.from(rawBody),
     });
 
-    const stripeClient = new Stripe(env.STRIPE_SECRET_KEY, {
-      httpClient: Stripe.createFetchHttpClient(),
-    });
+    const stripeClient = createStripeClient(env);
 
     // 署名検証・イベント振り分けは Hibiki。業務ロジックと冪等制御はハンドラ側。
     const app = new Hibiki()

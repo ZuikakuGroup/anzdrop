@@ -1,3 +1,5 @@
+import { getWorkerRuntime } from "@/server/runtime";
+import { withApiHandler } from "./handler";
 import {
   verifyAccessJwt,
   verifySameOrigin,
@@ -42,4 +44,17 @@ export async function requireAdmin(
   }
 
   return { ok: true, identity };
+}
+
+// Run the existing checks before handing bindings to an authorized handler.
+export function withAdminHandler<Args extends unknown[]>(
+  label: string,
+  handler: (request: Request, env: CloudflareEnv, ...args: Args) => Promise<Response>,
+  options: { verifyOrigin?: boolean } = {},
+): (request: Request, ...args: Args) => Promise<Response> {
+  return withApiHandler(label, async (request: Request, ...args: Args) => {
+    const { env } = getWorkerRuntime();
+    const auth = await requireAdmin(request, env, options);
+    return auth.ok ? handler(request, env, ...args) : auth.response;
+  });
 }

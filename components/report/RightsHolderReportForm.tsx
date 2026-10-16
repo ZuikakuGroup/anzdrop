@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useState } from "react";
 import CenteredFormShell from "@/components/brand/CenteredFormShell";
 import { sanitizeReportText } from "@/lib/sanitize";
@@ -67,12 +69,7 @@ export default function RightsHolderReportForm({
     try {
       const turnstileToken = await getTurnstileToken();
 
-      const response = await fetch("/api/report", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      await postJson<ReportResponse>("/api/report", {
           reportType: "rights_holder",
           shareId,
           claimantName,
@@ -80,14 +77,7 @@ export default function RightsHolderReportForm({
           rightType,
           reason: sanitizeReportText(reason),
           turnstileToken,
-        }),
-      });
-
-      const result = (await response.json()) as ReportResponse;
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error ?? "送信に失敗しました。");
-      }
+        }, "送信に失敗しました。");
 
       setSubmitted(true);
     } catch (unknownErr) {

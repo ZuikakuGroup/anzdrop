@@ -1,10 +1,9 @@
-import { getWorkerRuntime } from "@/server/runtime";
+import type { AdminContact } from "@/lib/admin/contactsApi";
 import {
   parseAdminStatusFilter,
   resolvedAtWhereClause,
 } from "@/lib/admin/statusFilter";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAdminHandler } from "@/lib/api/adminAuth";
 
 type ContactRow = {
   id: string;
@@ -16,27 +15,11 @@ type ContactRow = {
   resolved_at: string | null;
 };
 
-type AdminContact = {
-  id: string;
-  name: string | null;
-  email: string;
-  subject: string;
-  message: string;
-  createdAt: string;
-  resolvedAt: string | null;
-};
 
-export const GET = withApiHandler(
+
+export const GET = withAdminHandler(
   "GET /api/admin/contacts",
-  async (request: Request): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env, { verifyOrigin: false });
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
+  async (request: Request, env: CloudflareEnv): Promise<Response> => {
     const url = new URL(request.url);
     const status = parseAdminStatusFilter(url.searchParams.get("status"));
 
@@ -65,5 +48,6 @@ export const GET = withApiHandler(
       { success: true, contacts: responseContacts },
       { headers: { "Cache-Control": "no-store" } }
     );
-  }
+  },
+  { verifyOrigin: false }
 );

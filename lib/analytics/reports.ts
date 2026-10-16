@@ -342,6 +342,12 @@ async function errorsByCode(
 // 側には無い)、単純にproperties由来の値でGROUP BYすると開始と成功が別々の
 // グループに分かれてしまう。upload_start/upload_successは同じattempt_idを
 // 共有するため、attempt_id越しに「そのattemptが成功したか」を判定する。
+function groupedSuccessRates(rows: { key: string | null; starts: number; successes: number }[]) {
+  return rows
+    .filter((row): row is { key: string; starts: number; successes: number } => row.key !== null)
+    .map((row) => ({ key: row.key, rate: rate(row.successes, row.starts) }));
+}
+
 async function successRateBySizeBucketViaAttempt(
   db: D1Database,
   from: string,
@@ -371,9 +377,7 @@ async function successRateBySizeBucketViaAttempt(
     .bind(from, to, from, to)
     .all<{ key: string | null; starts: number; successes: number }>();
 
-  return (results ?? [])
-    .filter((row): row is { key: string; starts: number; successes: number } => row.key !== null)
-    .map((row) => ({ key: row.key, rate: rate(row.successes, row.starts) }));
+  return groupedSuccessRates(results ?? []);
 }
 
 async function successRateGroupedBy(
@@ -399,9 +403,7 @@ async function successRateGroupedBy(
     .bind(startEvent, successEvent, startEvent, successEvent, from, to)
     .all<{ key: string | null; starts: number; successes: number }>();
 
-  return (results ?? [])
-    .filter((row): row is { key: string; starts: number; successes: number } => row.key !== null)
-    .map((row) => ({ key: row.key, rate: rate(row.successes, row.starts) }));
+  return groupedSuccessRates(results ?? []);
 }
 
 // 要件書27章。source/medium/campaign/landing_path別の流入分析。

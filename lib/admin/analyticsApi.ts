@@ -1,3 +1,4 @@
+import { assertApiSuccess } from "@/lib/api/client";
 import type {
   AcquisitionRow,
   FunnelReport,
@@ -61,7 +62,8 @@ export async function fetchAnalytics<V extends AnalyticsView>(
     throw new Error("サーバーから正しい応答を受信できませんでした。");
   }
 
-  if (!response.ok || !result.success || !result.data) {
+  assertApiSuccess(response, result, "読み込みに失敗しました。");
+  if (!result.data) {
     throw new Error(result.error ?? "読み込みに失敗しました。");
   }
 

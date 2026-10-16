@@ -1,6 +1,4 @@
-import { getWorkerRuntime } from "@/server/runtime";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAdminHandler } from "@/lib/api/adminAuth";
 import {
   getAcquisitionReport,
   getFunnelReport,
@@ -41,17 +39,9 @@ function isValidDate(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-export const GET = withApiHandler(
+export const GET = withAdminHandler(
   "GET /api/admin/analytics",
-  async (request: Request): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env, { verifyOrigin: false });
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
+  async (request: Request, env: CloudflareEnv): Promise<Response> => {
     const url = new URL(request.url);
     const view = parseView(url.searchParams.get("view"));
 
@@ -105,5 +95,6 @@ export const GET = withApiHandler(
       { success: true, view, from, to, data },
       { headers: { "Cache-Control": "no-store" } }
     );
-  }
+  },
+  { verifyOrigin: false }
 );
