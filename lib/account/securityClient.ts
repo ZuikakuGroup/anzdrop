@@ -1,15 +1,13 @@
+import { requestJson, postJson } from "@/lib/api/client";
 import { startAuthentication } from "@simplewebauthn/browser";
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import type { ApiResponse } from "@/lib/api/response";
 
 export async function accountAuthRequest<T extends Record<string, unknown>>(path: string, body?: unknown): Promise<{ success: true } & T> {
-  const response = await fetch(path, body === undefined
-    ? { cache: "no-store" }
-    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-  const data = await response.json() as ApiResponse<T>;
-  if (!response.ok || !data.success) {
-    throw new Error(data.success ? "認証処理に失敗しました。" : data.error);
-  }
+  const fallback = "認証処理に失敗しました。";
+  const data = body === undefined
+    ? await requestJson<ApiResponse<T>>(path, { cache: "no-store" }, fallback)
+    : await postJson<ApiResponse<T>>(path, body, fallback, { cache: "no-store" });
   return data;
 }
 

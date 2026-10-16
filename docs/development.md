@@ -93,14 +93,19 @@ expect(actual.byteLength).toBe(expected.byteLength);
 expect(Buffer.from(actual).equals(Buffer.from(expected))).toBe(true);
 ```
 
-## Lint・型チェック
+## 変更前後の検証
 
 ```bash
-npm run lint
-npx tsc --noEmit
+npm run check          # Lint → TypeScript → ルーター → Astro → Vitest
+npm run check -- types # TypeScriptだけを確認
+npm run check -- test  # Vitestだけを確認
 ```
 
-GitHub Actions(`.github/workflows/deploy.yml`)でも `main` へのpush時に同じチェックを実行しており、失敗するとデプロイは行われない。
+`scripts/check.mjs`に検証コマンドをまとめています。`lint`・`types`・`router`・`public`・`test`を個別に指定でき、失敗した時点で終了します。既存の`npm run lint`や`npx tsc --noEmit`も使えます。CIと本番デプロイは各ステップから同じコマンドを呼び出します。
+
+ReactのDOMテストは`test/react.ts`の生成・破棄ヘルパーを利用できます。`mountHook`はフックの最新の戻り値を取得するためのヘルパーで、操作と非同期応答はReactの`act`内で完了させます。テストが終わったら必ずアンマウントしてください。
+
+ローカル起動スクリプトは`scripts/run-command.mjs`で終了コードとシグナル転送を共通化しています。プレビューと隔離E2Eの設定生成には`scripts/local-worker-config.mjs`を使い、使い捨て設定のパス解決とCron除去を行います。通常のAPIプレビューは従来どおりルートの設定から`.dev.vars`を読み、隔離E2Eは`tmp/astro-hono`内の設定を使用します。
 
 ## トップページの合成計測
 

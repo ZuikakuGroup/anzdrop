@@ -28,7 +28,8 @@
     "dev:app": "npm run dev:public -- --host localhost --port 3000",
     "build:api": "wrangler deploy --config wrangler.jsonc --dry-run --outdir tmp/hono-build",
     "test:astro-hono": "bash scripts/test-astro-hono.sh",
-    "build:router": "wrangler deploy --config wrangler.router.jsonc --dry-run --outdir tmp/router-build"
+    "build:router": "wrangler deploy --config wrangler.router.jsonc --dry-run --outdir tmp/router-build",
+    "check": "node scripts/check.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",

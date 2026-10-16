@@ -49,6 +49,7 @@ npm run dev
 | `npm run build:public` | Astro公開Workerのビルド |
 | `npm run check:public` | Astroの型・テンプレート検証 |
 | `npm run test:public` | 実WorkersとChromiumで公開ページを検証 |
+| `npm run check` | Lint・各型チェック・Vitestを順に実行 |
 | `npm run lint` | ESLint |
 | `npm run measure:home` | Lighthouseによるトップページの合成計測。`SITE_URL`で対象を指定可能 |
 | `npm run audit:seo` | 起動中のサイトに対する SEO 自動検査(詳細は [`docs/web-audit.md`](./docs/web-audit.md)) |

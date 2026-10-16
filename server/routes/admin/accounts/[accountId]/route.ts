@@ -1,7 +1,5 @@
-import { getWorkerRuntime } from "@/server/runtime";
 import Stripe from "stripe";
-import { requireAdmin } from "@/lib/api/adminAuth";
-import { withApiHandler } from "@/lib/api/handler";
+import { withAdminHandler } from "@/lib/api/adminAuth";
 import { parseJsonBody } from "@/lib/api/validate";
 import type { RouteContext } from "@/lib/api/types";
 import {
@@ -119,45 +117,32 @@ function accountResponse(account: AdminAccountInfo): Response {
 }
 
 // アカウントIDを指定して現在のプラン状況を取得する。読み取り専用のためOrigin検証は行わない。
-export const GET = withApiHandler(
+export const GET = withAdminHandler(
   "GET /api/admin/accounts/[accountId]",
   async (
-    request: Request,
+    _request: Request,
+    env: CloudflareEnv,
     context: RouteContext<{ accountId: string }>
   ): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env, { verifyOrigin: false });
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const { accountId } = await context.params;
     const row = await fetchAccountRow(env, accountId);
 
     return accountResponse(
       row ? await toAccountInfo(env, row) : MISSING_ACCOUNT_INFO
     );
-  }
+  },
+  { verifyOrigin: false }
 );
 
 // アカウントIDを指定してStandard/Premiumを付与する。既存のaccounts.plan /
 // plan_expires_atを更新するだけで、新しい種類の情報は保存しない。
-export const POST = withApiHandler(
+export const POST = withAdminHandler(
   "POST /api/admin/accounts/[accountId]",
   async (
     request: Request,
+    env: CloudflareEnv,
     context: RouteContext<{ accountId: string }>
   ): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env);
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const parsed = await parseJsonBody(request, GrantPlanRequestSchema);
 
     if (!parsed.ok) {
@@ -215,20 +200,13 @@ export const POST = withApiHandler(
 // plan_expires_at=NULLにするだけ。stripe_subscription_idは外さないため、
 // 有効なカード契約があるアカウントでは次回のsync/Webhookで再度有効化されうる
 // (その場合はStripe側で解約する)。
-export const DELETE = withApiHandler(
+export const DELETE = withAdminHandler(
   "DELETE /api/admin/accounts/[accountId]",
   async (
-    request: Request,
+    _request: Request,
+    env: CloudflareEnv,
     context: RouteContext<{ accountId: string }>
   ): Promise<Response> => {
-    const { env } = getWorkerRuntime();
-
-    const auth = await requireAdmin(request, env);
-
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const { accountId } = await context.params;
     const row = await fetchAccountRow(env, accountId);
 

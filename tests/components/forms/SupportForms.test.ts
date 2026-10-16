@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createReactHarness, disposeReactHarness } from "@/test/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ContactForm from "@/components/contact/ContactForm";
 import ReportForm from "@/components/report/ReportForm";
@@ -9,17 +10,16 @@ import RightsHolderReportForm from "@/components/report/RightsHolderReportForm";
 vi.mock("@/components/brand/SiteHeader", () => ({ default: () => null }));
 const { getToken } = vi.hoisted(() => ({ getToken: vi.fn() }));
 vi.mock("@/lib/turnstile-client", () => ({ TURNSTILE_SITE_KEY: "test-site-key", useTurnstile: () => ({ getToken, widget: null }) }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let container: HTMLDivElement;
 const fetchMock = vi.fn();
 beforeEach(() => {
-  container = document.createElement("div"); document.body.appendChild(container); root = createRoot(container);
+  ({ root, container } = createReactHarness());
   getToken.mockReset().mockResolvedValue("turnstile-token");
   fetchMock.mockReset().mockResolvedValue(Response.json({ success: true }));
   vi.stubGlobal("fetch", fetchMock);
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await disposeReactHarness(root, container); vi.unstubAllGlobals(); });
 
 async function input(selector: string, value: string) {
   const element = container.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;

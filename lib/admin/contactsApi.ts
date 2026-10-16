@@ -1,3 +1,4 @@
+import { requestJson } from "@/lib/api/client";
 import type { AdminStatusFilter } from "@/lib/admin/statusFilter";
 
 export type StatusFilter = AdminStatusFilter;
@@ -23,37 +24,16 @@ type ActionResponse = {
   error?: string;
 };
 
-export async function fetchContacts(
-  status: StatusFilter
-): Promise<AdminContact[]> {
-  const response = await fetch(`/api/admin/contacts?status=${status}`);
-  const result: ContactsResponse = await response.json();
-
-  if (!response.ok || !result.success || !result.contacts) {
-    throw new Error(result.error ?? "読み込みに失敗しました。");
-  }
-
+export async function fetchContacts(status: StatusFilter): Promise<AdminContact[]> {
+  const result = await requestJson<ContactsResponse>(`/api/admin/contacts?status=${status}`, undefined, "読み込みに失敗しました。");
+  if (!result.contacts) throw new Error(result.error ?? "読み込みに失敗しました。");
   return result.contacts;
 }
 
 export async function resolveContact(contactId: string): Promise<void> {
-  const response = await fetch(`/api/admin/contacts/${contactId}/resolve`, {
-    method: "POST",
-  });
-  const result: ActionResponse = await response.json();
-
-  if (!response.ok || !result.success) {
-    throw new Error(result.error ?? "更新に失敗しました。");
-  }
+  await requestJson<ActionResponse>(`/api/admin/contacts/${contactId}/resolve`, { method: "POST" }, "更新に失敗しました。");
 }
 
 export async function deleteContact(contactId: string): Promise<void> {
-  const response = await fetch(`/api/admin/contacts/${contactId}`, {
-    method: "DELETE",
-  });
-  const result: ActionResponse = await response.json();
-
-  if (!response.ok || !result.success) {
-    throw new Error(result.error ?? "削除に失敗しました。");
-  }
+  await requestJson<ActionResponse>(`/api/admin/contacts/${contactId}`, { method: "DELETE" }, "削除に失敗しました。");
 }

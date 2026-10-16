@@ -1,5 +1,7 @@
 "use client";
 
+import { postJson } from "@/lib/api/client";
+
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "@/lib/browserNavigation";
 import SiteHeader from "@/components/brand/SiteHeader";
@@ -155,16 +157,7 @@ export default function BillingPage({
     setIsLoadingAction("stripe");
 
     try {
-      const response = await fetch("/api/billing/stripe/subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selectedPlan }),
-      });
-      const data = (await response.json()) as SubscriptionResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(!data.success ? data.error : "開始に失敗しました。");
-      }
+      const data = await postJson<SubscriptionResponse>("/api/billing/stripe/subscription", { plan: selectedPlan }, "開始に失敗しました。");
 
       setStripePayment({
         clientSecret: data.clientSecret,
@@ -201,16 +194,7 @@ export default function BillingPage({
     setSubscriptionAction(cancelAtPeriodEnd ? "cancel" : "resume");
 
     try {
-      const response = await fetch("/api/billing/stripe/cancellation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cancelAtPeriodEnd }),
-      });
-      const data = (await response.json()) as CancellationResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(!data.success ? data.error : "処理に失敗しました。");
-      }
+      const data = await postJson<CancellationResponse>("/api/billing/stripe/cancellation", { cancelAtPeriodEnd }, "処理に失敗しました。");
 
       setMe((prev) =>
         prev ? { ...prev, subscription: data.subscription } : prev
@@ -236,16 +220,7 @@ export default function BillingPage({
     setIsLoadingAction("btc");
 
     try {
-      const response = await fetch("/api/billing/btc/charge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selectedPlan }),
-      });
-      const data = (await response.json()) as BtcChargeResponse;
-
-      if (!response.ok || !data.success) {
-        throw new Error(!data.success ? data.error : "開始に失敗しました。");
-      }
+      const data = await postJson<BtcChargeResponse>("/api/billing/btc/charge", { plan: selectedPlan }, "開始に失敗しました。");
 
       window.location.href = data.hostedCheckoutUrl;
     } catch (unknownErr) {

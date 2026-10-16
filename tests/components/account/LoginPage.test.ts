@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement, type ReactNode } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createReactHarness, disposeReactHarness } from "@/test/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/components/account/LoginPage";
 
@@ -11,7 +12,6 @@ vi.mock("@/lib/turnstile-client", () => ({ useTurnstile: () => ({ widget: null, 
 vi.mock("@/components/brand/CenteredFormShell", () => ({ default: ({ children }: { children: ReactNode }) => children }));
 vi.mock("@/lib/account/securityClient", async (original) => ({ ...await original<typeof import("@/lib/account/securityClient")>(), passkeysSupported: () => true, loginWithPasskey: passkeyLogin }));
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let container: HTMLDivElement;
 const fetchMock = vi.fn();
@@ -19,11 +19,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
+  ({ root, container } = createReactHarness());
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
+afterEach(async () => { await disposeReactHarness(root, container); vi.unstubAllGlobals(); });
 
 async function render() { await act(async () => root.render(createElement(LoginPage))); }
 async function submit(values: Record<string, string>) {

@@ -1,7 +1,6 @@
+import { createStripeClient } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
-import Stripe from "stripe";
-import { verifySession } from "@/lib/account/session";
-import { verifySameOrigin } from "@/lib/access";
+import { requireBillingSession } from "@/lib/billing/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -39,21 +38,9 @@ export const POST = withApiHandler(
   "POST /api/billing/stripe/subscription",
   async (request: Request): Promise<Response> => {
     const { env } = getWorkerRuntime();
-    const session = await verifySession(request, env);
-
-    if (!session) {
-      return Response.json(
-        { success: false, error: "ログインが必要です" },
-        { status: 401 }
-      );
-    }
-
-    if (!verifySameOrigin(request, { allowMissing: false })) {
-      return Response.json(
-        { success: false, error: "不正なオリジンからのリクエストです" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBillingSession(request, env);
+    if (!auth.ok) return auth.response;
+    const { session } = auth;
 
     // アカウント単位のレート制限(GitHub issue #81)。sync より重く、Stripe 側に
     // Customer / Subscription という実オブジェクトを作る経路なので、
@@ -103,9 +90,7 @@ export const POST = withApiHandler(
 
     // CloudflareWorkers上ではNode標準のHTTPクライアントが使えないため、
     // fetchベースのHTTPクライアントを明示的に指定する。
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      httpClient: Stripe.createFetchHttpClient(),
-    });
+    const stripe = createStripeClient(env);
 
     // 既に有効(active/trialing)なSubscriptionを持つ状態で新規作成を許すと、
     // 二重に課金対象のSubscriptionが残ってしまう。この呼び出し自体には

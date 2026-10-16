@@ -1,7 +1,7 @@
+import { createStripeClient, stripeErrorStatus } from "@/lib/billing/stripe";
 import { getWorkerRuntime } from "@/server/runtime";
-import Stripe from "stripe";
-import { verifySession } from "@/lib/account/session";
-import { verifySameOrigin } from "@/lib/access";
+import type Stripe from "stripe";
+import { requireBillingSession } from "@/lib/billing/session";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import {
@@ -21,21 +21,9 @@ export const POST = withApiHandler(
   "POST /api/billing/stripe/cancellation",
   async (request: Request): Promise<Response> => {
     const { env } = getWorkerRuntime();
-    const session = await verifySession(request, env);
-
-    if (!session) {
-      return Response.json(
-        { success: false, error: "ログインが必要です" },
-        { status: 401 }
-      );
-    }
-
-    if (!verifySameOrigin(request, { allowMissing: false })) {
-      return Response.json(
-        { success: false, error: "不正なオリジンからのリクエストです" },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBillingSession(request, env);
+    if (!auth.ok) return auth.response;
+    const { session } = auth;
 
     const parsed = await parseJsonBody(request, CancellationRequestSchema);
 
@@ -58,9 +46,7 @@ export const POST = withApiHandler(
 
     const subscriptionId = account.stripe_subscription_id;
 
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      httpClient: Stripe.createFetchHttpClient(),
-    });
+    const stripe = createStripeClient(env);
 
     let subscription: Stripe.Subscription;
 
@@ -68,9 +54,7 @@ export const POST = withApiHandler(
       subscription = await stripe.subscriptions.retrieve(subscriptionId);
     } catch (error) {
       const statusCode =
-        error && typeof error === "object" && "statusCode" in error
-          ? (error as { statusCode?: unknown }).statusCode
-          : undefined;
+        stripeErrorStatus(error);
 
       // 404(Stripe 側に該当 Subscription が無い)。retrieve の 404 は契約の
       // 削除だけでなく、テスト/ライブモードの取り違え・API キーや Stripe
