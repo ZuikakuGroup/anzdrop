@@ -44,7 +44,8 @@ export type UploadEncryptedFileParams = {
   // ファイルの途中からのバイトだけが送られ、サイズ検証を通り抜けたまま
   // サイレントに破損する(GitHub issue #58)。この関数を再試行で呼び直す
   // 場合も、新しいストリームが渡ってくることに依存している。
-  createChunkStream: () => AsyncGenerator<Uint8Array>;
+  // 同じsignalで先読み・読み取り・暗号化の待機も解除する。
+  createChunkStream: (signal: AbortSignal) => AsyncGenerator<Uint8Array>;
 };
 
 export type UploadEncryptedFileResult = {
@@ -100,7 +101,7 @@ export async function uploadEncryptedFile(
   });
 
   await uploadChunksFromStream(
-    params.createChunkStream(),
+    params.createChunkStream,
     startResult.uploadSessionId,
     startResult.uploadToken,
     params.path,

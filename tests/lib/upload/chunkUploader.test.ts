@@ -119,6 +119,15 @@ describe("repartition", () => {
     expect(closed).toHaveBeenCalledTimes(1);
   });
 
+  it("does not emit a buffered tail when the source ends on abort", async () => {
+    const abort = new AbortController();
+    async function* source() {
+      yield new Uint8Array(2);
+      abort.abort();
+    }
+    await expect(collect(repartition(source(), 6, abort.signal))).resolves.toEqual([]);
+  });
+
   it("emits nothing for an empty stream", async () => {
     const parts = await collect(repartition(fromArray([]), 6));
     expect(parts).toEqual([]);

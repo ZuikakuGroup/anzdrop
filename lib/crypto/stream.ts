@@ -1,3 +1,4 @@
+import { abortable } from "@/lib/abort";
 import { packChunk, unpackChunk } from "./packet";
 import { encryptChunk } from "./encrypt";
 import { decryptChunk } from "./decrypt";
@@ -7,17 +8,20 @@ import { CHUNK_SIZE, FILE_SALT_LENGTH, PACKED_CHUNK_SIZE } from "./types";
 
 // Fileを一定サイズずつ読み込む
 export async function* iterateFileChunks(
-  file: File
+  file: File,
+  signal?: AbortSignal
 ): AsyncGenerator<Uint8Array> {
   let offset = 0;
 
   while (offset < file.size) {
+    if (signal?.aborted) throw signal.reason;
     const end = Math.min(
       offset + CHUNK_SIZE,
       file.size
     );
     const chunk = file.slice(offset, end);
-    const buffer = await chunk.arrayBuffer();
+    const buffer = await abortable(chunk.arrayBuffer(), signal);
+    if (signal?.aborted) throw signal.reason;
 
     yield new Uint8Array(buffer);
     offset = end;
@@ -32,16 +36,19 @@ export async function* iterateFileChunks(
 // の直前に平文のまま1回だけ埋め込む。
 export async function* iterateEncryptedChunks(
   file: File,
-  key: CryptoKey
+  key: CryptoKey,
+  signal?: AbortSignal
 ): AsyncGenerator<Uint8Array> {
   const fileSalt = generateFileSalt();
   const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   let index = 0;
 
-  for await (const chunk of iterateFileChunks(file)) {
+  for await (const chunk of iterateFileChunks(file, signal)) {
+    if (signal?.aborted) throw signal.reason;
     const isLast = index === totalChunks - 1;
     const aad = buildChunkAad({ fileSalt, index, isLast });
-    const encrypted = await encryptChunk(chunk, key, aad);
+    const encrypted = await abortable(encryptChunk(chunk, key, aad), signal);
+    if (signal?.aborted) throw signal.reason;
     const packed = packChunk(encrypted);
 
     if (index === 0) {

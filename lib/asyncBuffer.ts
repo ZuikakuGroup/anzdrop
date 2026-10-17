@@ -3,11 +3,12 @@
 // 先読み分をcapacity件以内に抑えつつ、消費側の待ち時間を生成側の先行実行で隠せる。
 export function bufferAhead<T>(
   source: AsyncIterable<T>,
-  capacity: number
+  capacity: number,
+  signal?: AbortSignal
 ): AsyncGenerator<T> {
   const queue: T[] = [];
   let producerDone = false;
-  let stopped = false;
+  let stopped = signal?.aborted ?? false;
   let pendingNext = false;
   let producerError: unknown = null;
   let notifyProducer: (() => void) | null = null;
@@ -58,15 +59,26 @@ export function bufferAhead<T>(
     }
   })();
 
+  const onAbort = (): void => {
+    stopped = true;
+    queue.length = 0;
+    wake("notifyProducer");
+    wake("notifyConsumer");
+    void pump.catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+
   return (async function* (): AsyncGenerator<T> {
     try {
       while (true) {
-        while (queue.length === 0 && !producerDone) {
+        while (queue.length === 0 && !producerDone && !stopped) {
           await new Promise<void>((resolve) => {
             notifyConsumer = resolve;
           });
         }
 
+        if (stopped) return;
         if (queue.length > 0) {
           const item = queue.shift() as T;
           wake("notifyProducer");
@@ -83,6 +95,7 @@ export function bufferAhead<T>(
         return;
       }
     } finally {
+      signal?.removeEventListener("abort", onAbort);
       stopped = true;
       queue.length = 0;
       wake("notifyProducer");

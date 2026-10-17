@@ -59,7 +59,7 @@ export async function* repartition(
     }
   }
 
-  if (pendingLength > 0) {
+  if (pendingLength > 0 && !signal?.aborted) {
     yield { partNumber, body: take(pendingLength) };
   }
 }
@@ -275,7 +275,7 @@ async function ackUploadedPart(
 // 各パートは一時エラー時に指数バックオフ付きでリトライする。リトライを
 // 使い切ったパートがあった時点で全ワーカーを止め、アップロード全体を失敗させる。
 export async function uploadChunksFromStream(
-  chunks: AsyncGenerator<Uint8Array>,
+  chunks: AsyncGenerator<Uint8Array> | ((signal: AbortSignal) => AsyncGenerator<Uint8Array>),
   uploadSessionId: string,
   uploadToken: string,
   path: string,
@@ -288,7 +288,8 @@ export async function uploadChunksFromStream(
   const backoffMs = options.backoffMs ?? defaultBackoffMs;
   const abort = new AbortController();
   const { signal } = abort;
-  const parts = repartition(chunks, UPLOAD_PART_SIZE, signal);
+  const source = typeof chunks === "function" ? chunks(signal) : chunks;
+  const parts = repartition(source, UPLOAD_PART_SIZE, signal);
   const sleep = async (ms: number): Promise<void> => {
     if (signal.aborted) throw signal.reason;
     let timer: ReturnType<typeof setTimeout> | undefined;

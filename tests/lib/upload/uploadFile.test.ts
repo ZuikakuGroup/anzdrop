@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
+import { bufferAhead } from "@/lib/asyncBuffer";
+import { iterateEncryptedChunks } from "@/lib/crypto/stream";
+import { generateKey } from "@/lib/crypto/key";
+import * as encryption from "@/lib/crypto/encrypt";
+import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 
 type FetchCall = { url: string; init: RequestInit };
@@ -61,9 +66,61 @@ const baseParams = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("uploadEncryptedFile", () => {
+  it("propagates a part failure through buffering to a pending file read", async () => {
+    const key = await generateKey();
+    const file = new File([new Uint8Array(CHUNK_SIZE + 1)], "pending.bin");
+    const originalSlice = file.slice.bind(file);
+    const read = Promise.withResolvers<ArrayBuffer>();
+    const started = Promise.withResolvers<void>();
+    let sliceCount = 0;
+    const slice = vi.spyOn(file, "slice").mockImplementation((...args) => {
+      const blob = originalSlice(...args);
+      if (++sliceCount === 2) {
+        vi.spyOn(blob, "arrayBuffer").mockImplementation(() => { started.resolve(); return read.promise; });
+      }
+      return blob;
+    });
+    const encrypt = vi.spyOn(encryption, "encryptChunk");
+    let inputSignal: AbortSignal | undefined;
+    let requestSignal: AbortSignal | null | undefined;
+    const closed = vi.fn();
+    const { calls } = stubFetch(async (url, init) => {
+      if (url === "/api/upload/start") return json({ success: true, shareId: "share", uploadToken: "token", uploadSessionId: "session" });
+      if (url === "/api/upload/chunk") {
+        requestSignal = init.signal;
+        await started.promise;
+        return new Response(null, { status: 400 });
+      }
+      throw new Error("complete must not be called");
+    });
+    const result = uploadEncryptedFile({
+      ...baseParams,
+      path: "pending.bin",
+      createChunkStream: signal => {
+        inputSignal = signal;
+        async function* source() {
+          try { yield* iterateEncryptedChunks(file, key, signal); }
+          finally { closed(); }
+        }
+        return bufferAhead(source(), 2, signal);
+      },
+    });
+    try {
+      await expect(result).rejects.toThrow("pending.bin のパート 1 アップロードに失敗しました");
+      expect(inputSignal?.aborted).toBe(true);
+      expect(requestSignal).toBe(inputSignal);
+      await vi.waitFor(() => expect(closed).toHaveBeenCalledTimes(1));
+    } finally { read.reject(new Error("late read failure")); }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(encrypt).toHaveBeenCalledTimes(1);
+    expect(slice).toHaveBeenCalledTimes(2);
+    expect(calls.map(call => call.url)).toEqual(["/api/upload/start", "/api/upload/chunk"]);
+  });
+
   it("start → chunk → complete の順で送り、start が返した shareId/uploadToken を返す", async () => {
     const factory = makeChunkStreamFactory();
     const { calls } = stubFetch((url) => {

@@ -111,6 +111,49 @@ describe("bufferAhead", () => {
     await expect(buffered.next()).resolves.toEqual({ value: undefined, done: true });
   });
 
+  it("unblocks a consumer waiting for input when its signal is aborted", async () => {
+    const abort = new AbortController();
+    const read = Promise.withResolvers<IteratorResult<number>>();
+    const iterator = {
+      next: vi.fn<() => Promise<IteratorResult<number>>>().mockReturnValue(read.promise),
+      return: vi.fn(async () => ({ value: undefined, done: true as const })),
+    };
+    const buffered = bufferAhead({ [Symbol.asyncIterator]: () => iterator }, 1, abort.signal);
+    const next = buffered.next();
+    abort.abort(new Error("cancelled"));
+    try {
+      expect(await Promise.race([next.then(result => result.done), sleep(100).then(() => "blocked")])).toBe(true);
+      expect(iterator.return).not.toHaveBeenCalled();
+    } finally { read.resolve({ value: 1, done: false }); }
+    await vi.waitFor(() => expect(iterator.return).toHaveBeenCalledTimes(1));
+    expect(iterator.next).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears a full queue and closes the source on abort", async () => {
+    const abort = new AbortController();
+    const closed = vi.fn();
+    const produced: number[] = [];
+    async function* source() {
+      try { yield* range(10, produced); }
+      finally { closed(); }
+    }
+    const buffered = bufferAhead(source(), 1, abort.signal);
+    await vi.waitFor(() => expect(produced).toEqual([0]));
+    abort.abort();
+    await expect(buffered.next()).resolves.toEqual({ done: true, value: undefined });
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(produced).toEqual([0]);
+  });
+
+  it("does not read from a source with an already aborted signal", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    const next = vi.fn(async () => ({ done: true as const, value: undefined }));
+    const buffered = bufferAhead({ [Symbol.asyncIterator]: () => ({ next }) }, 1, abort.signal);
+    await expect(buffered.next()).resolves.toEqual({ done: true, value: undefined });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it("supports an empty source", async () => {
     const result: number[] = [];
 
