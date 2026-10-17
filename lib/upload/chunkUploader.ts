@@ -100,9 +100,6 @@ function defaultBackoffMs(attempt: number): number {
   return base + Math.floor(Math.random() * base * 0.25);
 }
 
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 function normalizeEtag(etag: string | null): string | null {
   if (!etag) {
     return null;
@@ -118,7 +115,8 @@ type PartUrlBatcher = {
 
 function createPartUrlBatcher(
   uploadSessionId: string,
-  uploadToken: string
+  uploadToken: string,
+  signal: AbortSignal
 ): PartUrlBatcher {
   type Waiter = {
     partNumber: number;
@@ -158,7 +156,9 @@ function createPartUrlBatcher(
         ];
 
         try {
+          signal.throwIfAborted();
           const response = await fetch("/api/upload/part-urls", {
+            signal,
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -222,6 +222,10 @@ function createPartUrlBatcher(
   return {
     getUrl: (partNumber: number, contentLength: number) =>
       new Promise<string>((resolve, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
         queue.push({ partNumber, contentLength, resolve, reject });
         if (queue.length >= PART_URL_BATCH_SIZE) {
           void runFlush();
@@ -236,9 +240,11 @@ async function ackUploadedPart(
   uploadSessionId: string,
   uploadToken: string,
   partNumber: number,
-  etag: string
+  etag: string,
+  signal: AbortSignal
 ): Promise<void> {
   const response = await fetch("/api/upload/part-ack", {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -278,14 +284,37 @@ export async function uploadChunksFromStream(
   const parts = repartition(chunks, UPLOAD_PART_SIZE);
   const maxAttempts = options.maxAttempts ?? PART_UPLOAD_MAX_ATTEMPTS;
   const backoffMs = options.backoffMs ?? defaultBackoffMs;
-  const sleep = options.sleep ?? defaultSleep;
+  const abort = new AbortController();
+  const { signal } = abort;
+  const sleep = async (ms: number): Promise<void> => {
+    signal.throwIfAborted();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: () => void = () => {};
+    try {
+      await new Promise<void>((resolve, reject) => {
+        onAbort = () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (options.sleep) options.sleep(ms).then(resolve, reject);
+        else timer = setTimeout(resolve, ms);
+      });
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
   const urlBatcher =
     uploadMode === "direct"
-      ? createPartUrlBatcher(uploadSessionId, uploadToken)
+      ? createPartUrlBatcher(uploadSessionId, uploadToken, signal)
       : null;
 
   let firstError: Error | null = null;
   let directUnavailable = false;
+  const stop = (error: unknown): void => {
+    firstError ??= error instanceof Error ? error : new Error("不明なエラー");
+    abort.abort(firstError);
+  };
 
   const partFailure = (partNumber: number): Error =>
     new Error(`${path} のパート ${partNumber} アップロードに失敗しました`);
@@ -303,6 +332,7 @@ export async function uploadChunksFromStream(
 
       try {
         response = await fetch("/api/upload/chunk", {
+          signal,
           method: "POST",
           headers: {
             "Anzdrop-Upload-Session": uploadSessionId,
@@ -366,7 +396,9 @@ export async function uploadChunksFromStream(
         const url = await urlBatcher.getUrl(partNumber, body.byteLength);
         // Content-Length は署名対象だが、ブラウザでは forbidden header のため
         // ここでは付けない。fetch がボディ長から自動設定し、申告どおりなら署名と一致する。
+        signal.throwIfAborted();
         putResponse = await fetch(url, {
+          signal,
           method: "PUT",
           body: body.buffer,
         });
@@ -405,7 +437,8 @@ export async function uploadChunksFromStream(
       }
 
       try {
-        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag);
+        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag, signal);
+        if (firstError !== null) return;
         onBytesUploaded(body.byteLength);
         return;
       } catch (unknownErr) {
@@ -453,14 +486,11 @@ export async function uploadChunksFromStream(
         // 複数ワーカーが同時にnext()を呼んでもパート番号とバイト列は1対1で対応する。
         next = await parts.next();
       } catch (unknownErr) {
-        firstError ??=
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("不明なエラー");
+        stop(unknownErr);
         return;
       }
 
-      if (next.done) {
+      if (next.done || firstError !== null) {
         return;
       }
 
@@ -469,18 +499,16 @@ export async function uploadChunksFromStream(
       try {
         await uploadPart(partNumber, body);
       } catch (unknownErr) {
-        firstError ??=
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("不明なエラー");
+        stop(unknownErr);
         return;
       }
     }
   };
 
-  await Promise.all(Array.from({ length: concurrency }, () => worker()));
-
-  if (firstError) {
-    throw firstError;
+  try {
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  } finally {
+    await parts.return(undefined).catch(stop);
   }
+  if (firstError) throw firstError;
 }

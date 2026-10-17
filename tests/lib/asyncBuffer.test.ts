@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { bufferAhead } from "@/lib/asyncBuffer";
 
 function sleep(ms: number): Promise<void> {
@@ -62,6 +62,21 @@ describe("bufferAhead", () => {
     }).rejects.toThrow("boom");
 
     expect(result).toEqual([1, 2]);
+  });
+
+  it("closes the producer when a consumer stops with a full queue", async () => {
+    const closed = vi.fn();
+    let produced = 0;
+    async function* source() {
+      try { while (true) yield ++produced; }
+      finally { closed(); }
+    }
+    const buffered = bufferAhead(source(), 2);
+    await buffered.next();
+    await vi.waitFor(() => expect(produced).toBe(3));
+    await buffered.return(undefined);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(produced).toBe(3);
   });
 
   it("supports an empty source", async () => {

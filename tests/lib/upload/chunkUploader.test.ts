@@ -266,6 +266,110 @@ describe("uploadChunksFromStream", () => {
     ).toBe(UPLOAD_PART_SIZE + 50);
   });
 
+  it.each(["proxy", "direct"] as const)("aborts a stalled concurrent request after a fatal %s failure", async uploadMode => {
+    let releaseFailure: () => void = () => {};
+    const stalled = new Promise<void>(resolve => { releaseFailure = resolve; });
+    const aborted = vi.fn();
+    const progress = vi.fn();
+    const closed = vi.fn();
+    async function* source() {
+      try {
+        yield new Uint8Array(UPLOAD_PART_SIZE);
+        yield new Uint8Array(UPLOAD_PART_SIZE);
+        yield new Uint8Array(1);
+      } finally { closed(); }
+    }
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === "/api/upload/part-urls") {
+        const { parts } = JSON.parse(init.body as string) as { parts: { partNumber: number }[] };
+        return Response.json({ success: true, urls: parts.map(p => ({ partNumber: p.partNumber, url: `https://r2.example/${p.partNumber}` })) });
+      }
+      const part = url.startsWith("https://r2.example/") ? Number(url.split("/").at(-1)) : Number((init.headers as Record<string, string>)["Anzdrop-Part-Number"]);
+      if (part === 1) {
+        await stalled;
+        return new Response(null, { status: 400 });
+      }
+      if (part !== 2) throw new Error("unexpected extra part");
+      releaseFailure();
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init.signal!;
+        const stop = () => { aborted(); reject(signal.reason); };
+        if (signal.aborted) stop();
+        else signal.addEventListener("abort", stop, { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(uploadChunksFromStream(source(), "session", "token", "failed.bin", 2, progress, { uploadMode, ...noBackoff })).rejects.toThrow(/パート 1/);
+    expect(aborted).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalledTimes(1);
+    if (uploadMode === "direct") expect(fetchMock.mock.calls.filter(([url]) => url === "/api/upload/chunk")).toHaveLength(1);
+  });
+
+  it.each(["part-urls", "part-ack"])("aborts pending %s without falling back after another part fails", async phase => {
+    let releaseFailure: () => void = () => {};
+    const waiting = new Promise<void>(resolve => { releaseFailure = resolve; });
+    const aborted = vi.fn();
+    const progress = vi.fn();
+    let urlCalls = 0;
+    const block = (signal: AbortSignal) => {
+      releaseFailure();
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener("abort", () => { aborted(); reject(signal.reason); }, { once: true });
+      });
+    };
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url === "/api/upload/part-urls") {
+        if (++urlCalls > 1) return block(init.signal!);
+        const { parts } = JSON.parse(init.body as string) as { parts: { partNumber: number }[] };
+        return Response.json({ success: true, urls: parts.map(p => ({ partNumber: p.partNumber, url: `https://r2.example/${p.partNumber}` })) });
+      }
+      if (url === "/api/upload/part-ack") return block(init.signal!);
+      if (url === "https://r2.example/1") return new Response(null, { status: phase === "part-ack" ? 200 : 503, headers: { ETag: '"part-1"' } });
+      if (url === "https://r2.example/2") { await waiting; return new Response(null, { status: 400 }); }
+      return new Response(null, { status: 400 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(uploadChunksFromStream(fromArray([new Uint8Array(UPLOAD_PART_SIZE * 2)]), "session", "token", "failed.bin", 2, progress, { uploadMode: "direct", ...noBackoff })).rejects.toThrow(/パート 2/);
+    expect(aborted).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+    const proxies = fetchMock.mock.calls.filter(([url]) => url === "/api/upload/chunk");
+    expect(proxies).toHaveLength(1);
+    expect(new Headers(proxies[0][1].headers).get("Anzdrop-Part-Number")).toBe("2");
+  });
+
+  it("interrupts retry backoff when another part fails", async () => {
+    let releaseFailure: () => void = () => {};
+    const waiting = new Promise<void>(resolve => { releaseFailure = resolve; });
+    const sleep = vi.fn(() => { releaseFailure(); return new Promise<void>(() => {}); });
+    const progress = vi.fn();
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (new Headers(init.headers).get("Anzdrop-Part-Number") === "1") return new Response(null, { status: 503 });
+      await waiting;
+      return new Response(null, { status: 400 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(uploadChunksFromStream(fromArray([new Uint8Array(UPLOAD_PART_SIZE * 2)]), "session", "token", "failed.bin", 2, progress, { sleep })).rejects.toThrow(/パート 2/);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
+  it("preserves the upload error when closing the producer also fails", async () => {
+    const closed = vi.fn();
+    async function* source() {
+      try { yield new Uint8Array(UPLOAD_PART_SIZE * 2); }
+      finally {
+        closed();
+        // eslint-disable-next-line no-unsafe-finally -- Deliberately fail cleanup to verify error precedence.
+        throw new Error("producer cleanup failed");
+      }
+    }
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 400 })));
+    await expect(uploadChunksFromStream(source(), "session", "token", "failed.bin", 1, vi.fn(), noBackoff)).rejects.toThrow(/パート 1/);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
   it("does not retry or report a part that was waiting after another part fails", async () => {
     const attempts = new Map<number, number>();
     const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {

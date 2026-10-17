@@ -74,11 +74,25 @@ describe("Hono API HTTP boundary", () => {
     expect(head.body).toBeNull();
     expect(head.headers.get("Content-Length")).toBe("8");
     const once = await file(1);
+    const get = vi.spyOn(env.FILES_BUCKET, "get");
+    for (let i = 0; i < 2; i++) {
+      const head = await app.fetch(new Request(`${origin}/api/file/${once}`, { method: "HEAD", headers: { Range: "bytes=999-" } }), env, ctx);
+      expect(head.status).toBe(200);
+      expect(head.body).toBeNull();
+      expect(head.headers.get("Content-Length")).toBe(String(bytes.length));
+      expect(head.headers.get("Cache-Control")).toBe("no-store");
+      expect(head.headers.get("Content-Disposition")).toBe('attachment; filename="encrypted-name"');
+      expect(head.headers.get("Accept-Ranges")).toBeNull();
+    }
+    expect(get).not.toHaveBeenCalled();
+    expect(await env.DB.prepare("SELECT download_count FROM files WHERE id = ?").bind(once).first("download_count")).toBe(0);
+    expect(background).toHaveLength(0);
     const response = await request(`/api/file/${once}`);
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
     await Promise.all(background);
     expect(await env.FILES_BUCKET.head(once)).toBeNull();
     expect((await request(`/api/file/${once}`)).status).toBe(404);
+    expect((await request(`/api/file/${once}`, "HEAD")).status).toBe(404);
   });
   it("rejects cross-origin logout without clearing session cookies", async () => {
     const response = await app.fetch(new Request(`${origin}/api/account/logout`, { method: "POST", headers: { Origin: "https://evil.example" } }), env, ctx);

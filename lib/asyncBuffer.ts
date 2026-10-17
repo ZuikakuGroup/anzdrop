@@ -7,6 +7,7 @@ export function bufferAhead<T>(
 ): AsyncGenerator<T> {
   const queue: T[] = [];
   let producerDone = false;
+  let stopped = false;
   let producerError: unknown = null;
   let notifyProducer: (() => void) | null = null;
   let notifyConsumer: (() => void) | null = null;
@@ -25,17 +26,18 @@ export function bufferAhead<T>(
     }
   };
 
+  const iterator = source[Symbol.asyncIterator]();
   const pump = (async (): Promise<void> => {
     try {
-      const iterator = source[Symbol.asyncIterator]();
-      while (true) {
-        while (queue.length >= capacity) {
+      while (!stopped) {
+        while (!stopped && queue.length >= capacity) {
           await new Promise<void>((resolve) => {
             notifyProducer = resolve;
           });
         }
+        if (stopped) break;
         const { value, done } = await iterator.next();
-        if (done) break;
+        if (done || stopped) break;
         queue.push(value);
         wake("notifyConsumer");
       }
@@ -44,31 +46,39 @@ export function bufferAhead<T>(
     } finally {
       producerDone = true;
       wake("notifyConsumer");
+      if (stopped) await iterator.return?.();
     }
   })();
 
   return (async function* (): AsyncGenerator<T> {
-    while (true) {
-      while (queue.length === 0 && !producerDone) {
-        await new Promise<void>((resolve) => {
-          notifyConsumer = resolve;
-        });
-      }
+    try {
+      while (true) {
+        while (queue.length === 0 && !producerDone) {
+          await new Promise<void>((resolve) => {
+            notifyConsumer = resolve;
+          });
+        }
 
-      if (queue.length > 0) {
-        const item = queue.shift() as T;
-        wake("notifyProducer");
-        yield item;
-        continue;
-      }
+        if (queue.length > 0) {
+          const item = queue.shift() as T;
+          wake("notifyProducer");
+          yield item;
+          continue;
+        }
 
+        await pump;
+
+        if (producerError) {
+          throw producerError;
+        }
+
+        return;
+      }
+    } finally {
+      stopped = true;
+      queue.length = 0;
+      wake("notifyProducer");
       await pump;
-
-      if (producerError) {
-        throw producerError;
-      }
-
-      return;
     }
   })();
 }

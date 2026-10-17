@@ -320,6 +320,16 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     expect(out.length).toBe(0);
   });
 
+  it.each([undefined, 0, 123])("validates an empty response against expected size %s", async expected => {
+    const key = await generateKey();
+    const chunks = iterateDecryptedChunks(toReadableStream(new Uint8Array(0), [64]), key, expected);
+    if (expected === 123) {
+      await expect(chunks.next()).rejects.toThrow(/受信 0 \/ 期待 123/);
+    } else {
+      await expect(chunks.next()).resolves.toMatchObject({ done: true });
+    }
+  });
+
   it("succeeds silently when expectedTotalBytes matches the actual decrypted size", async () => {
     const key = await generateKey();
     const plaintext = fillPattern(500, 20);

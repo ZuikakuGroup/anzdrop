@@ -233,6 +233,24 @@ async function getFile(fileId: string) {
   });
 }
 
+describe("HEAD /api/file/[fileId]", () => {
+  it.each([
+    ["expired", 410], ["suspended", 403], ["exhausted", 404], ["missing object", 404],
+  ] as const)("rejects %s without changing download_count", async (kind, status) => {
+    const shareId = await insertShare({
+      ...(kind === "expired" ? { expiresAt: new Date(Date.now() - 1000).toISOString() } : {}),
+      ...(kind === "suspended" ? { suspendedAt: new Date().toISOString() } : {}),
+    });
+    const { id, storageKey } = await insertFile({ shareId, maxDownloads: 1, downloadCount: kind === "exhausted" ? 1 : 0 });
+    if (kind !== "missing object") await env.FILES_BUCKET.put(storageKey, new Uint8Array([1, 2, 3]));
+    const { GET } = bindRouteHandlers(await import("@/server/routes/file/[fileId]/route"), testRuntime);
+    const response = await GET(new Request(`http://localhost/api/file/${id}`, { method: "HEAD" }), { params: Promise.resolve({ fileId: id }) });
+    expect(response.status).toBe(status);
+    expect(await downloadCountOf(id)).toBe(kind === "exhausted" ? 1 : 0);
+    expect(waitUntilPromises).toHaveLength(0);
+  });
+});
+
 describe("GET /api/file/[fileId]", () => {
   it("returns 404 for an unknown fileId", async () => {
     const response = await getFile("no-such-file");

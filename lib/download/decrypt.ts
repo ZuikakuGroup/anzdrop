@@ -99,12 +99,13 @@ export async function fetchDecryptedStream(
   key: CryptoKey
 ): Promise<ReadableStream<Uint8Array>> {
   const ciphertext = await fetchCiphertextStream(file);
-  const chunks = iterateDecryptedChunks(ciphertext, key, file.size);
+  const abort = new AbortController();
+  const chunks = iterateDecryptedChunks(ciphertext, key, file.size, abort.signal);
 
   // 消費側(ディスク書き込みなど)が現在のチャンクを処理している間に、次の
   // チャンクの復号を先行させておく(1段の先読みパイプライン)。復号は
   // WebCrypto がワーカースレッドで行うため、これで受信・復号・書き込みが
-  // 重なって進む。キャンセルは従来どおり chunks.return() に集約する。
+  // 重なって進む。キャンセル時は受信を止めてからジェネレータを終了する。
   //
   // pending は「次の pull で必ず await される」前提だが、消費側が cancel も
   // pull もせずにストリームを放棄した場合(暗号文が壊れていて chunks.next() が
@@ -124,6 +125,8 @@ export async function fetchDecryptedStream(
       try {
         const { value, done } = await pending;
 
+        if (abort.signal.aborted) return;
+
         if (done) {
           controller.close();
           return;
@@ -132,11 +135,12 @@ export async function fetchDecryptedStream(
         pending = startNextChunk();
         controller.enqueue(value);
       } catch (err) {
-        controller.error(err);
+        if (!abort.signal.aborted) controller.error(err);
       }
     },
     async cancel() {
-      await chunks.return(undefined);
+      abort.abort();
+      await chunks.return(undefined).catch(() => {});
       await pending.catch(() => {});
     },
   });

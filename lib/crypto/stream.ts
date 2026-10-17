@@ -88,9 +88,15 @@ function corruptedDataError(): Error {
 export async function* iterateDecryptedChunks(
   stream: ReadableStream<Uint8Array>,
   key: CryptoKey,
-  expectedTotalBytes?: number
+  expectedTotalBytes?: number,
+  signal?: AbortSignal
 ): AsyncGenerator<Uint8Array> {
   const reader = stream.getReader();
+  const cancelRead = (): void => {
+    void reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener("abort", cancelRead, { once: true });
+  if (signal?.aborted) cancelRead();
   const pending: Uint8Array[] = [];
   let pendingLength = 0;
   let streamDone = false;
@@ -98,7 +104,9 @@ export async function* iterateDecryptedChunks(
 
   const fillTo = async (minBytes: number): Promise<void> => {
     while (pendingLength < minBytes && !streamDone) {
+      signal?.throwIfAborted();
       const { value, done } = await reader.read();
+      signal?.throwIfAborted();
 
       if (value && value.byteLength > 0) {
         pending.push(value);
@@ -173,7 +181,11 @@ export async function* iterateDecryptedChunks(
     await fillTo(FILE_SALT_LENGTH);
 
     if (pendingLength === 0) {
-      // 空のダウンロード(0バイトのオブジェクト)。
+      if (expectedTotalBytes !== undefined && expectedTotalBytes !== 0) {
+        throw new Error(
+          `ダウンロードが途中で切断されました(受信 0 / 期待 ${expectedTotalBytes} バイト)。`
+        );
+      }
       return;
     }
 
@@ -261,6 +273,7 @@ export async function* iterateDecryptedChunks(
       );
     }
   } finally {
+    signal?.removeEventListener("abort", cancelRead);
     await reader.cancel().catch(() => {});
   }
 }
