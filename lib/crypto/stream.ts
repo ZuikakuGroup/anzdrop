@@ -104,9 +104,9 @@ export async function* iterateDecryptedChunks(
 
   const fillTo = async (minBytes: number): Promise<void> => {
     while (pendingLength < minBytes && !streamDone) {
-      signal?.throwIfAborted();
+      if (signal?.aborted) throw signal.reason;
       const { value, done } = await reader.read();
-      signal?.throwIfAborted();
+      if (signal?.aborted) throw signal.reason;
 
       if (value && value.byteLength > 0) {
         pending.push(value);

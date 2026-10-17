@@ -266,6 +266,35 @@ describe("uploadChunksFromStream", () => {
     ).toBe(UPLOAD_PART_SIZE + 50);
   });
 
+  it.each(["proxy", "direct"] as const)("uploads via %s when AbortSignal.throwIfAborted is unavailable", async uploadMode => {
+    const NativeAbortController = AbortController;
+    vi.stubGlobal("AbortController", class extends NativeAbortController {
+      constructor() {
+        super();
+        Object.defineProperty(this.signal, "throwIfAborted", { value: undefined });
+      }
+    });
+    const progress = vi.fn();
+    let calls = 0;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/upload/part-urls") {
+        return Response.json({ success: true, urls: [{ partNumber: 1, url: "https://r2.example/1" }] });
+      }
+      if (url === "/api/upload/part-ack") return new Response(null, { status: 200 });
+      return new Response(null, { status: ++calls === 1 ? 503 : 200, headers: { ETag: '"part-1"' } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadChunksFromStream(fromArray([new Uint8Array(3)]), "session", "token", "compatible.bin", 1, progress, { uploadMode, ...noBackoff });
+    expect(calls).toBe(2);
+    expect(progress).toHaveBeenCalledExactlyOnceWith(3);
+    if (uploadMode === "direct") {
+      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/upload/part-urls")).toHaveLength(2);
+      expect(fetchMock.mock.calls.filter(([url]) => url === "https://r2.example/1")).toHaveLength(2);
+      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/upload/part-ack")).toHaveLength(1);
+      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/upload/chunk")).toHaveLength(0);
+    }
+  });
+
   it.each(["proxy", "direct"] as const)("aborts a stalled concurrent request after a fatal %s failure", async uploadMode => {
     let releaseFailure: () => void = () => {};
     const stalled = new Promise<void>(resolve => { releaseFailure = resolve; });

@@ -156,7 +156,7 @@ function createPartUrlBatcher(
         ];
 
         try {
-          signal.throwIfAborted();
+          if (signal.aborted) throw signal.reason;
           const response = await fetch("/api/upload/part-urls", {
             signal,
             method: "POST",
@@ -287,7 +287,7 @@ export async function uploadChunksFromStream(
   const abort = new AbortController();
   const { signal } = abort;
   const sleep = async (ms: number): Promise<void> => {
-    signal.throwIfAborted();
+    if (signal.aborted) throw signal.reason;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onAbort: () => void = () => {};
     try {
@@ -396,7 +396,7 @@ export async function uploadChunksFromStream(
         const url = await urlBatcher.getUrl(partNumber, body.byteLength);
         // Content-Length は署名対象だが、ブラウザでは forbidden header のため
         // ここでは付けない。fetch がボディ長から自動設定し、申告どおりなら署名と一致する。
-        signal.throwIfAborted();
+        if (signal.aborted) throw signal.reason;
         putResponse = await fetch(url, {
           signal,
           method: "PUT",

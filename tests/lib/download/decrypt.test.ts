@@ -150,6 +150,22 @@ describe("fetchDecryptedStream", () => {
     vi.unstubAllGlobals();
   });
 
+  it("downloads when AbortSignal.throwIfAborted is unavailable", async () => {
+    const NativeAbortController = AbortController;
+    vi.stubGlobal("AbortController", class extends NativeAbortController {
+      constructor() {
+        super();
+        Object.defineProperty(this.signal, "throwIfAborted", { value: undefined });
+      }
+    });
+    const key = await generateKey();
+    const content = new TextEncoder().encode("compatible download");
+    const packed = await packEncrypted(new File([content], "small.bin"), key);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(streamOf(packed))));
+    const stream = await fetchDecryptedStream({ id: "compatible", name: "small.bin", size: content.length, isOneTime: true }, key);
+    expect(await drainStream(stream)).toEqual(content);
+  });
+
   it.each([true, false])("rejects an empty response for a nonempty file (one-time=%s)", async isOneTime => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(streamOf(new Uint8Array()))));
     const stream = await fetchDecryptedStream({ id: "empty", name: "empty.bin", size: 123, isOneTime }, await generateKey());
