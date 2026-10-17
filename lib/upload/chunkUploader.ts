@@ -12,7 +12,8 @@ type UploadMode = "direct" | "proxy";
 // exportはテストからの単体検証のため(通常はuploadChunksFromStream経由で使う)。
 export async function* repartition(
   source: AsyncGenerator<Uint8Array>,
-  partSize: number
+  partSize: number,
+  signal?: AbortSignal
 ): AsyncGenerator<{ partNumber: number; body: Uint8Array<ArrayBuffer> }> {
   const pending: Uint8Array[] = [];
   let pendingLength = 0;
@@ -44,6 +45,7 @@ export async function* repartition(
   };
 
   for await (const piece of source) {
+    if (signal?.aborted) return;
     if (piece.byteLength === 0) {
       continue;
     }
@@ -53,6 +55,7 @@ export async function* repartition(
 
     while (pendingLength >= partSize) {
       yield { partNumber: partNumber++, body: take(partSize) };
+      if (signal?.aborted) return;
     }
   }
 
@@ -281,11 +284,11 @@ export async function uploadChunksFromStream(
   options: UploadChunksOptions = {}
 ): Promise<void> {
   const uploadMode = options.uploadMode ?? "proxy";
-  const parts = repartition(chunks, UPLOAD_PART_SIZE);
   const maxAttempts = options.maxAttempts ?? PART_UPLOAD_MAX_ATTEMPTS;
   const backoffMs = options.backoffMs ?? defaultBackoffMs;
   const abort = new AbortController();
   const { signal } = abort;
+  const parts = repartition(chunks, UPLOAD_PART_SIZE, signal);
   const sleep = async (ms: number): Promise<void> => {
     if (signal.aborted) throw signal.reason;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -310,10 +313,14 @@ export async function uploadChunksFromStream(
       : null;
 
   let firstError: Error | null = null;
+  let pendingPartReads = 0;
+  let notifyFailure!: () => void;
+  const failure = new Promise<void>(resolve => { notifyFailure = resolve; });
   let directUnavailable = false;
   const stop = (error: unknown): void => {
     firstError ??= error instanceof Error ? error : new Error("不明なエラー");
     abort.abort(firstError);
+    notifyFailure();
   };
 
   const partFailure = (partNumber: number): Error =>
@@ -484,10 +491,13 @@ export async function uploadChunksFromStream(
       try {
         // 非同期ジェネレータのnext()は同時呼び出しでも発行順に直列化されるため、
         // 複数ワーカーが同時にnext()を呼んでもパート番号とバイト列は1対1で対応する。
+        pendingPartReads++;
         next = await parts.next();
       } catch (unknownErr) {
         stop(unknownErr);
         return;
+      } finally {
+        pendingPartReads--;
       }
 
       if (next.done || firstError !== null) {
@@ -506,9 +516,13 @@ export async function uploadChunksFromStream(
   };
 
   try {
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    const workers = Promise.all(Array.from({ length: concurrency }, () => worker()));
+    await Promise.race([workers, failure]);
   } finally {
-    await parts.return(undefined).catch(stop);
+    const cleanup = parts.return(undefined).catch(stop);
+    // 保留中の next() は完了後に破棄して閉じる。転送エラーの返却は待たせない。
+    if (pendingPartReads > 0) void cleanup;
+    else await cleanup;
   }
   if (firstError) throw firstError;
 }

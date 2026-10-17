@@ -8,6 +8,7 @@ export function bufferAhead<T>(
   const queue: T[] = [];
   let producerDone = false;
   let stopped = false;
+  let pendingNext = false;
   let producerError: unknown = null;
   let notifyProducer: (() => void) | null = null;
   let notifyConsumer: (() => void) | null = null;
@@ -36,7 +37,14 @@ export function bufferAhead<T>(
           });
         }
         if (stopped) break;
-        const { value, done } = await iterator.next();
+        pendingNext = true;
+        let result: IteratorResult<T>;
+        try {
+          result = await iterator.next();
+        } finally {
+          pendingNext = false;
+        }
+        const { value, done } = result;
         if (done || stopped) break;
         queue.push(value);
         wake("notifyConsumer");
@@ -78,7 +86,12 @@ export function bufferAhead<T>(
       stopped = true;
       queue.length = 0;
       wake("notifyProducer");
-      await pump;
+      // 生成中のチャンクは完了後に破棄して閉じる。呼び出し側の終了は待たせない。
+      if (pendingNext) {
+        void pump.catch(() => {});
+      } else {
+        await pump;
+      }
     }
   })();
 }

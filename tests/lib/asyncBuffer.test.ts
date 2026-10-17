@@ -79,6 +79,38 @@ describe("bufferAhead", () => {
     expect(produced).toBe(3);
   });
 
+  it.each(["resolve", "reject"] as const)("returns before a pending source read settles (%s), then observes cleanup failure", async outcome => {
+    let resolveRead!: (result: IteratorResult<number>) => void;
+    let rejectRead!: (error: Error) => void;
+    const read = new Promise<IteratorResult<number>>((resolve, reject) => {
+      resolveRead = resolve;
+      rejectRead = reject;
+    });
+    const iterator = {
+      next: vi.fn<() => Promise<IteratorResult<number>>>()
+        .mockResolvedValueOnce({ value: 1, done: false })
+        .mockImplementation(() => read),
+      return: vi.fn(async (): Promise<IteratorResult<number>> => {
+        throw new Error("late cleanup failure");
+      }),
+    };
+    const buffered = bufferAhead({ [Symbol.asyncIterator]: () => iterator }, 1);
+    expect(await buffered.next()).toEqual({ value: 1, done: false });
+    await vi.waitFor(() => expect(iterator.next).toHaveBeenCalledTimes(2));
+    const returned = buffered.return(undefined);
+    try {
+      expect(await Promise.race([returned.then(() => "returned"), sleep(100).then(() => "blocked")])).toBe("returned");
+      expect(iterator.return).not.toHaveBeenCalled();
+    } finally {
+      if (outcome === "resolve") resolveRead({ value: 2, done: false });
+      else rejectRead(new Error("late read failure"));
+      await returned.catch(() => {});
+    }
+    await vi.waitFor(() => expect(iterator.return).toHaveBeenCalledTimes(1));
+    expect(iterator.next).toHaveBeenCalledTimes(2);
+    await expect(buffered.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+
   it("supports an empty source", async () => {
     const result: number[] = [];
 

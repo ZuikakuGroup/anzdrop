@@ -3,6 +3,7 @@ import {
   repartition,
   uploadChunksFromStream,
 } from "@/lib/upload/chunkUploader";
+import { bufferAhead } from "@/lib/asyncBuffer";
 import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
 
 async function* fromArray(chunks: Uint8Array[]): AsyncGenerator<Uint8Array> {
@@ -96,6 +97,26 @@ describe("repartition", () => {
     expect(parts.map((part) => part.partNumber)).toEqual([1, 2]);
     expect(parts.map((part) => part.body.byteLength)).toEqual([6, 6]);
     expectBytesEqual(concat(parts.map((part) => part.body)), concat(source));
+  });
+
+  it("does not consume more source chunks after cancellation", async () => {
+    const abort = new AbortController();
+    const consumed = vi.fn();
+    const closed = vi.fn();
+    async function* source() {
+      try {
+        consumed();
+        yield new Uint8Array(12);
+        consumed();
+        yield new Uint8Array(6);
+      } finally { closed(); }
+    }
+    const parts = repartition(source(), 6, abort.signal);
+    expect((await parts.next()).value?.partNumber).toBe(1);
+    abort.abort();
+    await expect(parts.next()).resolves.toEqual({ value: undefined, done: true });
+    expect(consumed).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenCalledTimes(1);
   });
 
   it("emits nothing for an empty stream", async () => {
@@ -384,6 +405,44 @@ describe("uploadChunksFromStream", () => {
     expect(progress).not.toHaveBeenCalled();
   });
 
+  it.each([[1, "resolve"], [2, "resolve"], [4, "resolve"], [2, "reject"]] as const)("reports a fatal upload error before a prefetched source read finishes (concurrency=%s, %s)", async (concurrency, outcome) => {
+    let finishRead!: () => void;
+    let startedRead!: () => void;
+    let failRead!: (error: Error) => void;
+    const read = new Promise<void>((resolve, reject) => { finishRead = resolve; failRead = reject; });
+    const started = new Promise<void>(resolve => { startedRead = resolve; });
+    const closed = vi.fn();
+    const progress = vi.fn();
+    async function* source() {
+      try {
+        yield new Uint8Array(UPLOAD_PART_SIZE);
+        startedRead();
+        await read;
+        yield new Uint8Array(1);
+      } finally { closed(); }
+    }
+    const fetchMock = vi.fn(async () => {
+      await started;
+      return new Response(null, { status: 400 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = uploadChunksFromStream(bufferAhead(source(), 1), "session", "token", "failed.bin", concurrency, progress, noBackoff)
+      .then(() => "unexpected success", error => error instanceof Error ? error.message : "unexpected error");
+    try {
+      expect(await Promise.race([result, new Promise<string>(resolve => setTimeout(() => resolve("blocked"), 100))])).toBe("failed.bin のパート 1 アップロードに失敗しました");
+      expect(closed).not.toHaveBeenCalled();
+      expect(progress).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      if (outcome === "reject") failRead(new Error("late source failure"));
+      else finishRead();
+      await result;
+    }
+    await vi.waitFor(() => expect(closed).toHaveBeenCalledTimes(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(progress).not.toHaveBeenCalled();
+  });
+
   it("preserves the upload error when closing the producer also fails", async () => {
     const closed = vi.fn();
     async function* source() {
@@ -476,13 +535,17 @@ describe("uploadChunksFromStream", () => {
       noBackoff
     );
 
-    await part2Requested;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    resolvePart1(new Response(null, { status: 200 }));
-
-    await expect(upload).rejects.toThrow(
+    const failed = expect(upload).rejects.toThrow(
       "concurrent-failure.bin のパート 2 アップロードに失敗しました"
     );
+    try {
+      await part2Requested;
+      await failed;
+    } finally {
+      resolvePart1(new Response(null, { status: 200 }));
+    }
+    // 失敗通知より後に完了した送信の処理も進めてから、進捗が増えないことを確認する。
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onBytesUploaded).not.toHaveBeenCalled();
   });
 
