@@ -128,17 +128,15 @@ D1 を含むサーバー側の永続ストレージに、新しい種類の情�
 - 検証エージェントの指摘をすべて無条件に採用する必要はないが、採用しなかった場合は、その理由を説明できる状態にすること。
 - 検証を省略してユーザーへ提出してはいけない。
 
-### CodeRabbitによるレビュー
+### GitHub Copilot によるレビュー
 
-このプロジェクトではCodeRabbitによる自動コードレビューを導入している(設定は`.coderabbit.yaml`)。
+PR の自動レビューには GitHub Copilot を使う。GitHub の `copilot-code-review` ルールセットで、main と `review-split/**` 向けの PR 作成時・追加 push 時・Draft のレビューを有効にしている。設定値は [`config/copilot-review-ruleset.json`](config/copilot-review-ruleset.json)、運用は [`docs/ci-automations.md`](docs/ci-automations.md) を参照する。
 
-- PRを作成・更新した場合、CodeRabbitのレビューコメントが解消されている(指摘が残っていない)ことをマージの条件とする。
-- CodeRabbitからの指摘は、検証エージェントの指摘と同様に内容を確認し、妥当なものは修正すること。
-- 指摘を採用しない場合は、理由をPR上で説明したうえで、レビューコメントを解決済みにすること。
-- CodeRabbitの指摘が残ったままマージしたり、ユーザーにマージを促したりしないこと。
-- `Review coverage and split` の通知が「省略」「処理中」「判定不能」の場合、CodeRabbit の成功表示だけでレビュー済みと判断しないこと。初期導入では通知のみで、必須チェックは追加していない。
-- 自動分割された `review-split/<元PR番号>/<連番>` の PR は、先頭から main 向けになったものだけを Squash merge する。下流 PR を生成ブランチへ直接マージしないこと。
-- 生成 PR を手動編集する場合は自動作成を無効にし、実行中の Workflow の終了を確認すること。署名付き操作記録は編集しないこと。App の準備・停止時の復旧は [`docs/ci-automations.md`](docs/ci-automations.md) を参照する。
+- PR を作成・更新した場合、現在の HEAD に対する Copilot のレビュー提出と、指摘が解消されていることを確認してからマージする。自動レビューの設定だけでレビュー完了とは判断しない。
+- 指摘の内容を確認し、妥当なものは修正する。採用しない場合は理由を PR 上で説明し、レビューコメントを解決済みにする。
+- 指摘が残ったままマージしたり、ユーザーにマージを促したりしない。移行前の CodeRabbit の指摘も同様に扱う。
+- `Review coverage and split` は CodeRabbit 専用のため停止している。Copilot のレビュー完了判定には使わない。旧処理の再開にはレビュー判定の対応と再検証が必要。
+- 既存の分割 PR は、先頭から main 向けになったものだけを Squash merge する。下流 PR を生成ブランチへ直接マージしない。署名付き操作記録は編集しない。
 
 ## デプロイ
 

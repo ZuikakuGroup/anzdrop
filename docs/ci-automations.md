@@ -8,7 +8,19 @@ GitHub Actionsで検証・レビュー補助・Cloudflare Workersへのデプロ
 | E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | 本番デプロイ成功後の Playwright スモーク |
 | Weekly Development Report | [`.github/workflows/weekly-report.yml`](../.github/workflows/weekly-report.yml) | 週次の開発活動レポート Issue |
 | File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
-| Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | レビュー省略の通知・大規模 PR の分割 |
+| Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | 停止中。CodeRabbit 用の旧処理。復旧用の手動実行のみ |
+
+## PR は Copilot が自動レビューする
+
+GitHub の [copilot-code-review ルールセット](https://github.com/ZuikakuGroup/anzdrop/rules/25293669)で、main と `review-split/**` 向けの PR を自動レビューする。PR 作成時に加え、Draft と追加 push も対象にしている。既存の `test` 必須チェックとマージキューは維持する。
+
+設定値は [`config/copilot-review-ruleset.json`](../config/copilot-review-ruleset.json) に置く。この JSON を変更しても GitHub には自動反映されない。管理者がルールセットを更新する。レビュー方針は [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) で指定する。
+
+自動レビューの実行には、投稿者の Copilot 利用資格と利用枠が必要になる。設定の有効化だけでレビュー済みとは判断せず、現在の HEAD に対するレビュー提出と指摘の解消を確認する。実行されない場合は [GitHub の設定手順](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)を確認する。
+
+CodeRabbit の自動レビューは [`.coderabbit.yaml`](../.coderabbit.yaml) の `reviews.auto_review.enabled: false` で停止する。この停止設定は main への反映後に有効になる。移行前の未解消コメントは引き続き対応する。
+
+CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し、Workflow の自動トリガーも削除した。分割スクリプトと署名付き操作記録は復旧用に残す。Copilot の判定には対応していないため、そのまま再有効化しない。
 
 ## ESLint の依存関係更新
 
@@ -119,7 +131,9 @@ Link Check / E2E / Weekly report に追加の必須 Secrets は **ない**(`GITH
 | Weekly report が Issue を作れない | Actions の `issues: write` 権限、Organization の Issue 制限 |
 | Weekly report が重複する | タイトル完全一致で更新する実装。タイトルを手で変えると新規作成される |
 
-## 大規模 PR は通知を確認し、分割した列を先頭から取り込む
+## 旧 CodeRabbit 分割処理の復旧資料（停止中）
+
+以下は停止前の仕様と復旧手順。現在の Copilot 運用には適用しない。再開する場合はレビュー判定を対応させ、検証後に自動トリガーと Workflow を有効にする。
 
 対象はリポジトリの管理者・レビュー担当者。まず次の「App の準備」と「取り込み順」を確認し、停止した場合は「停止理由と復旧」を参照する。
 

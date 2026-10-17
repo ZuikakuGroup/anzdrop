@@ -1,14 +1,7 @@
 name: Review coverage and split
 
 on:
-  pull_request_target:
-    branches: [main]
-    types: [opened, synchronize, reopened, closed, ready_for_review, converted_to_draft]
-  status:
-  check_run:
-    types: [completed]
-  schedule:
-    - cron: "*/15 * * * *"
+  # CodeRabbit 専用の旧処理。復旧時の手動実行だけを残す。
   workflow_dispatch:
     inputs:
       pr:

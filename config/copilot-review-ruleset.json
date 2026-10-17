@@ -1,0 +1,24 @@
+{
+  "name": "copilot-code-review",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH",
+        "refs/heads/review-split/**/*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "copilot_code_review",
+      "parameters": {
+        "review_draft_pull_requests": true,
+        "review_on_push": true
+      }
+    }
+  ]
+}
