@@ -245,7 +245,7 @@ test.describe("file sharing", () => {
         await privacy.verify(info);
       } finally { await receiver.close(); }
     });
-    for (const fault of ["network", "corruption"] as const) {
+    for (const fault of ["network", "corruption", "empty"] as const) {
       test(`${fault} @sharing-extended`, async ({ page, context, browser }, info) => {
         const files = [await fixture(info)];
         const privacy = new PrivacyWatch(files.map(f => f.name)); await privacy.attach(context);
@@ -256,6 +256,7 @@ test.describe("file sharing", () => {
           await expect(target.getByRole("button", { name: files[0].name })).toBeVisible();
           await receiver.route("**/api/file/*", async route => {
             if (fault === "network") return route.abort("failed");
+            if (fault === "empty") return route.fulfill({ status: 200, contentType: "application/octet-stream", body: "" });
             const response = await route.fetch(), body = await response.body();
             body[body.length - 1] ^= 255;
             await route.fulfill({ response, body });

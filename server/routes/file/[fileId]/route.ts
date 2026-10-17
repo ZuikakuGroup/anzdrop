@@ -10,6 +10,7 @@ type FileRecord = {
   storage_key: string;
   encrypted_file_name: string;
   max_downloads: number | null;
+  download_count: number;
 };
 
 type DownloadCountResult = {
@@ -38,6 +39,15 @@ function safeAttachmentFilename(encryptedFileName: string): string {
     .slice(0, MAX_ENCRYPTED_FILE_NAME_LENGTH);
 
   return cleaned.length > 0 ? cleaned : "download";
+}
+
+function fileHeaders(size: number, encryptedName: string): Record<string, string> {
+  return {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": String(size),
+    "Content-Disposition": `attachment; filename="${safeAttachmentFilename(encryptedName)}"`,
+    "Cache-Control": "no-store",
+  };
 }
 
 type SingleRange = { offset: number; length?: number } | { suffix: number };
@@ -263,7 +273,8 @@ export const GET = withApiHandler(
         share_id,
         storage_key,
         encrypted_file_name,
-        max_downloads
+        max_downloads,
+        download_count
       FROM files
       WHERE id = ?
       `
@@ -311,6 +322,23 @@ export const GET = withApiHandler(
         { success: false, error: access.error },
         { status: access.status }
       );
+    }
+
+    // HEAD は Range を無視し、本文の取得・回数の消費・削除を行わない。
+    if (request.method === "HEAD") {
+      if (file.max_downloads !== null && file.download_count >= file.max_downloads) {
+        return Response.json({ success: false, error: "ファイルが見つかりません" }, { status: 404 });
+      }
+      const object = await env.FILES_BUCKET.head(file.storage_key);
+      if (!object) {
+        return Response.json({ success: false, error: "ファイルデータが見つかりません" }, { status: 404 });
+      }
+      return new Response(null, {
+        headers: {
+          ...fileHeaders(object.size, file.encrypted_file_name),
+          ...(file.max_downloads === null ? { "Accept-Ranges": "bytes" } : {}),
+        },
+      });
     }
 
     // 回数制限のないファイルへの Range リクエストは、並列ダウンロード
@@ -414,21 +442,7 @@ export const GET = withApiHandler(
       );
     }
 
-    const headers = {
-      // 利用者がアップロードしたバイト列をそのまま返すため、Content-Type は
-      // 常に固定値にして Content-Type 推測(sniffing)の余地をなくす。
-      "Content-Type": "application/octet-stream",
-      // レスポンス本体はR2オブジェクトのバイト列をそのまま流すため、object.sizeが
-      // そのままバイト長になる。クライアント/ブラウザ側が途中切断を検知でき、
-      // ダウンロードの進捗表示にも使える。
-      "Content-Length": String(object.size),
-      // encrypted_file_name に想定外の文字が混ざっていてもヘッダ構築が
-      // 失敗しないよう、安全な文字集合へ丸めてから載せる(GitHub issue #75)。
-      "Content-Disposition": `attachment; filename="${safeAttachmentFilename(
-        file.encrypted_file_name
-      )}"`,
-      "Cache-Control": "no-store",
-    };
+    const headers = fileHeaders(object.size, file.encrypted_file_name);
 
     // 回数上限のないファイルは、R2のボディをそのまま素通しする。並列
     // ダウンロード(Range)に対応していることをクライアント/ブラウザへ知らせる。

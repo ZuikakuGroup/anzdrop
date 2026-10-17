@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   iterateDecryptedChunks,
   iterateEncryptedChunks,
   iterateFileChunks,
 } from "@/lib/crypto/stream";
+import * as encryption from "@/lib/crypto/encrypt";
 import { encryptChunk } from "@/lib/crypto/encrypt";
 import { decryptChunk } from "@/lib/crypto/decrypt";
 import { packChunk, unpackChunk } from "@/lib/crypto/packet";
@@ -79,6 +80,8 @@ function toReadableStream(
   });
 }
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("iterateFileChunks", () => {
   it("yields a single chunk equal to the whole file when smaller than CHUNK_SIZE", async () => {
     const content = fillPattern(1000);
@@ -128,6 +131,49 @@ describe("iterateFileChunks", () => {
 });
 
 describe("iterateEncryptedChunks", () => {
+  it("stops waiting for a pending file read without starting encryption or another read", async () => {
+    const abort = new AbortController();
+    const reason = new Error("transfer failed");
+    const read = Promise.withResolvers<ArrayBuffer>();
+    const file = new File([new Uint8Array(CHUNK_SIZE + 1)], "pending.bin");
+    const blob = new Blob([new Uint8Array(CHUNK_SIZE)]);
+    vi.spyOn(blob, "arrayBuffer").mockReturnValue(read.promise);
+    const slice = vi.spyOn(file, "slice").mockReturnValue(blob);
+    const encrypt = vi.spyOn(encryption, "encryptChunk");
+    const chunks = iterateEncryptedChunks(file, await generateKey(), abort.signal);
+    const next = chunks.next();
+    await vi.waitFor(() => expect(slice).toHaveBeenCalledTimes(1));
+    abort.abort(reason);
+    await expect(next).rejects.toBe(reason);
+    read.reject(new Error("late file read failure"));
+    await chunks.return(undefined);
+    expect(encrypt).not.toHaveBeenCalled();
+    expect(slice).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards an encryption job that completes after abort", async () => {
+    const abort = new AbortController();
+    const job = Promise.withResolvers<Awaited<ReturnType<typeof encryptChunk>>>();
+    const encrypt = vi.spyOn(encryption, "encryptChunk").mockReturnValue(job.promise);
+    const chunks = iterateEncryptedChunks(new File(["payload"], "pending.bin"), await generateKey(), abort.signal);
+    const next = chunks.next();
+    await vi.waitFor(() => expect(encrypt).toHaveBeenCalledTimes(1));
+    const reason = new Error("transfer failed");
+    abort.abort(reason);
+    await expect(next).rejects.toBe(reason);
+    job.reject(new Error("late crypto failure"));
+    await chunks.return(undefined);
+    expect(encrypt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the encrypted format and decrypted bytes unchanged with a signal", async () => {
+    const key = await generateKey();
+    const plain = fillPattern(1000);
+    const chunks = await Array.fromAsync(iterateEncryptedChunks(new File([plain], "normal.bin"), key, new AbortController().signal));
+    const decrypted = await Array.fromAsync(iterateDecryptedChunks(toReadableStream(concatBytes(chunks), [31]), key, plain.length));
+    expectBytesEqual(concatBytes(decrypted), plain);
+  });
+
   it("prepends a FILE_SALT_LENGTH-byte random salt to the first packet only", async () => {
     const content = fillPattern(CHUNK_SIZE + 500, 30);
     const file = new File([content], "salted.bin");
@@ -318,6 +364,16 @@ describe("iterateDecryptedChunks (streaming download decryption)", () => {
     for await (const chunk of iterateDecryptedChunks(stream, key)) out.push(chunk);
 
     expect(out.length).toBe(0);
+  });
+
+  it.each([undefined, 0, 123])("validates an empty response against expected size %s", async expected => {
+    const key = await generateKey();
+    const chunks = iterateDecryptedChunks(toReadableStream(new Uint8Array(0), [64]), key, expected);
+    if (expected === 123) {
+      await expect(chunks.next()).rejects.toThrow(/受信 0 \/ 期待 123/);
+    } else {
+      await expect(chunks.next()).resolves.toMatchObject({ done: true });
+    }
   });
 
   it("succeeds silently when expectedTotalBytes matches the actual decrypted size", async () => {

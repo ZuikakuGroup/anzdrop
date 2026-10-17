@@ -16,6 +16,7 @@ import {
   encodeBase64Url,
   iterateEncryptedChunks,
 } from "@/lib/crypto";
+import { CHUNK_SIZE } from "@/lib/crypto/types";
 import { wrapKeyWithPassword } from "@/lib/upload/encrypt";
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
@@ -147,6 +148,75 @@ async function drainStream(
 describe("fetchDecryptedStream", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("downloads when AbortSignal.throwIfAborted is unavailable", async () => {
+    const NativeAbortController = AbortController;
+    vi.stubGlobal("AbortController", class extends NativeAbortController {
+      constructor() {
+        super();
+        Object.defineProperty(this.signal, "throwIfAborted", { value: undefined });
+      }
+    });
+    const key = await generateKey();
+    const content = new TextEncoder().encode("compatible download");
+    const packed = await packEncrypted(new File([content], "small.bin"), key);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(streamOf(packed))));
+    const stream = await fetchDecryptedStream({ id: "compatible", name: "small.bin", size: content.length, isOneTime: true }, key);
+    expect(await drainStream(stream)).toEqual(content);
+  });
+
+  it.each([true, false])("rejects an empty response for a nonempty file (one-time=%s)", async isOneTime => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(streamOf(new Uint8Array()))));
+    const stream = await fetchDecryptedStream({ id: "empty", name: "empty.bin", size: 123, isOneTime }, await generateKey());
+    await expect(drainStream(stream)).rejects.toThrow(/途中で切断/);
+  });
+
+  it.each([true, false])("cancels a pending ciphertext read without waiting for more bytes (one-time=%s)", async isOneTime => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
+    const stream = await fetchDecryptedStream({ id: "blocked", name: "blocked.bin", size: 123, isOneTime }, await generateKey());
+    const reader = stream.getReader();
+    const read = reader.read();
+    await reader.cancel();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    await expect(read).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("aborts parallel Range requests while prefetching after the first decrypted chunk", async () => {
+    const key = await generateKey();
+    const size = CHUNK_SIZE * 2 + 1;
+    const packed = await packEncrypted(new File([new Uint8Array(size)], "large.bin"), key);
+    const aborted = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      const range = new Headers(init.headers).get("Range")!;
+      const [, startText, endText] = /^bytes=(\d+)-(\d+)$/.exec(range)!;
+      const start = Number(startText), end = Math.min(Number(endText), packed.length - 1);
+      if (start >= CHUNK_SIZE * 2) {
+        return new Promise<Response>((_resolve, reject) => {
+          init.signal!.addEventListener("abort", () => { aborted(); reject(init.signal!.reason); }, { once: true });
+        });
+      }
+      return new Response(packed.slice(start, end + 1), { status: 206, headers: { "Content-Range": `bytes ${start}-${end}/${packed.length}` } });
+    }));
+    const stream = await fetchDecryptedStream({ id: "parallel", name: "large.bin", size, isOneTime: false }, key);
+    const reader = stream.getReader();
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    expect(first.value?.byteLength).toBe(CHUNK_SIZE);
+    const pending = reader.read();
+    await reader.cancel();
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    expect(aborted).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes cancellation even if upstream cancellation fails", async () => {
+    const cancel = vi.fn(() => { throw new Error("connection already closed"); });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ cancel }))));
+    const stream = await fetchDecryptedStream({ id: "blocked", name: "blocked.bin", size: 123, isOneTime: true }, await generateKey());
+    await stream.cancel();
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("streams the decrypted plaintext in order", async () => {

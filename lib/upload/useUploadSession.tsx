@@ -61,7 +61,7 @@ type QueuedFile = {
   // ファイル名の暗号化は小さく即座に終わるので、ファイル追加時点で開始しておく。
   encryptedFileName: Promise<string>;
   // キュー先頭だけ、選択後に本体の先頭チャンクを暗号化しておく。
-  preparedEncryptedChunks?: PrefetchedAsyncIterator<Uint8Array>;
+  preparedEncryptedChunks?: PrefetchedAsyncIterator<Uint8Array> & { abort: AbortController };
   // /api/upload/complete まで到達したか。失敗後のリトライで再処理しないための印。
   completed: boolean;
 };
@@ -136,14 +136,16 @@ export function useUploadSession() {
   };
 
   const createRawEncryptedChunkStream = (
-    pendingFile: PendingFile
+    pendingFile: PendingFile,
+    signal: AbortSignal
   ): AsyncGenerator<Uint8Array> => {
     async function* encryptedChunks(): AsyncGenerator<Uint8Array> {
       const [key, { iterateEncryptedChunks }] = await Promise.all([
         getKey(),
         loadCryptoModule(),
       ]);
-      yield* iterateEncryptedChunks(pendingFile.file, key);
+      if (signal.aborted) throw signal.reason;
+      yield* iterateEncryptedChunks(pendingFile.file, key, signal);
     }
 
     return encryptedChunks();
@@ -153,15 +155,23 @@ export function useUploadSession() {
   // 同じgeneratorから続きを流し、リトライ時は新しいgeneratorを使う(issue #58)。
   const createEncryptedChunkStream = (
     pendingFile: PendingFile,
-    prepared?: PrefetchedAsyncIterator<Uint8Array>
+    prepared: QueuedFile["preparedEncryptedChunks"],
+    signal: AbortSignal
   ): AsyncGenerator<Uint8Array> => {
     const chunks = prepared
       ? continuePrefetched(prepared)
-      : createRawEncryptedChunkStream(pendingFile);
+      : createRawEncryptedChunkStream(pendingFile, signal);
 
     async function* bufferedEncryptedChunks(): AsyncGenerator<Uint8Array> {
-      const [{ bufferAhead }] = await loadUploadModules();
-      yield* bufferAhead(chunks, ENCRYPT_PREFETCH_CHUNKS);
+      const abortPrepared = () => prepared?.abort.abort(signal.reason);
+      signal.addEventListener("abort", abortPrepared, { once: true });
+      if (signal.aborted) abortPrepared();
+      try {
+        const [{ bufferAhead }] = await loadUploadModules();
+        yield* bufferAhead(chunks, ENCRYPT_PREFETCH_CHUNKS, signal);
+      } finally {
+        signal.removeEventListener("abort", abortPrepared);
+      }
     }
 
     return bufferedEncryptedChunks();
@@ -172,9 +182,11 @@ export function useUploadSession() {
       return;
     }
 
-    const prepared = prefetchFirst(
-      createRawEncryptedChunkStream(item.pendingFile)
-    );
+    const abort = new AbortController();
+    const prepared = {
+      ...prefetchFirst(createRawEncryptedChunkStream(item.pendingFile, abort.signal)),
+      abort,
+    };
     item.preparedEncryptedChunks = prepared;
     void prepared.firstResult.catch(() => {
       if (item.preparedEncryptedChunks === prepared) {
@@ -396,10 +408,10 @@ export function useUploadSession() {
             },
             // 選択時の先頭チャンクを一度だけ引き継ぐ。以後のリトライでは
             // 消費済みgeneratorを再利用せず、先頭から作り直す(issue #58)。
-            createChunkStream: () => {
+            createChunkStream: (signal) => {
               const prepared = item.preparedEncryptedChunks;
               item.preparedEncryptedChunks = undefined;
-              return createEncryptedChunkStream(item.pendingFile, prepared);
+              return createEncryptedChunkStream(item.pendingFile, prepared, signal);
             },
           });
 

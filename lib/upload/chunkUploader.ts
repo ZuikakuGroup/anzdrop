@@ -12,7 +12,8 @@ type UploadMode = "direct" | "proxy";
 // exportはテストからの単体検証のため(通常はuploadChunksFromStream経由で使う)。
 export async function* repartition(
   source: AsyncGenerator<Uint8Array>,
-  partSize: number
+  partSize: number,
+  signal?: AbortSignal
 ): AsyncGenerator<{ partNumber: number; body: Uint8Array<ArrayBuffer> }> {
   const pending: Uint8Array[] = [];
   let pendingLength = 0;
@@ -44,6 +45,7 @@ export async function* repartition(
   };
 
   for await (const piece of source) {
+    if (signal?.aborted) return;
     if (piece.byteLength === 0) {
       continue;
     }
@@ -53,10 +55,11 @@ export async function* repartition(
 
     while (pendingLength >= partSize) {
       yield { partNumber: partNumber++, body: take(partSize) };
+      if (signal?.aborted) return;
     }
   }
 
-  if (pendingLength > 0) {
+  if (pendingLength > 0 && !signal?.aborted) {
     yield { partNumber, body: take(pendingLength) };
   }
 }
@@ -100,9 +103,6 @@ function defaultBackoffMs(attempt: number): number {
   return base + Math.floor(Math.random() * base * 0.25);
 }
 
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 function normalizeEtag(etag: string | null): string | null {
   if (!etag) {
     return null;
@@ -118,7 +118,8 @@ type PartUrlBatcher = {
 
 function createPartUrlBatcher(
   uploadSessionId: string,
-  uploadToken: string
+  uploadToken: string,
+  signal: AbortSignal
 ): PartUrlBatcher {
   type Waiter = {
     partNumber: number;
@@ -158,7 +159,9 @@ function createPartUrlBatcher(
         ];
 
         try {
+          if (signal.aborted) throw signal.reason;
           const response = await fetch("/api/upload/part-urls", {
+            signal,
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -222,6 +225,10 @@ function createPartUrlBatcher(
   return {
     getUrl: (partNumber: number, contentLength: number) =>
       new Promise<string>((resolve, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
         queue.push({ partNumber, contentLength, resolve, reject });
         if (queue.length >= PART_URL_BATCH_SIZE) {
           void runFlush();
@@ -236,9 +243,11 @@ async function ackUploadedPart(
   uploadSessionId: string,
   uploadToken: string,
   partNumber: number,
-  etag: string
+  etag: string,
+  signal: AbortSignal
 ): Promise<void> {
   const response = await fetch("/api/upload/part-ack", {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -266,7 +275,7 @@ async function ackUploadedPart(
 // 各パートは一時エラー時に指数バックオフ付きでリトライする。リトライを
 // 使い切ったパートがあった時点で全ワーカーを止め、アップロード全体を失敗させる。
 export async function uploadChunksFromStream(
-  chunks: AsyncGenerator<Uint8Array>,
+  chunks: AsyncGenerator<Uint8Array> | ((signal: AbortSignal) => AsyncGenerator<Uint8Array>),
   uploadSessionId: string,
   uploadToken: string,
   path: string,
@@ -275,17 +284,45 @@ export async function uploadChunksFromStream(
   options: UploadChunksOptions = {}
 ): Promise<void> {
   const uploadMode = options.uploadMode ?? "proxy";
-  const parts = repartition(chunks, UPLOAD_PART_SIZE);
   const maxAttempts = options.maxAttempts ?? PART_UPLOAD_MAX_ATTEMPTS;
   const backoffMs = options.backoffMs ?? defaultBackoffMs;
-  const sleep = options.sleep ?? defaultSleep;
+  const abort = new AbortController();
+  const { signal } = abort;
+  const source = typeof chunks === "function" ? chunks(signal) : chunks;
+  const parts = repartition(source, UPLOAD_PART_SIZE, signal);
+  const sleep = async (ms: number): Promise<void> => {
+    if (signal.aborted) throw signal.reason;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: () => void = () => {};
+    try {
+      await new Promise<void>((resolve, reject) => {
+        onAbort = () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (options.sleep) options.sleep(ms).then(resolve, reject);
+        else timer = setTimeout(resolve, ms);
+      });
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  };
   const urlBatcher =
     uploadMode === "direct"
-      ? createPartUrlBatcher(uploadSessionId, uploadToken)
+      ? createPartUrlBatcher(uploadSessionId, uploadToken, signal)
       : null;
 
   let firstError: Error | null = null;
+  let pendingPartReads = 0;
+  let notifyFailure!: () => void;
+  const failure = new Promise<void>(resolve => { notifyFailure = resolve; });
   let directUnavailable = false;
+  const stop = (error: unknown): void => {
+    firstError ??= error instanceof Error ? error : new Error("不明なエラー");
+    abort.abort(firstError);
+    notifyFailure();
+  };
 
   const partFailure = (partNumber: number): Error =>
     new Error(`${path} のパート ${partNumber} アップロードに失敗しました`);
@@ -303,6 +340,7 @@ export async function uploadChunksFromStream(
 
       try {
         response = await fetch("/api/upload/chunk", {
+          signal,
           method: "POST",
           headers: {
             "Anzdrop-Upload-Session": uploadSessionId,
@@ -366,7 +404,9 @@ export async function uploadChunksFromStream(
         const url = await urlBatcher.getUrl(partNumber, body.byteLength);
         // Content-Length は署名対象だが、ブラウザでは forbidden header のため
         // ここでは付けない。fetch がボディ長から自動設定し、申告どおりなら署名と一致する。
+        if (signal.aborted) throw signal.reason;
         putResponse = await fetch(url, {
+          signal,
           method: "PUT",
           body: body.buffer,
         });
@@ -405,7 +445,8 @@ export async function uploadChunksFromStream(
       }
 
       try {
-        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag);
+        await ackUploadedPart(uploadSessionId, uploadToken, partNumber, etag, signal);
+        if (firstError !== null) return;
         onBytesUploaded(body.byteLength);
         return;
       } catch (unknownErr) {
@@ -451,16 +492,16 @@ export async function uploadChunksFromStream(
       try {
         // 非同期ジェネレータのnext()は同時呼び出しでも発行順に直列化されるため、
         // 複数ワーカーが同時にnext()を呼んでもパート番号とバイト列は1対1で対応する。
+        pendingPartReads++;
         next = await parts.next();
       } catch (unknownErr) {
-        firstError ??=
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("不明なエラー");
+        stop(unknownErr);
         return;
+      } finally {
+        pendingPartReads--;
       }
 
-      if (next.done) {
+      if (next.done || firstError !== null) {
         return;
       }
 
@@ -469,18 +510,20 @@ export async function uploadChunksFromStream(
       try {
         await uploadPart(partNumber, body);
       } catch (unknownErr) {
-        firstError ??=
-          unknownErr instanceof Error
-            ? unknownErr
-            : new Error("不明なエラー");
+        stop(unknownErr);
         return;
       }
     }
   };
 
-  await Promise.all(Array.from({ length: concurrency }, () => worker()));
-
-  if (firstError) {
-    throw firstError;
+  try {
+    const workers = Promise.all(Array.from({ length: concurrency }, () => worker()));
+    await Promise.race([workers, failure]);
+  } finally {
+    const cleanup = parts.return(undefined).catch(stop);
+    // 保留中の next() は完了後に破棄して閉じる。転送エラーの返却は待たせない。
+    if (pendingPartReads > 0) void cleanup;
+    else await cleanup;
   }
+  if (firstError) throw firstError;
 }

@@ -35,6 +35,8 @@ vi.mock("@/lib/turnstile-client", () => ({
 }));
 vi.mock("@/lib/upload/uploadFile", () => ({ uploadEncryptedFile: vi.fn() }));
 import { uploadEncryptedFile } from "@/lib/upload/uploadFile";
+import { iterateEncryptedChunks } from "@/lib/crypto";
+import { abortable } from "@/lib/abort";
 import UploadForm from "@/components/upload/uploadForm";
 
 
@@ -93,6 +95,48 @@ describe("UploadForm の詳細設定", () => {
 });
 
 describe("ファイル選択後の先行暗号化", () => {
+  it("転送失敗の中断通知を選択時に準備した暗号化ストリームにも伝える", async () => {
+    const read = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const closed = vi.fn();
+    let sourceSignal: AbortSignal | undefined;
+    vi.mocked(iterateEncryptedChunks).mockImplementationOnce(async function* (_file, _key, signal) {
+      sourceSignal = signal;
+      try {
+        yield new Uint8Array([1]);
+        started.resolve();
+        await abortable(read.promise, signal);
+        yield new Uint8Array([2]);
+      } finally { closed(); }
+    });
+    const reason = new Error("synthetic upload failure");
+    vi.mocked(uploadEncryptedFile).mockImplementationOnce(async params => {
+      const abort = new AbortController();
+      const chunks = params.createChunkStream(abort.signal);
+      try {
+        await chunks.next();
+        await started.promise;
+        const waiting = chunks.next();
+        abort.abort(reason);
+        await waiting;
+      } finally {
+        read.resolve();
+        await chunks.return(undefined);
+      }
+      throw reason;
+    });
+    await act(async () => root.render(createElement(UploadForm, { header: null, footer: null })));
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [new File(["test"], "test.txt")] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    const upload = [...container.querySelectorAll("button")].find(button => button.textContent === "アップロードする")!;
+    await act(async () => upload.click());
+    await vi.waitFor(() => expect(container.textContent).toContain(reason.message));
+    expect(sourceSignal?.aborted).toBe(true);
+    expect(sourceSignal?.reason).toBe(reason);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
   it("アップロードを押す前に、キュー先頭のファイルだけ暗号化を開始する", async () => {
     await act(async () => {
       root.render(
