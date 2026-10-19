@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",
-    "@astrojs/react": "^7.0.1",
+    "@astrojs/react": "^7.1.0",
     "@cloudflare/workers-types": "^5.20261012.1",
     "@hibiki-js/core": "^0.2.0",
     "@hibiki-js/stripe": "^0.3.0",
