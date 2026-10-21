@@ -8,8 +8,13 @@ updates:
       interval: "daily"
       time: "09:00"
       timezone: "Asia/Tokyo"
+    groups:
+      react-runtime:
+        patterns: ["react", "react-dom"]
     ignore:
       # eslint-plugin-react supports ESLint 9; @eslint/js 10 requires ESLint 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
 

@@ -24,7 +24,7 @@ CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し�
 
 ## ESLint の依存関係更新
 
-`eslint-plugin-react` が ESLint 10 に対応するまでは、ESLint と `@eslint/js` を 9 系に揃える。`@eslint/js` 10 系は ESLint 10 を要求するため、Dependabot では同パッケージのメジャー更新を一時的に除外している。React 用プラグインの対応後にこの除外を解除し、関連パッケージをまとめて更新して Lint とテストを確認する。
+`eslint-plugin-react` が ESLint 10 に対応するまでは、ESLint と `@eslint/js` を 9 系に揃える。`@eslint/js` 10 系は ESLint 10 を要求するため、Dependabot では ESLint と `@eslint/js` の両方のメジャー更新を一時的に除外している。React 用プラグインの対応後にこの除外を解除し、関連パッケージをまとめて更新して Lint とテストを確認する。
 
 ## リンク切れチェック
 
@@ -206,3 +206,7 @@ Git のテストは一時リポジトリを作り、API のテストは偽の応
 書き込みトークンや本番ストレージを使わず、既存の隔離ローカル環境で実行する。失敗時のレポート・トレースはブラウザ別に7日間保存する。ブランチ保護は変更しない。既存の post-deploy は Chromium のみを明示し、共有スイートは本番では実行しない。
 
 実行コマンド・保存経路の判定・障害注入は [開発ガイド](development.md)、Safari 製品の確認状況は [実機確認表](safari-file-sharing-checklist.md) を参照する。
+
+## npm の互換性を保つ更新
+
+React と React DOM は同じバージョンを要求するため、Dependabot の `react-runtime` グループでまとめて更新する。片方だけを更新する PR は統合し、`npm ci` とコンポーネントテストを確認する。
