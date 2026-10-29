@@ -6,6 +6,7 @@ import { getPlaintextSizeFromCiphertextSize } from "@/lib/crypto";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
 import { checkShareAccessible } from "@/lib/share-auth";
+import { isMissingMultipartUpload } from "@/lib/storage/r2Errors";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 import {
   UploadCompleteRequestSchema,
@@ -140,12 +141,19 @@ export const POST = withApiHandler(
       upload.upload_id
     );
 
-    const object = await multipart.complete(
-      parts.map((part) => ({
-        partNumber: part.part_number,
-        etag: part.etag,
-      }))
-    );
+    let object: R2Object;
+    try {
+      object = await multipart.complete(parts.map(part => ({ partNumber: part.part_number, etag: part.etag })));
+    } catch (error) {
+      if (!isMissingMultipartUpload(error)) throw error;
+      // Only the request that completed R2 may validate size and register it.
+      // Re-finalizing an unregistered object here would race an oversized
+      // completion's compensating delete. Keep tracking for diagnosis instead.
+      const existing = await env.DB.prepare(`SELECT id FROM files WHERE storage_key = ? AND share_id = ? LIMIT 1`)
+        .bind(upload.storage_key, upload.share_id).first<{ id: string }>();
+      if (existing) return Response.json({ success: true, fileId: existing.id });
+      return Response.json({ success: false, error: "アップロードの完了状態を確認できません。再送するか管理者にお問い合わせください。" }, { status: 409 });
+    }
 
     // クライアント申告のfileSizeは/api/upload/startでの事前チェック用に過ぎず、
     // 実際にアップロードされたバイト数の検証には使えない(申告値を小さく偽って
@@ -163,17 +171,10 @@ export const POST = withApiHandler(
     if (size > getMaxFileSizeBytes(plan)) {
       await env.FILES_BUCKET.delete(upload.storage_key);
 
-      await env.DB.prepare(`
-        DELETE FROM upload_parts WHERE upload_session_id = ?
-      `)
-        .bind(uploadSessionId)
-        .run();
-
-      await env.DB.prepare(`
-        DELETE FROM uploads WHERE id = ?
-      `)
-        .bind(uploadSessionId)
-        .run();
+      await env.DB.batch([
+        env.DB.prepare(`DELETE FROM upload_parts WHERE upload_session_id = ?`).bind(uploadSessionId),
+        env.DB.prepare(`DELETE FROM uploads WHERE id = ?`).bind(uploadSessionId),
+      ]);
 
       return Response.json(
         {
@@ -187,44 +188,34 @@ export const POST = withApiHandler(
     const fileId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
 
-    await env.DB.prepare(`
-      INSERT INTO files (
-        id,
-        share_id,
-        storage_key,
-        encrypted_file_name,
-        size,
-        max_downloads,
-        created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `)
-      .bind(
-        fileId,
-        upload.share_id,
-        upload.storage_key,
-        upload.encrypted_file_name,
-        size,
-        upload.max_downloads,
-        createdAt
-      )
-      .run();
-
-    await env.DB.prepare(`
-      DELETE FROM upload_parts WHERE upload_session_id = ?
-    `)
-      .bind(uploadSessionId)
-      .run();
-
-    await env.DB.prepare(`
-      DELETE FROM uploads WHERE id = ?
-    `)
-      .bind(uploadSessionId)
-      .run();
+    const committed = await env.DB.batch<{ id: string }>([
+      env.DB.prepare(`
+        INSERT INTO files (id, share_id, storage_key, encrypted_file_name, size, max_downloads, created_at)
+        SELECT ?, uploads.share_id, uploads.storage_key, uploads.encrypted_file_name, ?, uploads.max_downloads, ?
+        FROM uploads JOIN shares ON shares.id = uploads.share_id
+        WHERE uploads.id = ? AND shares.expires_at > ? AND shares.suspended_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM files WHERE storage_key = uploads.storage_key)
+        RETURNING id
+      `).bind(fileId, size, createdAt, uploadSessionId, createdAt),
+      env.DB.prepare(`DELETE FROM upload_parts WHERE upload_session_id = ?
+        AND EXISTS (SELECT 1 FROM files WHERE storage_key = ? AND share_id = ?)`)
+        .bind(uploadSessionId, upload.storage_key, upload.share_id),
+      env.DB.prepare(`DELETE FROM uploads WHERE id = ?
+        AND EXISTS (SELECT 1 FROM files WHERE storage_key = ? AND share_id = ?)`)
+        .bind(uploadSessionId, upload.storage_key, upload.share_id),
+    ]);
+    const committedId = committed[0].results[0]?.id;
+    // A concurrent request may already have committed this same storage key.
+    const existing = committedId ? null : await env.DB.prepare(`SELECT id FROM files WHERE storage_key = ? AND share_id = ? LIMIT 1`)
+      .bind(upload.storage_key, upload.share_id).first<{ id: string }>();
+    const resultId = committedId ?? existing?.id;
+    if (!resultId) {
+      return Response.json({ success: false, error: "共有の状態が変更されました。もう一度お試しください" }, { status: 409 });
+    }
 
     const responseBody: UploadCompleteResponse = {
       success: true,
-      fileId,
+      fileId: resultId,
     };
 
     return Response.json(responseBody);
