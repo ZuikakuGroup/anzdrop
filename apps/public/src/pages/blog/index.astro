@@ -10,7 +10,7 @@ const posts = await blog.getPosts({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_
 const lastPage = Math.max(1, Math.ceil(posts.totalCount / PAGE_SIZE));
 if (page > lastPage) return Astro.redirect(lastPage === 1 ? '/blog' : `/blog?page=${lastPage}`);
 ---
-<BlogLayout title="ブログ | Anzdrop" description="Anzdropのファイル共有、プライバシー、セキュリティに関するブログです." canonical="/blog">
+<BlogLayout title={page === 1 ? "ブログ | Anzdrop" : `ブログ ${page}ページ目 | Anzdrop`} description="Anzdropのファイル共有、プライバシー、セキュリティに関するブログです." canonical={page === 1 ? "/blog" : `/blog?page=${page}`}>
   <div class="mx-auto max-w-6xl space-y-8">
     <header class="space-y-2"><p class="text-xs font-bold tracking-widest text-brand">BLOG</p><h1 class="text-3xl font-black">Anzdropブログ</h1><p class="text-sm text-ink/60">ファイル共有とプライバシーを、もっと身近に。</p></header>
     {posts.contents.length ? <BlogCards posts={posts.contents} /> : <p class="text-sm text-ink/60">公開中の記事はまだありません。</p>}

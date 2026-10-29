@@ -23,6 +23,11 @@ const jsonLd = { '@context': 'https://schema.org', '@type': 'Article', headline:
         <button type="button" data-zoomable-trigger aria-label="アイキャッチ画像を拡大表示" class="block w-full cursor-zoom-in rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"><img src={post.eyecatch.url} alt={post.eyecatch.alt ?? post.title} width={post.eyecatch.width ?? 1200} height={post.eyecatch.height ?? 630} fetchpriority="high" class="w-full rounded-lg object-cover" data-zoomable-image /></button>
       </header>
       <div class={styles.content} set:html={sanitizeArticleHtml(post.body)} />
+      <aside aria-label="ファイルを送る" class="space-y-3 rounded-lg border border-ink/10 p-6">
+        <h2 class="text-xl font-black">ファイルを暗号化して送る</h2>
+        <a href="/" class="inline-flex min-h-11 items-center rounded bg-brand px-5 py-3 text-sm font-bold text-paper hover:bg-brand/90">ファイルを選択して送る</a>
+        <a href="/lp/secure-file-sharing" class="block text-sm font-bold text-brand hover:underline">Anzdropの使い方と暗号化について</a>
+      </aside>
       <footer class="space-y-4 border-t border-ink/10 pt-6">
         <div class="flex flex-wrap gap-2">{post.tags.map(tag => <a href={`/blog/tags/${encodeURIComponent(tag.id)}`} class="rounded bg-ink/[0.06] px-2.5 py-1 text-xs text-ink/70">#{tag.name}</a>)}</div>
         <a href={`/blog/authors/${encodeURIComponent(post.author.id)}`} class="flex items-center gap-3 rounded-lg border border-ink/10 p-4 hover:bg-ink/[0.03]"><img src={post.author.image.url} alt="" width="48" height="48" loading="lazy" class="h-12 w-12 rounded-full object-cover" /><span><span class="block text-xs text-ink/50">著者</span><span class="font-bold">{post.author.name}</span></span></a>
@@ -31,4 +36,8 @@ const jsonLd = { '@context': 'https://schema.org', '@type': 'Article', headline:
   </ArticleImageLightbox>
   {related.contents.length > 0 && <section class="mx-auto mt-14 max-w-6xl space-y-5"><h2 class="text-xl font-black">関連記事</h2><BlogCards posts={related.contents} /></section>}
   <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />
+  <script>
+    import { track } from '@/lib/analytics/client';
+    track('landing_view');
+  </script>
 </BlogLayout>

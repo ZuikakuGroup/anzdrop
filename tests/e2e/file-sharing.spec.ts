@@ -109,6 +109,7 @@ async function upload(page: Page, files: Fixture[], protectedShare = false): Pro
 }
 
 async function copyShareUrl(page: Page, protectedShare = false): Promise<string> {
+  await expect(page.getByRole("status").filter({ hasText: /^アップロード完了$/ })).toBeVisible({ timeout: transferWaitMs });
   await expect(page.getByRole("button", { name: "URLをコピー", exact: true })).toBeVisible({ timeout: transferWaitMs });
   await page.getByRole("button", { name: "URLをコピー", exact: true }).click();
   const url = await page.evaluate(() => (window as unknown as { sharingTestState: BrowserState }).sharingTestState.copied);

@@ -13,6 +13,7 @@ let root: Root;
 
 async function render(props: {
   isQrOpen?: boolean;
+  copyState?: "idle" | "copied" | "failed";
   onReset?: () => void;
   onCloseQr?: () => void;
 }) {
@@ -23,7 +24,7 @@ async function render(props: {
     root.render(
       createElement(UploadShareResult, {
         shareUrl: "https://anzdrop.example/d/share#key",
-        copyState: "idle",
+        copyState: props.copyState ?? "idle",
         canShareNatively: false,
         isQrOpen: props.isQrOpen ?? false,
         onReset,
@@ -51,6 +52,23 @@ afterEach(async () => {
 });
 
 describe("UploadShareResult", () => {
+  it("コピー失敗時にも共有URLを選択して取得できる", async () => {
+    await render({ copyState: "failed" });
+    const input = container.querySelector("input")!;
+    expect(input.readOnly).toBe(true);
+    expect(input.value).toBe("https://anzdrop.example/d/share#key");
+    await act(async () => input.focus());
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("手動でコピー");
+  });
+
+  it("コピー成功を読み上げ、失敗案内を表示しない", async () => {
+    await render({ copyState: "copied" });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect([...container.querySelectorAll('[role="status"]')].some(element => element.textContent === "共有URLをコピーしました")).toBe(true);
+  });
+
   it("Escape で結果パネルを閉じる(onReset)", async () => {
     const { onReset, onCloseQr } = await render({});
 
