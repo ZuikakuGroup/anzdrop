@@ -167,7 +167,13 @@ async function save(page: Page, info: TestInfo, files: Fixture[], expectedRoute:
     expect(Object.keys(entries).sort()).toEqual(files.map(f => f.name).sort());
     for (const file of files) expect(createHash("sha256").update(entries[file.name]).digest("hex"), "ZIP entry SHA-256").toBe(await sharingFileSha256(file.filename));
   } else {
-    expect(download.suggestedFilename()).toBe(files[0].name);
+    // Linux WebKit replaces ASCII spaces in attachment names with underscores.
+    // Keep the accepted variation narrow; SHA-256 still verifies every byte.
+    const acceptedNames = [files[0].name];
+    if (info.project.name === "webkit" && process.platform === "linux" && expectedRoute === "service-worker") {
+      acceptedNames.push(files[0].name.replace(/ /g, "_"));
+    }
+    expect(acceptedNames, "browser attachment filename").toContain(download.suggestedFilename());
     await assertSharingFilesEqual(filename, files[0].filename);
   }
   if (expectedRoute === "service-worker") {
