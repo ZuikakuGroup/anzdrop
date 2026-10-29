@@ -113,3 +113,9 @@ Workflow 失敗時も `lighthouse-audit-report` Artifact に HTML/JSON レポー
 ## 関連
 
 - 簡易なトップページ合成計測(既存): `npm run measure:home`([`scripts/measure-home.mjs`](../scripts/measure-home.mjs))
+
+## 公開ページの初期JavaScriptの回帰検証
+
+`tests/e2e/public-astro.spec.ts`で、サービス紹介・料金・規約・ブログ一覧・LPにReactのislandがないことと、初期JavaScriptが展開後30KB未満であることを確認します。LPの計測処理はこの上限に含めます。記事の画像拡大やファイル送受信の操作画面は対象外です。
+
+2026-10-17のローカル比較では、`/about`の初期JavaScriptは232,387バイトから2,166バイト、リクエスト数は6本から2本になりました。回線遅延150ms・下り200,000バイト/秒・CPU 4倍スロットリング・キャッシュ無効で各3回測定し、ログインリンク表示までの中央値は1,696msから837msでした。LCPの中央値は524msと548ms、CLSはどちらも0で、本文の初期描画の改善は確認していません。JavaScript量は圧縮前の値で、本番での転送量・表示時間を保証する数値ではありません。

@@ -1,5 +1,5 @@
 ---
-import SiteHeader from '@/components/brand/SiteHeader';
+import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '@/components/brand/SiteFooter';
 import '../styles.css';
 interface Props { title: string; description?: string; canonical?: string; image?: string; article?: { publishedAt: string; updatedAt: string }; landing?: boolean; noindex?: boolean; }
@@ -34,7 +34,7 @@ const imageUrl = new URL(image, Astro.site);
   </head>
   <body class:list={['min-h-screen bg-paper text-ink font-sans', { 'landing-page-font': landing }]}>
     <div class="flex min-h-screen flex-col">
-      <SiteHeader client:load />
+      <SiteHeader />
       <slot />
       <SiteFooter />
     </div>
