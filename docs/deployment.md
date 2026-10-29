@@ -1,26 +1,25 @@
 # デプロイ・CI/CD
 
-## 自動デプロイ(GitHub Actions)
+## ビルド・ステージング・承認付きデプロイ
 
-`main` ブランチへのpushをトリガーに [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) が実行され、以下を順に行う。
+main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpushだけでは本番へデプロイしない。** 本番はmainの完全なSHAを指定したworkflow_dispatch、同じrunのステージング成功、production Environmentの別の承認者による承認を必要とする。
 
-デプロイ成功後は [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) が本番 URL(`https://anzdrop.com`)へ Playwright を実行する。リンク切れチェック・週次レポートなど他の自動化は [`ci-automations.md`](./ci-automations.md) を参照。
+ステージングの準備、Secretsの分離、初回bootstrap、最小権限、割合配信の判断と復旧手順は [リリース管理](./release-management.md) を参照する。GitHub/Cloudflare側の設定・リソースは今回作成・変更していない。未設定のままでは本番リリースへ進めない。
 
-1. 依存関係インストール(`npm ci`)
-2. `npm run lint`
-3. `npx tsc --noEmit`、ルーター型チェック、Astroチェック、全Vitest
-4. Astroをビルドし、Wranglerの`--dry-run --outdir`でHono・Astro・ルーターのアップロード用バンドルを生成する
-5. 3つのWorkerのモジュール、Astroの静的アセット、3つのWrangler設定を決定論的なtarにまとめ、tarファイルのSHA-256を計算する
-6. 公開リポジトリのGitHub Artifact Attestationをtarに対して作成し、tarとSHA-256ファイルをActions Artifactへ保存する
-7. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
-8. tarのSHA-256を再確認して展開し、`wrangler deploy --no-bundle`でHono APP、Astro PUBLIC、ルーターの順に、そのtar内のバンドルとアセットをデプロイする。各コマンドが出力したWorker Version IDと、Cloudflare APIでそのVersion IDを100%配信するDeployment IDを取得する
-9. 3つのデプロイとID照合がすべて成功した後にJSON manifestを生成し、Actions Artifactへ保存する
+既存の成果物管理を使い、次の順で本番を更新する。
 
-いずれかのステップが失敗すると後続は実行されない。Workersのデプロイは原子的な3件セットではない。たとえばAPPのデプロイ後にPUBLICの更新が失敗すると、新しいAPPと古いPUBLICが混在する。途中で失敗した場合、部分適用が残る可能性があるため、「すべて成功した」というmanifestは作成しない。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+1. Astroと3 Workerのdry-runバンドル、静的アセット、Wrangler設定、マイグレーションSQLを決定論的なtarにまとめ、SHA-256とGitHub Artifact Attestationを作成する。
+2. ステージング成功後、承認されたproduction jobが同じrunの本番tarを取得し、署名・コミット・ref・ハッシュを検証する。再ビルドはしない。
+3. Binding・既存D1/R2の識別情報・Secret名・承認保護を確認し、稼働中の3 WorkerのVersion組をマイグレーション前に記録する。
+4. tarに含むD1マイグレーションを本番へ適用する。旧Workerが動く変更だけをこのリリースに含める。
+5. 事前記録から稼働Versionが変わっていないことを確認して、APP→PUBLIC→ルーターの順にtar内のバンドルを配信する。各Version IDをDeployment IDと照合し、部分完了の記録を都度保存する。
+6. 全3 Workerの照合成功後に成功manifestを生成し、読取り専用の本番スモークを実行する。
+
+3 Workerの更新は原子的ではなく、途中失敗では新旧が混在する。成功manifestがなくても、事前Version組と部分完了記録をalwaysステップで保存する。失敗後は自動でデータやコードを戻さず、[復旧手順](./release-management.md#復旧は明示した安定versionへ戻す)で互換性を確認する。後続の [e2e.yml](../.github/workflows/e2e.yml) も読取り専用とし、本番で合成ファイルやアカウントを作らない。
 
 ### 監査用artifactとmanifest
 
-- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWorkerのモジュール、Astroの静的アセットディレクトリ、各Wrangler設定が入る。API・Astroの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のAstroビルドやWranglerバンドルは行わない。
+- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWorkerのモジュール、Astroの静的アセットディレクトリ、各Wrangler設定とマイグレーションSQLが入る。API・Astroの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のAstroビルドやWranglerバンドルは行わない。
 - `deployment-build-<runId>-<attempt>` Actions Artifactにtarと`.sha256`、`deployment-manifest-<runId>-<attempt>` Actions Artifactに成功後の`deployment-manifest.json`を保存する。manifestはリポジトリ、コミット、ref、workflow、run ID・attempt、tarのSHA-256、3つのWorker名・Version ID・Deployment ID・作成時刻、本番URLを記録する。トークン等の秘密情報は含まない。
 - Deployment IDは「最新のDeployment」から採らない。各`wrangler deploy`が出力した固有のVersion IDと、デプロイ開始後の[Cloudflare Workers Deployment API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)の記録を照合する。同一Version IDのDeploymentが複数ある、100%配信ではない、作成時刻が合わない等の場合は失敗する。WorkersのVersion IDはコード・設定・静的アセットのバージョン、Deployment IDはそれを配信する記録を表す。
 - GitHub Actions Artifactの保存期間は90日（組織・リポジトリの設定で短縮される場合がある）。それを超える長期保存が必要なら別途アーカイブを設計する。releaseやmainへの自動書き戻しは行わず、`contents: read`を維持する。
@@ -48,7 +47,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 | Secret名 | 用途 |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | `wrangler`のD1マイグレーション適用・デプロイ両方に使用。対象アカウントの Workers / D1 / R2 への書き込み権限が必要 |
+| `CLOUDFLARE_API_TOKEN` | 環境別にGitHub Environmentへ設定。Workers更新・履歴/Secret名の参照、D1マイグレーション、R2バケット情報の読取りに必要な最小権限。R2オブジェクト書込み権限は不要 |
 | `TURNSTILE_SITE_KEY` | ビルド時に `NEXT_PUBLIC_TURNSTILE_SITE_KEY` としてクライアントバンドルへ埋め込まれる、Turnstileのサイトキー(公開情報) |
 | `STRIPE_PUBLISHABLE_KEY` | ビルド時に `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` としてクライアントバンドルへ埋め込まれる、Stripeの公開可能キー(公開情報。Stripe.js/Payment Elementの初期化に使う) |
 
@@ -97,7 +96,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
-監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`はこの成果物を配信する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
+監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`の配信スクリプトはこの成果物を使うが、mainの手動承認・preflight記録を要求する。通常は承認付きworkflow経由で実行する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
 
 ## Cloudflareリソース
 

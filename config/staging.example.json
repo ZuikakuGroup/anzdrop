@@ -1,0 +1,10 @@
+{
+  "accountId": "REPLACE_WITH_STAGING_ACCOUNT_ID",
+  "databaseId": "REPLACE_WITH_STAGING_D1_ID",
+  "databaseName": "anzdrop-staging-db",
+  "bucketName": "anzdrop-staging",
+  "origin": "https://staging.example.invalid",
+  "zoneName": "example.invalid",
+  "accessTeamDomain": "REPLACE_WITH_STAGING_ACCESS_TEAM_DOMAIN",
+  "accessAud": "REPLACE_WITH_STAGING_ACCESS_AUD"
+}

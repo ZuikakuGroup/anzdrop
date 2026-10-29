@@ -5,7 +5,7 @@ import tailwind from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
-  site: 'https://anzdrop.com',
+  site: process.env.ANZDROP_BUILD_SITE ?? 'https://anzdrop.com',
   output: 'server',
   session: false,
   adapter: cloudflare({ imageService: 'passthrough' }),
