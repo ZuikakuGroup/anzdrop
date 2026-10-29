@@ -1,7 +1,17 @@
 ---
 import InteractiveLayout from '@/apps/public/src/layouts/InteractiveLayout.astro';
 import UploadPage from '@/components/upload/UploadPage';
+const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'Anzdrop',
+    url: new URL('/', Astro.site).href,
+    applicationCategory: 'UtilitiesApplication',
+    operatingSystem: 'Web',
+    description: 'ブラウザ内でファイルを暗号化し、共有リンクで送信できるファイル共有サービス。',
+  };
 ---
-<InteractiveLayout title="ファイルを送る | Anzdrop" noindex={false}>
+<InteractiveLayout title="登録不要の暗号化ファイル共有・転送 | Anzdrop" description="ファイルをブラウザ内で暗号化して、共有リンクで送信。登録不要で使えるファイル共有サービスAnzdrop。ファイルを選び、アップロード後にURLをコピーして相手に送れます。" noindex={false}>
   <UploadPage client:load />
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />
 </InteractiveLayout>
