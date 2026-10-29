@@ -18,6 +18,12 @@ beforeEach(async () => { await clearAllTables(env); background = []; stubTurnsti
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Hono API HTTP boundary", () => {
+  it("protects storage diagnosis with the existing admin boundary and disables caching", async () => {
+    const response = await request("/api/admin/storage");
+    expect(response.status).toBe(403);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ success: false });
+  });
   it("does not issue a session until OTP succeeds and does not trust a submitted account ID", async () => {
     const account = await insertTestAccount(env);
     const secret = generateTotpSecret();

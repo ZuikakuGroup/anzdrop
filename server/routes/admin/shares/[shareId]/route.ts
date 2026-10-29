@@ -1,6 +1,6 @@
 import { withAdminHandler } from "@/lib/api/adminAuth";
 import type { RouteContext } from "@/lib/api/types";
-import { deleteShare } from "@/lib/cleanup";
+import { deleteShare, ShareDeletionDeferredError, StorageReconciliationError } from "@/lib/cleanup";
 
 type ShareRow = {
   expires_at: string;
@@ -65,7 +65,16 @@ export const DELETE = withAdminHandler(
 
     // 既に(期限切れcronや二重クリックで)削除済みの共有に対しても、
     // 冪等に成功として扱う。
-    await deleteShare(env, shareId);
+    try { await deleteShare(env, shareId); }
+    catch (error) {
+      if (error instanceof ShareDeletionDeferredError) {
+        return Response.json({ success: false, partial: true, retryable: true, error: "削除は一部完了しました。もう一度削除を実行してください。" }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+      if (error instanceof StorageReconciliationError) {
+        return Response.json({ success: false, retryable: false, error: "ストレージの整合性確認が必要です。診断結果を確認してください。" }, { status: 409, headers: { "Cache-Control": "no-store" } });
+      }
+      throw error;
+    }
 
     return Response.json({ success: true });
   }

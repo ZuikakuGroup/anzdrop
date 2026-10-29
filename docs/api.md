@@ -73,7 +73,8 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
 - `start`(相乗り時)・`chunk` と同じく、`uploadSessionId` から辿った共有の `upload_token` と `uploadToken` の一致(定数時間比較)で認可する。不一致は403。
 - さらに、`start` より後に共有が期限切れ/一時停止された場合は完了させない(`checkShareAccessible()`。期限切れ410、一時停止403)。
 - レスポンス: `{ success: true, fileId }`
-- 完了後、対応する `uploads`/`upload_parts` の行は削除される。
+- files登録と対応するuploads/upload_parts削除は1つのD1 batchで実行する。確定時にも共有の期限・停止・セッション残存を検証し、同じstorage keyを二重登録しない。
+- R2から10024(NoSuchUpload)が返った場合、既に同じ共有・keyのfilesが登録済みならそのIDを返す。未登録の完成状態は自動再登録せず409として追跡行を保持する。成功後にセッションが消えたリクエストの再送は従来どおり404になり得る。
 
 ## ダウンロード
 
@@ -265,7 +266,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `DELETE /api/admin/shares/[shareId]`
 
-共有をR2/D1から完全に削除する(`lib/cleanup.ts` の `deleteShare()` を利用)。既に削除済みの共有に対しても冪等に成功扱い。
+確認済みの対象を1回1,000 files・20 uploadsまで削除する（`deleteShare()`）。完了時200、既に削除済みも200。残りや並行追加がある場合は409・`partial: true`・`retryable: true`となるため、管理者が明示的に再実行する。整合性確認待ちは409・`retryable: false`。新規の孤立オブジェクト自動削除はしない。
 
 ### `POST /api/admin/shares/[shareId]/suspend` / `POST /api/admin/shares/[shareId]/unsuspend`
 
@@ -317,3 +318,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ## 監査記録
 
 2026-10-29の転送・例外ログの改善、検証結果、残存リスクは[コード品質監査](./quality-audit.md)を参照。共通API例外ログには固定のルート名だけを記録し、例外本文を含めない。
+
+### `GET /api/admin/storage`
+
+既存の管理者Access認証が必要な読み取り専用診断。`Cache-Control: no-store`。`limit=1..40`（初期値20）、`afterFileId`、`objectCursor`、`scan=files|objects|both`、`summary=0|1`を受け付ける。未知・重複・書込みを意図するパラメーターは400。件数・登録平文総量、期限切れ候補、欠落・孤立・重複参照の疑いを上限付きで返す。R2容量はページ内の暗号文サイズであり全バケット容量ではない。スナップショット一貫性や削除許可を表す値ではない。[運用手順](storage-lifecycle.md)を参照。

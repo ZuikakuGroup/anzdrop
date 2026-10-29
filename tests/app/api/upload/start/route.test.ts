@@ -55,8 +55,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function postStart(body: unknown, headers: Record<string, string> = {}) {
-  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), testRuntime);
+async function postStart(body: unknown, headers: Record<string, string> = {}, runtimeEnv: TestEnv = env) {
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/start/route"), () => ({ ...testRuntime(), env: runtimeEnv }));
 
   return POST(
     new Request("http://localhost/api/upload/start", {
@@ -479,4 +479,25 @@ describe("POST /api/upload/start", () => {
       .all();
     expect(uploads).toHaveLength(1);
   });
+});
+
+it("aborts the newly created multipart upload when D1 registration fails", async () => {
+  stubTurnstileSuccess();
+  let created: R2MultipartUpload | undefined;
+  const bucket = new Proxy(env.FILES_BUCKET, { get(target, key) {
+    if (key === "createMultipartUpload") return async (storageKey: string) => {
+      created = await env.FILES_BUCKET.createMultipartUpload(storageKey); return created;
+    };
+    const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
+  } });
+  const db = new Proxy(env.DB, { get(target, key) {
+    if (key === "prepare") return (sql: string) => sql.includes("INSERT INTO uploads")
+      ? { bind: () => ({ run: async () => { throw new Error("synthetic D1 unavailable"); } }) }
+      : env.DB.prepare(sql);
+    const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value;
+  } });
+  const response = await postStart({ encryptedFileName: "encrypted", fileSize: 10, retention: "1d", turnstileToken: "synthetic" }, {}, { ...env, DB: db, FILES_BUCKET: bucket } as TestEnv);
+  expect(response.status).toBe(500); expect(created).toBeDefined();
+  await expect(created!.uploadPart(1, new Uint8Array([1, 2, 3]))).rejects.toThrow();
+  expect((await env.DB.prepare(`SELECT COUNT(*) AS count FROM uploads`).first<{ count: number }>())?.count).toBe(0);
 });

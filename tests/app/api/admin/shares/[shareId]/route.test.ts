@@ -98,7 +98,7 @@ async function insertUpload(shareId: string, uploadIdRow: string, storageKey: st
       uploadIdRow,
       shareId,
       storageKey,
-      "irrelevant-r2-upload-id",
+      (await env.FILES_BUCKET.createMultipartUpload(storageKey)).uploadId,
       "encrypted-name",
       new Date().toISOString()
     )
@@ -298,4 +298,18 @@ describe("GET /api/admin/shares/[shareId]", () => {
 
     expect(body.share.expired).toBe(true);
   });
+});
+
+it("returns explicit partial completion and supports retrying an unexpired large share", async () => {
+  authorize(); await insertShare("partial-admin-share");
+  await env.DB.prepare(`INSERT INTO files (id,share_id,storage_key,encrypted_file_name,size,created_at)
+    SELECT value, 'partial-admin-share', value, 'encrypted', 1, '2000' FROM json_each(?)`)
+    .bind(JSON.stringify(Array.from({ length: 1_001 }, (_, n) => `partial-${n}`))).run();
+  const partial = await deleteShareRoute("partial-admin-share");
+  expect(partial.status).toBe(409); expect(partial.headers.get("Cache-Control")).toBe("no-store");
+  expect(await partial.json()).toMatchObject({ success: false, partial: true, retryable: true });
+  expect(await shareExists("partial-admin-share")).toBe(true);
+  expect(await filesCountFor("partial-admin-share")).toBe(1);
+  expect((await deleteShareRoute("partial-admin-share")).status).toBe(200);
+  expect(await shareExists("partial-admin-share")).toBe(false);
 });
