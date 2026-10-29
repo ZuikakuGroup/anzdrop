@@ -102,6 +102,7 @@ async function fetchRangeWithRetry(
         RETRYABLE_STATUS.has(response.status) &&
         attempt < MAX_REQUEST_ATTEMPTS
       ) {
+        await response.body?.cancel().catch(() => {});
         await sleep(backoffMs(attempt));
         continue;
       }
@@ -298,6 +299,8 @@ function orderedWindowStream(args: OrderedArgs): ReadableStream<Uint8Array> {
       fetchWindow(index)
         .catch((err: unknown) => {
           failure ??= err;
+          abort.abort();
+          buffers.clear();
         })
         .finally(() => {
           inFlight--;
@@ -315,12 +318,12 @@ function orderedWindowStream(args: OrderedArgs): ReadableStream<Uint8Array> {
       for (;;) {
         // cancel() 後に pending だった pull が起こされたケース。ここで抜けないと
         // buffers が空のまま次の待ちに入り、二度と起こされずハングする。
-        if (abort.signal.aborted) {
+        if (failure !== null) {
+          controller.error(failure);
           return;
         }
 
-        if (failure !== null) {
-          controller.error(failure);
+        if (abort.signal.aborted) {
           return;
         }
 

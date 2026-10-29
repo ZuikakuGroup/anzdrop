@@ -54,6 +54,8 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
 
 ### `POST /api/upload/chunk`
 
+本文は上限付きで読み取り、実測で8MiBを超えた時点で受信を中断して413を返す。Content-Lengthは早期拒否の補助にのみ使う。
+
 暗号化済みバイト列の一部をR2マルチパートアップロードの1パートとして送信する。**`uploadMode: "proxy"` のフォールバック経路**として残す(Secrets未設定のローカル等)。本番でSecretsが揃っているときはクライアントは `part-urls` → R2直PUT → `part-ack` を使う。
 
 - クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
@@ -88,6 +90,10 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
   - `isOneTime`が`true`のファイル(保存期間「1回」)は、プレビューが`/api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、`previewAllowed`が`true`でもクライアント側でプレビューを非表示にする。
   - ダウンロード回数上限(保存期間「1回」)に達したファイルは一覧から自動的に除外される。
 - `Cache-Control: no-store`。
+
+### `HEAD /api/file/[fileId]`
+
+GETと同じ期限・停止状態・回数上限を確認し、R2のメタデータだけを返す。本文取得・ダウンロード回数の加算・ファイル削除は行わない。Range指定は無視する。
 
 ### `GET /api/file/[fileId]`
 
@@ -307,3 +313,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ## 登録・通報・問い合わせの回数制限
 
 `POST /api/account/signup`・`POST /api/report`・`POST /api/contact` は、Turnstileに加えて `FORM_RATE_LIMITER` を適用する。APIごとに全利用者合計120回/60秒（Cloudflareのデータセンター単位）。超過時はDBへ保存せず429を返し、`Retry-After: 60` を付ける。キーは固定のAPI名だけで、利用者の情報を新たに保存しない。バインディング未設定や制限サービスの障害時は既存方針どおりフェイルオープン。外側のWAF制限は別の10秒窓で、超過時は429を返すが `Retry-After` は付かない。
+
+## 監査記録
+
+2026-10-29の転送・例外ログの改善、検証結果、残存リスクは[コード品質監査](./quality-audit.md)を参照。共通API例外ログには固定のルート名だけを記録し、例外本文を含めない。

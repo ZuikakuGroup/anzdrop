@@ -231,6 +231,42 @@ describe("createParallelCiphertextStream", () => {
     ).rejects.toThrow(FriendlyError);
   });
 
+  it("aborts sibling requests and reports the original error after a window fails", async () => {
+    let siblingSignal: AbortSignal | null | undefined;
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const range = rangeOf(init);
+      if (range === "bytes=0-99") {
+        return new Response(new Uint8Array(100), {
+          status: 206, headers: { "Content-Range": "bytes 0-99/400" },
+        });
+      }
+      if (range === "bytes=100-199") return new Response(null, { status: 404 });
+      siblingSignal = init?.signal;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    });
+    const stream = await createParallelCiphertextStream("/api/file/x", {
+      windowSize: 100, concurrency: 2, fetchImpl: fetchImpl as typeof fetch,
+    });
+    await expect(drain(stream)).rejects.toBeInstanceOf(FileGoneError);
+    expect(siblingSignal?.aborted).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("cancels the discarded response body before retrying", async () => {
+    const cancel = vi.fn();
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2])));
+    const stream = await createParallelCiphertextStream("/api/file/x", {
+      fetchImpl: fetchImpl as typeof fetch,
+      sleep: async () => { expect(cancel).toHaveBeenCalledOnce(); },
+    });
+    expect(await drain(stream)).toEqual(new Uint8Array([1, 2]));
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("aborts in-flight window fetches when the stream is cancelled", async () => {
     const data = new Uint8Array(1000).fill(3);
     let aborted = 0;

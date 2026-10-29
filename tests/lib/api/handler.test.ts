@@ -37,9 +37,8 @@ describe("withApiHandler", () => {
     expect(body).toEqual({ success: false, error: "サーバー内部でエラーが発生しました" });
   });
 
-  it("logs the routeLabel and the original error via console.error", async () => {
+  it.each([new Error("secret-token"), "secret-token", { token: "secret-token" }])("logs only the fixed route label for thrown value %j", async (originalError) => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const originalError = new Error("boom");
     const wrapped = withApiHandler("POST /api/example", async (request: Request) => {
       expect(request).toBeInstanceOf(Request);
 
@@ -48,9 +47,9 @@ describe("withApiHandler", () => {
 
     await wrapped(new Request("http://localhost/api/example"));
 
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "POST /api/example failed:",
-      originalError
+      "POST /api/example failed"
     );
     consoleErrorSpy.mockRestore();
   });
