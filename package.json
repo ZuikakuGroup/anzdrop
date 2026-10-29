@@ -44,7 +44,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "astro": "^7.4.0",
     "aws4fetch": "^1.0.20",
-    "chart.js": "^4.5.1",
+    "chart.js": "^4.6.1",
     "fflate": "^0.8.3",
     "hono": "^4.13.13",
     "jose": "^6.2.12",
