@@ -32,6 +32,14 @@ Astroの操作画面は共通のReactコンポーネントを`client:load`でハ
 
 Service Workerによる保存では、EOF通知後も隠しiframeを1秒間保持します。通知直後に撤去すると、小ファイルのダウンロード開始がキャンセルされることがあるためです。保存したバイト列の一致はE2Eで検証します。
 
+## 公開ページの初期JavaScript
+
+`PublicLayout.astro`のヘッダーは`apps/public/src/components/SiteHeader.astro`でSSRし、`lib/publicHeader.ts`でメニューと認証表示を動かします。公開ページではヘッダーのためにReactをハイドレーションしません。ナビゲーション項目は`components/brand/navigation.ts`をReact版と共有します。アップロード・ダウンロードなどの操作画面は、既存のReact版`SiteHeader`を使います。
+
+認証状態はブラウザから既存の`GET /api/account/me`で取得し、判定前はアカウント用リンクを表示しません。アカウントIDは`textContent`で反映します。認証・ログアウトのAPI、Cookie、HTMLの`no-store`とnonce CSPは共通です。
+
+LPはAstroのブラウザスクリプトから既存の`track('landing_view')`を実行します。計測の開始を遅らせず、既存の重複抑制・離脱時送信を使います。記事の画像拡大など、Reactが必要な箇所だけを引き続きハイドレーションします。
+
 ## LPのフォント
 
 [`/lp/secure-file-sharing`](../apps/public/src/pages/lp/secure-file-sharing.astro)だけは、端末にインストールされたNoto Sans JP、ヒラギノの順で利用し、どちらもない場合に同ページと共通ヘッダー・フッターで使う文字を収録したNoto Sans JPのWOFF2サブセットへフォールバックします。見出し用の800ウェイトまで含みます。WebフォントはLP上で必要になったときだけ取得されます。LPの文言を追加・変更したときは`node scripts/generate-landing-font.mjs`を実行し、フォントファイルと`apps/public/src/globals.css`の`unicode-range`を更新します(フォントライセンスは同ディレクトリの`OFL.txt`)。

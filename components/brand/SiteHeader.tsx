@@ -5,12 +5,7 @@ import BrandHeader from "./BrandHeader";
 import { ChevronIcon, MenuToggleIcon } from "./ShareIcons";
 import { getCurrentAccount } from "@/lib/account/me-client";
 
-const NAV_LINKS = [
-  { href: "/about", label: "Anzdropとは" },
-  { href: "/pricing", label: "料金プラン" },
-  { href: "/blog", label: "ブログ" },
-  { href: "/contact", label: "問い合わせ" },
-];
+import { NAV_LINKS } from "./navigation";
 
 export default function SiteHeader() {
   const [accountId, setAccountId] = useState<string | null>(null);

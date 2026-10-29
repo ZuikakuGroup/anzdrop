@@ -1,0 +1,70 @@
+---
+import BrandHeader from '@/components/brand/BrandHeader';
+import { ChevronIcon, MenuToggleIcon } from '@/components/brand/ShareIcons';
+import { NAV_LINKS } from '@/components/brand/navigation';
+---
+<anz-site-header class="contents">
+  <header class="sticky top-0 z-20 flex h-16 shrink-0 items-center border-b border-ink/10 bg-paper px-6 sm:px-8">
+    <div class="flex flex-1 items-center">
+      <a href="/" class="rounded transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"><BrandHeader /></a>
+    </div>
+    <nav class="hidden flex-1 justify-center gap-5 whitespace-nowrap text-xs font-bold lg:flex xl:gap-6">
+      {NAV_LINKS.map(link => <a href={link.href} class="text-ink/60 transition-colors hover:text-ink">{link.label}</a>)}
+    </nav>
+    <div class="hidden flex-1 items-center justify-end gap-4 lg:flex" data-desktop-auth></div>
+    <div class="flex flex-1 justify-end lg:hidden">
+      <button type="button" data-action="mobile-menu" aria-label="メニューを開く" aria-expanded="false" aria-controls="mobile-menu-panel" class="rounded p-1.5 text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink">
+        <span data-menu-open-icon><MenuToggleIcon open={false} className="h-5 w-5" /></span>
+        <span data-menu-close-icon hidden><MenuToggleIcon open={true} className="h-5 w-5" /></span>
+      </button>
+    </div>
+    <div id="mobile-menu-panel" inert class="absolute left-0 right-0 top-full z-10 max-h-0 overflow-hidden border-b border-ink/10 bg-paper shadow-lg transition-[max-height] duration-300 ease-in-out lg:hidden">
+      <div data-mobile-content class="space-y-4 p-6 opacity-0 transition-opacity duration-200 ease-in-out">
+        <nav class="flex flex-col gap-3 text-sm font-bold">
+          {NAV_LINKS.map(link => <a href={link.href} class="text-ink/70 transition-colors hover:text-ink">{link.label}</a>)}
+        </nav>
+        <div class="space-y-3 border-t border-ink/10 pt-4 text-sm font-bold" data-mobile-auth></div>
+      </div>
+    </div>
+  </header>
+  <template data-desktop-guest>
+    <div class="flex items-center gap-3 text-xs font-bold">
+      <a href="/mypage/login" class="text-ink/60 transition-colors hover:text-ink">ログイン</a>
+      <a href="/mypage/signup" class="rounded bg-brand-action px-3 py-1.5 text-paper transition-colors hover:bg-brand-text">アカウント作成</a>
+    </div>
+  </template>
+  <template data-mobile-guest>
+    <div class="flex flex-col gap-3">
+      <a href="/mypage/login" class="text-ink/70 transition-colors hover:text-ink">ログイン</a>
+      <a href="/mypage/signup" class="inline-block w-fit rounded bg-brand-action px-3 py-1.5 text-paper transition-colors hover:bg-brand-text">アカウント作成</a>
+    </div>
+  </template>
+  <template data-desktop-account>
+    <div data-account-menu class="relative">
+      <button type="button" data-action="account-menu" aria-expanded="false" class="flex items-center gap-1 rounded px-2 py-1.5 font-mono text-xs text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink">
+        <ChevronIcon className="h-3 w-3 shrink-0 transition-transform duration-300" />
+        <span data-account-id></span>
+      </button>
+      <div id="desktop-account-menu" hidden class="absolute right-0 top-full mt-2 w-40 rounded border border-ink/10 bg-paper py-1 shadow-lg">
+        <a href="/mypage" class="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink">マイページ</a>
+        <a href="/mypage/billing" class="block px-3 py-2 text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink">プラン・お支払い</a>
+        <button type="button" data-action="logout" class="block w-full px-3 py-2 text-left text-xs text-ink/70 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-40">ログアウト</button>
+      </div>
+    </div>
+  </template>
+  <template data-mobile-account>
+    <a href="/mypage" data-account-id class="block font-mono text-ink/70 transition-colors hover:text-ink"></a>
+    <a href="/mypage/billing" class="block text-ink/70 transition-colors hover:text-ink">プラン・お支払い</a>
+    <button type="button" data-action="logout" class="block text-left text-ink/70 transition-colors hover:text-ink disabled:opacity-40">ログアウト</button>
+  </template>
+</anz-site-header>
+<script>
+  import { initPublicHeader } from '@/lib/publicHeader';
+
+  class PublicHeader extends HTMLElement {
+    private dispose?: () => void;
+    connectedCallback() { this.dispose = initPublicHeader(this); }
+    disconnectedCallback() { this.dispose?.(); }
+  }
+  if (!customElements.get('anz-site-header')) customElements.define('anz-site-header', PublicHeader);
+</script>

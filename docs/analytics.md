@@ -51,7 +51,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 | イベント | 発火箇所 |
 | --- | --- |
-| `landing_view` | 記事（`apps/public/src/pages/blog/[slug].astro`）またはLP（`components/landing/LandingViewTracker.tsx`）またはアップロード画面（`lib/upload/useUploadSession.tsx`）の初回表示時。`localStorage`を使用できる場合は分析セッションごとに重複送信を抑え、最初の着地パスを記録する。使用できない場合は重複を抑制せず送信する |
+| `landing_view` | 記事（`apps/public/src/pages/blog/[slug].astro`）またはLP（`apps/public/src/pages/lp/secure-file-sharing.astro`のブラウザスクリプト）またはアップロード画面（`lib/upload/useUploadSession.tsx`）の初回表示時。`localStorage`を使用できる場合は分析セッションごとに重複送信を抑え、最初の着地パスを記録する。使用できない場合は重複を抑制せず送信する |
 | `file_select` | ファイル選択・ドロップ時 |
 | `upload_start` / `upload_success` / `upload_error` | `lib/upload/useUploadSession.tsx` の各段階(`errorCode`は[`lib/analytics/errorCodes.ts`](../lib/analytics/errorCodes.ts)で定義済みコードへ丸める) |
 | `share_link_copy` / `share_native` | 共有リンクコピー・Web Share API利用時 |

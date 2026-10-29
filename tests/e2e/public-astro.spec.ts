@@ -7,7 +7,7 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await page.route('**/file.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#f15a22"/></svg>' }));
     await page.route('**/api/account/me', route => route.fulfill({ json: { success: false } }));
   });
-  test('SSR・FAQ・ヘッダーのハイドレーションがCSP下で動作する', async ({ page }) => {
+  test('SSR・FAQ・ヘッダーの操作がCSP下で動作する', async ({ page }) => {
     const violations: string[] = [];
     await page.addInitScript(() => {
       document.addEventListener('securitypolicyviolation', event => console.error(`CSP-VIOLATION:${event.violatedDirective}`));
@@ -29,6 +29,47 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(faq).toHaveAttribute('open', '');
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/about');
     expect(violations).toEqual([]);
+  });
+  test('静的な公開ページとLPはReactを読み込まずヘッダーを操作できる', async ({ page }) => {
+    for (const path of ['/about', '/pricing', '/legal/privacy', '/blog', '/lp/secure-file-sharing']) {
+      await page.goto(path);
+      await expect(page.getByRole('link', { name: 'ログイン', exact: true })).toBeVisible();
+      await expect(page.locator('astro-island')).toHaveCount(0);
+      const javascriptBytes = await page.evaluate(() => performance.getEntriesByType('resource')
+        .filter(entry => entry.name.includes('/_public-astro/') && entry.name.endsWith('.js'))
+        .reduce((total, entry) => total + (entry as PerformanceResourceTiming).decodedBodySize, 0));
+      // Includes the LP analytics client. A React renderer alone would exceed this budget.
+      expect(javascriptBytes, path).toBeGreaterThan(0);
+      expect(javascriptBytes, path).toBeLessThan(30_000);
+    }
+  });
+  test('LPの離脱通知で訪問計測を送信する', async ({ page }) => {
+    const now = new Date();
+    await page.clock.install({ time: now });
+    await page.clock.pauseAt(new Date(now.getTime() + 1000));
+    // Keep the normal 3-second flush timer stopped, so only pagehide can send.
+    const events: { eventName: string; context: { landingPath?: string } }[] = [];
+    await page.exposeFunction('recordAnalytics', (body: string) => { events.push(...JSON.parse(body).events); });
+    await page.addInitScript(() => {
+      const sendBeacon = navigator.sendBeacon.bind(navigator);
+      navigator.sendBeacon = (url, data) => {
+        // WebKit's network inspector does not expose sendBeacon Blob bodies.
+        if (url === '/api/analytics/events' && data instanceof Blob) {
+          void data.text().then(body => (window as unknown as { recordAnalytics: (body: string) => Promise<void> }).recordAnalytics(body));
+        }
+        return sendBeacon(url, data);
+      };
+    });
+    await page.route('**/api/analytics/events', route => route.fulfill({ json: { success: true } }));
+    await page.goto('/lp/secure-file-sharing');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('anzdrop_analytics_landing_view_session'))).not.toBeNull();
+    const sent = page.waitForRequest(request => request.url().endsWith('/api/analytics/events') && request.method() === 'POST');
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+    await sent;
+    await expect.poll(() => events.filter(event => event.eventName === 'landing_view').length).toBe(1);
+    await page.goto('/about');
+    const landing = events.find(event => event.eventName === 'landing_view')!;
+    expect(landing.context.landingPath).toBe('/lp/secure-file-sharing');
   });
   test('トップのSEO情報と送信フォームをモバイルでもSSRする', async ({ page, request }) => {
     const response = await request.get('/?utm_source=search');
@@ -67,6 +108,55 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     expect(select.sessionId).toBe(landing.sessionId);
     expect(select.attribution?.source).toBe('search');
     for (const secret of ['private-fragment', 'private-name.txt', 'private-body', '?utm_source']) expect(JSON.stringify(events)).not.toContain(secret);
+  });
+  test('認証待ちでもモバイルメニューを開閉でき、失敗時はログイン導線を表示する', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    let release!: () => void;
+    const accountResponse = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/account/me', async route => { await accountResponse; await route.abort(); });
+    await page.goto('/about');
+    const toggle = page.getByRole('button', { name: /メニューを/ });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#mobile-menu-panel')).toHaveJSProperty('inert', false);
+    await expect(page.locator('#mobile-menu-panel').getByRole('link', { name: '料金プラン' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'ログイン', exact: true })).toHaveCount(0);
+    release();
+    await expect(page.getByRole('link', { name: 'ログイン', exact: true })).toBeVisible();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveAttribute('aria-label', 'メニューを開く');
+    await expect(page.locator('#mobile-menu-panel')).toHaveJSProperty('inert', true);
+  });
+  test('アカウントの開閉・外側クリック・ログアウトの連打防止を維持する', async ({ page }) => {
+    await page.route('**/api/account/me', route => route.fulfill({ json: { success: true, accountId: 'account-1', plan: 'free' } }));
+    await page.goto('/about');
+    const toggle = page.getByRole('button', { name: 'account-1', exact: true });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle).toHaveAttribute('aria-controls', 'desktop-account-menu');
+    await expect(page.getByRole('link', { name: 'プラン・お支払い' })).toBeVisible();
+    await page.locator('h1').click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).not.toHaveAttribute('aria-controls');
+    await expect(page.locator('#desktop-account-menu')).not.toBeVisible();
+    await toggle.click();
+    let calls = 0;
+    let release!: () => void;
+    const logoutResponse = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/account/logout', async route => {
+      expect(route.request().method()).toBe('POST');
+      calls++;
+      await logoutResponse;
+      await route.abort();
+    });
+    await page.getByRole('button', { name: 'ログアウト', exact: true }).click();
+    await expect.poll(() => calls).toBe(1);
+    await expect(page.getByRole('button', { name: 'ログアウト', exact: true })).toBeDisabled();
+    await page.locator('[data-action="logout"]').last().dispatchEvent('click');
+    expect(calls).toBe(1);
+    release();
+    await expect(page).toHaveURL(/\/$/);
   });
   test('Standardの料金と購入導線を公開する', async ({ page }) => {
     await page.goto('/pricing');
