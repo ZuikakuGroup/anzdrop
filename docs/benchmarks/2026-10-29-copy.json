@@ -1,0 +1,688 @@
+{
+  "metadata": {
+    "environment": "Node/Vite local copy microbenchmark; no network/crypto/R2",
+    "trialsPerVariant": 3,
+    "sizesMiB": [
+      1,
+      10,
+      100,
+      500,
+      1024
+    ],
+    "node": "v26.7.0",
+    "platform": "darwin-arm64",
+    "host": "Apple M2 24GiB"
+  },
+  "packet": {
+    "baseline": [
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0005160829999999806,
+        "mibPerSecond": 1937.6728161943672,
+        "cpuSeconds": 0.001216,
+        "maxRssKiB": 272240,
+        "peakExternalBytes": 123310583,
+        "externalBytesAtEnd": 16355695,
+        "checksum": 127,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0015629169999999703,
+        "mibPerSecond": 6398.29242371808,
+        "cpuSeconds": 0.004594,
+        "maxRssKiB": 276416,
+        "peakExternalBytes": 36278687,
+        "externalBytesAtEnd": 36278687,
+        "checksum": 254,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.016754833000000018,
+        "mibPerSecond": 5968.427139799,
+        "cpuSeconds": 0.031996,
+        "maxRssKiB": 317568,
+        "peakExternalBytes": 226071295,
+        "externalBytesAtEnd": 226071295,
+        "checksum": 1651,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.070448167,
+        "mibPerSecond": 7097.41674329156,
+        "cpuSeconds": 0.207478,
+        "maxRssKiB": 375216,
+        "peakExternalBytes": 274299210,
+        "externalBytesAtEnd": 148469866,
+        "checksum": 8001,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.14688412500000003,
+        "mibPerSecond": 6971.481771770774,
+        "cpuSeconds": 0.444121,
+        "maxRssKiB": 391792,
+        "peakExternalBytes": 291076458,
+        "externalBytesAtEnd": 156858474,
+        "checksum": 16256,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0005730420000001005,
+        "mibPerSecond": 1745.0727869856394,
+        "cpuSeconds": 0.000734,
+        "maxRssKiB": 272944,
+        "peakExternalBytes": 123310583,
+        "externalBytesAtEnd": 16355695,
+        "checksum": 127,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0036471670000000813,
+        "mibPerSecond": 2741.8541569387353,
+        "cpuSeconds": 0.006857,
+        "maxRssKiB": 277120,
+        "peakExternalBytes": 36278687,
+        "externalBytesAtEnd": 36278687,
+        "checksum": 254,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.038079625000000075,
+        "mibPerSecond": 2626.0762809507655,
+        "cpuSeconds": 0.086567,
+        "maxRssKiB": 297696,
+        "peakExternalBytes": 198808239,
+        "externalBytesAtEnd": 64590271,
+        "checksum": 1651,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.18111837500000003,
+        "mibPerSecond": 2760.6254749138507,
+        "cpuSeconds": 0.360435,
+        "maxRssKiB": 314176,
+        "peakExternalBytes": 207196863,
+        "externalBytesAtEnd": 81360874,
+        "checksum": 8001,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.454882833,
+        "mibPerSecond": 2251.129138566546,
+        "cpuSeconds": 0.858153,
+        "maxRssKiB": 314304,
+        "peakExternalBytes": 190412970,
+        "externalBytesAtEnd": 89749482,
+        "checksum": 16256,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0006362080000000105,
+        "mibPerSecond": 1571.8129919774406,
+        "cpuSeconds": 0.003848,
+        "maxRssKiB": 273664,
+        "peakExternalBytes": 123310583,
+        "externalBytesAtEnd": 16355695,
+        "checksum": 127,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0029160419999999477,
+        "mibPerSecond": 3429.305887912513,
+        "cpuSeconds": 0.007339,
+        "maxRssKiB": 277856,
+        "peakExternalBytes": 36278687,
+        "externalBytesAtEnd": 36278687,
+        "checksum": 254,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.03118374999999992,
+        "mibPerSecond": 3206.798412634794,
+        "cpuSeconds": 0.089399,
+        "maxRssKiB": 298432,
+        "peakExternalBytes": 198808239,
+        "externalBytesAtEnd": 64590271,
+        "checksum": 1651,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.189237666,
+        "mibPerSecond": 2642.1801249651853,
+        "cpuSeconds": 0.380552,
+        "maxRssKiB": 298480,
+        "peakExternalBytes": 173637098,
+        "externalBytesAtEnd": 98138122,
+        "checksum": 8001,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.5002939999999999,
+        "mibPerSecond": 2046.7964836676038,
+        "cpuSeconds": 0.866267,
+        "maxRssKiB": 315056,
+        "peakExternalBytes": 207190218,
+        "externalBytesAtEnd": 56194986,
+        "checksum": 16256,
+        "trial": 3
+      }
+    ],
+    "after": [
+      {
+        "sizeMiB": 1,
+        "seconds": 0.00010083300000002282,
+        "mibPerSecond": 9917.388156652818,
+        "cpuSeconds": 0.000177,
+        "maxRssKiB": 189072,
+        "peakExternalBytes": 47812967,
+        "externalBytesAtEnd": 15307103,
+        "checksum": 127,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0007096250000000168,
+        "mibPerSecond": 14091.94997357726,
+        "cpuSeconds": 0.002871,
+        "maxRssKiB": 191168,
+        "peakExternalBytes": 25792895,
+        "externalBytesAtEnd": 25792895,
+        "checksum": 254,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.006063499999999976,
+        "mibPerSecond": 16492.12501030764,
+        "cpuSeconds": 0.022067,
+        "maxRssKiB": 211760,
+        "peakExternalBytes": 121213487,
+        "externalBytesAtEnd": 121213487,
+        "checksum": 1651,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.03924045799999999,
+        "mibPerSecond": 12741.951177022453,
+        "cpuSeconds": 0.091657,
+        "maxRssKiB": 425584,
+        "peakExternalBytes": 333026223,
+        "externalBytesAtEnd": 102339071,
+        "checksum": 8001,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.04271545800000001,
+        "mibPerSecond": 23972.586223937942,
+        "cpuSeconds": 0.150352,
+        "maxRssKiB": 425616,
+        "peakExternalBytes": 307853706,
+        "externalBytesAtEnd": 249133338,
+        "checksum": 16256,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 8.312499999999545e-05,
+        "mibPerSecond": 12030.075187970584,
+        "cpuSeconds": 0.000307,
+        "maxRssKiB": 188416,
+        "peakExternalBytes": 47812967,
+        "externalBytesAtEnd": 15307103,
+        "checksum": 127,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0007416249999999991,
+        "mibPerSecond": 13483.903590089347,
+        "cpuSeconds": 0.003762,
+        "maxRssKiB": 190512,
+        "peakExternalBytes": 25792895,
+        "externalBytesAtEnd": 25792895,
+        "checksum": 254,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.006010417000000018,
+        "mibPerSecond": 16637.78070639686,
+        "cpuSeconds": 0.022512,
+        "maxRssKiB": 211088,
+        "peakExternalBytes": 121213487,
+        "externalBytesAtEnd": 121213487,
+        "checksum": 1651,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.04138491699999997,
+        "mibPerSecond": 12081.696333956652,
+        "cpuSeconds": 0.096003,
+        "maxRssKiB": 424960,
+        "peakExternalBytes": 333026223,
+        "externalBytesAtEnd": 102339071,
+        "checksum": 8001,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.04824295799999999,
+        "mibPerSecond": 21225.89580846183,
+        "cpuSeconds": 0.165295,
+        "maxRssKiB": 424992,
+        "peakExternalBytes": 291076458,
+        "externalBytesAtEnd": 106526730,
+        "checksum": 16256,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.00047137499999996634,
+        "mibPerSecond": 2121.4531954390272,
+        "cpuSeconds": 0.001727,
+        "maxRssKiB": 190000,
+        "peakExternalBytes": 47812967,
+        "externalBytesAtEnd": 15307103,
+        "checksum": 127,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0006920839999999658,
+        "mibPerSecond": 14449.113113437812,
+        "cpuSeconds": 0.001832,
+        "maxRssKiB": 192112,
+        "peakExternalBytes": 25792895,
+        "externalBytesAtEnd": 25792895,
+        "checksum": 254,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.008180916000000024,
+        "mibPerSecond": 12223.570074549072,
+        "cpuSeconds": 0.027095,
+        "maxRssKiB": 212688,
+        "peakExternalBytes": 121213487,
+        "externalBytesAtEnd": 121213487,
+        "checksum": 1651,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.03917345799999998,
+        "mibPerSecond": 12763.744267866274,
+        "cpuSeconds": 0.099748,
+        "maxRssKiB": 336064,
+        "peakExternalBytes": 240751359,
+        "externalBytesAtEnd": 203002559,
+        "checksum": 8001,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.05098291599999999,
+        "mibPerSecond": 20085.159507157263,
+        "cpuSeconds": 0.152087,
+        "maxRssKiB": 410128,
+        "peakExternalBytes": 316242330,
+        "externalBytesAtEnd": 207190218,
+        "checksum": 16256,
+        "trial": 3
+      }
+    ]
+  },
+  "body": {
+    "baseline": [
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0013616670000000113,
+        "mibPerSecond": 734.3939450687956,
+        "cpuSeconds": 0.00519,
+        "maxRssKiB": 263280,
+        "peakExternalBytes": 140153099,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.004917915999999991,
+        "mibPerSecond": 2033.3816193688583,
+        "cpuSeconds": 0.008123,
+        "maxRssKiB": 265200,
+        "peakExternalBytes": 34246963,
+        "externalBytesAtEnd": 34246963,
+        "checksum": 254,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.041209791999999995,
+        "mibPerSecond": 2426.6077343947773,
+        "cpuSeconds": 0.110346,
+        "maxRssKiB": 269312,
+        "peakExternalBytes": 148541747,
+        "externalBytesAtEnd": 102404403,
+        "checksum": 1651,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.250904167,
+        "mibPerSecond": 1992.7927303016852,
+        "cpuSeconds": 0.506569,
+        "maxRssKiB": 269440,
+        "peakExternalBytes": 156923710,
+        "externalBytesAtEnd": 77231934,
+        "checksum": 8001,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.46998912499999995,
+        "mibPerSecond": 2178.773817372902,
+        "cpuSeconds": 0.979267,
+        "maxRssKiB": 269664,
+        "peakExternalBytes": 173700926,
+        "externalBytesAtEnd": 64649022,
+        "checksum": 16256,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0008919579999999315,
+        "mibPerSecond": 1121.1290217701694,
+        "cpuSeconds": 0.004051,
+        "maxRssKiB": 263264,
+        "peakExternalBytes": 140153099,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.002696707999999944,
+        "mibPerSecond": 3708.224991359913,
+        "cpuSeconds": 0.006951,
+        "maxRssKiB": 265360,
+        "peakExternalBytes": 34246963,
+        "externalBytesAtEnd": 34246963,
+        "checksum": 254,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.025710416999999892,
+        "mibPerSecond": 3889.4740602612715,
+        "cpuSeconds": 0.092082,
+        "maxRssKiB": 269488,
+        "peakExternalBytes": 131764531,
+        "externalBytesAtEnd": 127570227,
+        "checksum": 1651,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.19778666699999997,
+        "mibPerSecond": 2527.9762664689633,
+        "cpuSeconds": 0.463064,
+        "maxRssKiB": 269536,
+        "peakExternalBytes": 165313694,
+        "externalBytesAtEnd": 60454718,
+        "checksum": 8001,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.590546708,
+        "mibPerSecond": 1733.986467332911,
+        "cpuSeconds": 1.006037,
+        "maxRssKiB": 286000,
+        "peakExternalBytes": 190478142,
+        "externalBytesAtEnd": 73037630,
+        "checksum": 16256,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0013949589999999717,
+        "mibPerSecond": 716.8669473439867,
+        "cpuSeconds": 0.00518,
+        "maxRssKiB": 262224,
+        "peakExternalBytes": 140153099,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.005034791000000041,
+        "mibPerSecond": 1986.179763966353,
+        "cpuSeconds": 0.008467,
+        "maxRssKiB": 264160,
+        "peakExternalBytes": 34246963,
+        "externalBytesAtEnd": 34246963,
+        "checksum": 254,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.03977495800000008,
+        "mibPerSecond": 2514.14470381087,
+        "cpuSeconds": 0.102988,
+        "maxRssKiB": 268288,
+        "peakExternalBytes": 131764531,
+        "externalBytesAtEnd": 127570227,
+        "checksum": 1651,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.23436675,
+        "mibPerSecond": 2133.408429310045,
+        "cpuSeconds": 0.51968,
+        "maxRssKiB": 268416,
+        "peakExternalBytes": 140146494,
+        "externalBytesAtEnd": 127563582,
+        "checksum": 8001,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.4517633330000001,
+        "mibPerSecond": 2266.673554934127,
+        "cpuSeconds": 1.006793,
+        "maxRssKiB": 293168,
+        "peakExternalBytes": 190478142,
+        "externalBytesAtEnd": 56260414,
+        "checksum": 16256,
+        "trial": 3
+      }
+    ],
+    "after": [
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0012110420000000204,
+        "mibPerSecond": 825.7351933293669,
+        "cpuSeconds": 0.004984,
+        "maxRssKiB": 180512,
+        "peakExternalBytes": 56267019,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0018432080000000042,
+        "mibPerSecond": 5425.323674810427,
+        "cpuSeconds": 0.004897,
+        "maxRssKiB": 182624,
+        "peakExternalBytes": 25858355,
+        "externalBytesAtEnd": 25858355,
+        "checksum": 254,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.011473333000000025,
+        "mibPerSecond": 8715.863123645046,
+        "cpuSeconds": 0.032281,
+        "maxRssKiB": 207296,
+        "peakExternalBytes": 121278771,
+        "externalBytesAtEnd": 121278771,
+        "checksum": 1651,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.052256875000000036,
+        "mibPerSecond": 9568.119027400695,
+        "cpuSeconds": 0.173275,
+        "maxRssKiB": 252560,
+        "peakExternalBytes": 156925086,
+        "externalBytesAtEnd": 127563582,
+        "checksum": 8001,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.08719216699999999,
+        "mibPerSecond": 11744.174221521529,
+        "cpuSeconds": 0.292703,
+        "maxRssKiB": 318384,
+        "peakExternalBytes": 224032574,
+        "externalBytesAtEnd": 106592062,
+        "checksum": 16256,
+        "trial": 1
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0005761249999999905,
+        "mibPerSecond": 1735.734432631836,
+        "cpuSeconds": 0.000652,
+        "maxRssKiB": 180480,
+        "peakExternalBytes": 56267019,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.0012282500000000028,
+        "mibPerSecond": 8141.664970486446,
+        "cpuSeconds": 0.004166,
+        "maxRssKiB": 182528,
+        "peakExternalBytes": 25858355,
+        "externalBytesAtEnd": 25858355,
+        "checksum": 254,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.010266707999999994,
+        "mibPerSecond": 9740.2205263849,
+        "cpuSeconds": 0.027457,
+        "maxRssKiB": 207168,
+        "peakExternalBytes": 121278771,
+        "externalBytesAtEnd": 121278771,
+        "checksum": 1651,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.05286462499999999,
+        "mibPerSecond": 9458.120624141382,
+        "cpuSeconds": 0.162774,
+        "maxRssKiB": 268912,
+        "peakExternalBytes": 173707571,
+        "externalBytesAtEnd": 135952190,
+        "checksum": 8001,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.08618566600000002,
+        "mibPerSecond": 11881.326066448215,
+        "cpuSeconds": 0.292804,
+        "maxRssKiB": 318304,
+        "peakExternalBytes": 224032574,
+        "externalBytesAtEnd": 106592062,
+        "checksum": 16256,
+        "trial": 2
+      },
+      {
+        "sizeMiB": 1,
+        "seconds": 0.0006170419999999979,
+        "mibPerSecond": 1620.6352241824761,
+        "cpuSeconds": 0.000693,
+        "maxRssKiB": 180208,
+        "peakExternalBytes": 56267019,
+        "externalBytesAtEnd": 23761203,
+        "checksum": 127,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 10,
+        "seconds": 0.001261084000000011,
+        "mibPerSecond": 7929.685889282484,
+        "cpuSeconds": 0.004243,
+        "maxRssKiB": 182320,
+        "peakExternalBytes": 25858355,
+        "externalBytesAtEnd": 25858355,
+        "checksum": 254,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 100,
+        "seconds": 0.010113291000000003,
+        "mibPerSecond": 9887.978107225428,
+        "cpuSeconds": 0.027781,
+        "maxRssKiB": 206976,
+        "peakExternalBytes": 121278771,
+        "externalBytesAtEnd": 121278771,
+        "checksum": 1651,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 500,
+        "seconds": 0.05609375,
+        "mibPerSecond": 8913.649025069639,
+        "cpuSeconds": 0.174009,
+        "maxRssKiB": 260640,
+        "peakExternalBytes": 165318963,
+        "externalBytesAtEnd": 119174974,
+        "checksum": 8001,
+        "trial": 3
+      },
+      {
+        "sizeMiB": 1024,
+        "seconds": 0.09836612500000001,
+        "mibPerSecond": 10410.087822408374,
+        "cpuSeconds": 0.340856,
+        "maxRssKiB": 301920,
+        "peakExternalBytes": 207255358,
+        "externalBytesAtEnd": 131757886,
+        "checksum": 16256,
+        "trial": 3
+      }
+    ]
+  }
+}

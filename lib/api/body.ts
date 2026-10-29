@@ -21,5 +21,7 @@ export async function readBodyWithinLimit(
     body.set(value, totalBytes);
     totalBytes += value.byteLength;
   }
-  return body.slice(0, totalBytes);
+  // 通常のアップロードパートは上限ちょうど。末尾まで検証したバッファを
+  // そのまま渡し、8MiBの再コピーを避ける。短い本文は余白を含めず返す。
+  return totalBytes === maxBytes ? body : body.slice(0, totalBytes);
 }
