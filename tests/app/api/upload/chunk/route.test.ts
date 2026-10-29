@@ -162,6 +162,35 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(400);
   });
 
+  it("stops reading an oversized stream without buffering the remaining payload", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload();
+    const cancel = vi.fn();
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel,
+    });
+    const request = new Request("http://localhost:3000/api/upload/chunk", {
+      method: "POST",
+      headers: {
+        "Anzdrop-Upload-Session": uploadSessionId,
+        "Anzdrop-Part-Number": "1",
+        "Anzdrop-Upload-Token": uploadToken,
+        "Content-Length": "1",
+      },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    const { POST } = bindRouteHandlers(await import("@/server/routes/upload/chunk/route"), testRuntime);
+    const response = await POST(request);
+    expect(response.status).toBe(413);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(pulls).toBeLessThanOrEqual(10);
+  });
+
   it("rejects a part larger than UPLOAD_PART_SIZE", async () => {
     const { uploadSessionId, uploadToken } = await startUpload();
 

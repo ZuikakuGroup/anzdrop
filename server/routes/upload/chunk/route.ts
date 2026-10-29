@@ -5,6 +5,7 @@ import {
   loadUploadSession,
   verifyUploadSessionToken,
 } from "@/lib/upload/uploadSessionAuth";
+import { readBodyWithinLimit } from "@/lib/api/body";
 import { withApiHandler } from "@/lib/api/handler";
 import { checkRateLimit } from "@/lib/rateLimit";
 import type { ChunkUploadResponse } from "@/lib/api/schemas/upload/chunk/schema";
@@ -65,9 +66,9 @@ export const POST = withApiHandler(
     }
 
     // バイナリ取得
-    const body = await request.arrayBuffer();
+    const body = await readBodyWithinLimit(request, UPLOAD_PART_SIZE);
 
-    if (body.byteLength === 0) {
+    if (body?.byteLength === 0) {
       return Response.json(
         {
           success: false,
@@ -82,7 +83,7 @@ export const POST = withApiHandler(
     // クライアントは暗号化ストリームをUPLOAD_PART_SIZEちょうどで切り出して送り、
     // 最終パートだけがそれ未満になる。よってどのパートもUPLOAD_PART_SIZEを
     // 超えることはない。これを超える場合は不正なリクエストとして拒否する。
-    if (body.byteLength > UPLOAD_PART_SIZE) {
+    if (body === null) {
       return Response.json(
         {
           success: false,

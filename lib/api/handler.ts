@@ -6,9 +6,9 @@ const INTERNAL_SERVER_ERROR_RESPONSE: ApiResponse = {
 };
 
 // server/routes/**/route.tsの全ハンドラーで手作業コピーされていた
-// 「try { ... } catch (error) { console.error(...); 汎用500応答 }」の定型を
+// 「try { ... } catch { console.error(...); 汎用500応答 }」の定型を
 // まとめる。routeLabelはログの先頭に出す識別子(例: "GET /api/account/me")で、
-// 既存のconsole.errorの文言をそのまま踏襲する。
+// 例外本文には入力・トークンが含まれうるため、ログには固定のラベルだけを残す。
 export function withApiHandler<Args extends unknown[]>(
   routeLabel: string,
   handler: (...args: Args) => Promise<Response>
@@ -16,8 +16,8 @@ export function withApiHandler<Args extends unknown[]>(
   return async (...args: Args): Promise<Response> => {
     try {
       return await handler(...args);
-    } catch (error) {
-      console.error(`${routeLabel} failed:`, error);
+    } catch {
+      console.error(`${routeLabel} failed`);
 
       return Response.json(INTERNAL_SERVER_ERROR_RESPONSE, { status: 500 });
     }
