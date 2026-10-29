@@ -87,12 +87,12 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
               Anzdrop
             </h1>
             <p className="text-xs text-ink/50">
-              ナウでヤングな暗号化ファイル共有サービス
+              登録不要の暗号化ファイル共有
             </p>
           </div>
 
           <div className="border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
-            どんなファイルも簡単に共有できます。<br/>プライバシーにこだわっており、いい感じに暗号化されます。
+            ファイルを選んで、暗号化して送る。<br/>発行された共有リンクを相手に送ってください。
           </div>
 
           <div className="space-y-5">

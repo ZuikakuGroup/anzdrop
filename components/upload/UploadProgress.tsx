@@ -12,7 +12,7 @@ export default function UploadProgress({ progress }: UploadProgressProps) {
       <span className="text-xs font-bold text-ink/50">
         アップロード中... {progress}%
       </span>
-      <div className="h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-ink/10">
+      <div role="progressbar" aria-label="アップロード進捗" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-ink/10">
         <div
           className="h-full rounded-full bg-brand transition-all duration-200"
           style={{ width: `${progress}%` }}

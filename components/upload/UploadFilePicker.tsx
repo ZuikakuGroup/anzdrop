@@ -18,8 +18,8 @@ export default function UploadFilePicker({
       htmlFor={fileInputId}
       className={
         files.length === 0
-          ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center transition-colors hover:bg-ink/[0.03]"
-          : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03]"
+          ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-6 text-center transition-colors hover:bg-ink/[0.03] focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-brand"
+          : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03] focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-brand"
       }
     >
       {files.length === 0 ? (
@@ -28,7 +28,7 @@ export default function UploadFilePicker({
             ファイルを選択
           </span>
           <span className="text-xs font-bold text-ink/50">
-            クリックまたはドラッグ&ドロップで選択<br />フォルダはドラッグでアップロード
+            タップ・クリックで選択<br />ファイル・フォルダをドロップ
           </span>
         </>
       ) : (
@@ -50,6 +50,7 @@ export default function UploadFilePicker({
         id={fileInputId}
         type="file"
         multiple
+        aria-label="送信するファイルを選択"
         onChange={onFileChange}
         className="sr-only"
       />

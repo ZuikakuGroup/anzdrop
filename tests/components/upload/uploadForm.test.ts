@@ -186,7 +186,7 @@ describe("送信の連打と再試行", () => {
     expect(container.textContent).toContain("temporary failure");
     await act(async () => upload.click());
     expect(uploadEncryptedFile).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("共有リンクを発行しました");
+    expect(container.textContent).toContain("アップロード完了");
     expect(container.querySelector('button[aria-label="閉じる"]')).not.toBeNull();
   });
 });

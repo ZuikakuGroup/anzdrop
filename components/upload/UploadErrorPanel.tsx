@@ -11,7 +11,7 @@ export default function UploadErrorPanel({
   onDismiss,
 }: UploadErrorPanelProps) {
   return (
-    <div className="relative flex h-40 flex-col items-center justify-center gap-2 rounded border-2 border-brand p-6 text-center">
+    <div role="alert" className="relative flex min-h-40 flex-col items-center justify-center gap-2 rounded border-2 border-brand p-6 text-center">
       <button
         onClick={onDismiss}
         aria-label="閉じる"
@@ -21,6 +21,7 @@ export default function UploadErrorPanel({
         <XIcon className="h-3.5 w-3.5" />
       </button>
       <p className="text-sm font-bold text-brand">{error}</p>
+      <button type="button" onClick={onDismiss} className="min-h-11 rounded border border-ink px-4 py-2 text-sm font-bold">ファイル選択に戻る</button>
     </div>
   );
 }

@@ -86,7 +86,7 @@ async function upload(page: Page, files: Fixture[], protectedShare = false): Pro
     await page.getByPlaceholder("パスワード", { exact: true }).fill(password);
   }
   await page.getByRole("button", { name: "アップロードする", exact: true }).click();
-  await expect(page.getByText("共有リンクを発行しました", { exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole("status").filter({ hasText: /^アップロード完了$/ })).toBeVisible({ timeout: 120_000 });
   await page.getByRole("button", { name: "URLをコピー", exact: true }).click();
   const url = await page.evaluate(() => (window as unknown as { sharingTestState: BrowserState }).sharingTestState.copied);
   const parsed = new URL(url);

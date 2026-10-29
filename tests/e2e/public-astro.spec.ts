@@ -30,6 +30,44 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/about');
     expect(violations).toEqual([]);
   });
+  test('トップのSEO情報と送信フォームをモバイルでもSSRする', async ({ page, request }) => {
+    const response = await request.get('/?utm_source=search');
+    expect(response.status()).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('登録不要の暗号化ファイル共有');
+    expect(html).toContain('type="file"');
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto('/?utm_source=search');
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/');
+    await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute('content', /ブラウザ内/);
+    const application = await page.locator('script[type="application/ld+json"]').textContent();
+    expect(JSON.parse(application!)).toMatchObject({ '@type': 'WebApplication', url: 'https://anzdrop.com/' });
+    await expect(page.getByLabel('送信するファイルを選択')).toBeAttached();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: 'tmp/acquisition-home-mobile.png', fullPage: true });
+  });
+  test('記事流入を送信操作まで同一セッションで引き継ぎ、秘密のURL部分を送信しない', async ({ page }) => {
+    const events: { eventName: string; sessionId: string; context: { landingPath?: string }; attribution?: { source?: string } }[] = [];
+    await page.route('**/api/analytics/events', async route => {
+      events.push(...route.request().postDataJSON().events);
+      await route.fulfill({ json: { success: true } });
+    });
+    await page.goto('/blog/local-seed-post-1?utm_source=search#private-fragment');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('anzdrop_analytics_landing_view_session'))).not.toBeNull();
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+    await expect.poll(() => events.length).toBe(1);
+    await page.getByRole('complementary', { name: 'ファイルを送る' }).getByRole('link', { name: 'ファイルを選択して送る' }).click();
+    await expect(page.locator('astro-island[component-url*="UploadPage"]')).not.toHaveAttribute('ssr');
+    await page.locator('input[type="file"]').setInputFiles({ name: 'private-name.txt', mimeType: 'text/plain', buffer: Buffer.from('private-body') });
+    await expect.poll(() => events.some(event => event.eventName === 'file_select')).toBe(true);
+    const landing = events.find(event => event.eventName === 'landing_view')!;
+    const select = events.find(event => event.eventName === 'file_select')!;
+    expect(events.filter(event => event.eventName === 'landing_view')).toHaveLength(1);
+    expect(landing.context.landingPath).toBe('/blog/local-seed-post-1');
+    expect(select.sessionId).toBe(landing.sessionId);
+    expect(select.attribution?.source).toBe('search');
+    for (const secret of ['private-fragment', 'private-name.txt', 'private-body', '?utm_source']) expect(JSON.stringify(events)).not.toContain(secret);
+  });
   test('Standardの料金と購入導線を公開する', async ({ page }) => {
     await page.goto('/pricing');
     const card = page.getByRole('heading', { name: 'Standard', exact: true }).locator('..');
@@ -49,6 +87,8 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await page.getByRole('link', { name: '次のページ' }).click();
     await expect(page).toHaveURL(/page=2/);
     await expect(page.locator('#blog-page')).toHaveValue('2');
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://anzdrop.com/blog?page=2');
+    await expect(page).toHaveTitle('ブログ 2ページ目 | Anzdrop');
     await page.locator('#blog-page').fill('1');
     await page.locator('#blog-page').press('Enter');
     await expect(page).toHaveURL(/\/blog\?page=1$/);
@@ -56,6 +96,7 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(page.locator('#blog-page')).toHaveValue('1');
     await page.goto('/blog/local-seed-post-1');
     await expect(page.locator('article h1')).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'ファイルを送る' }).getByRole('link', { name: 'ファイルを選択して送る' })).toHaveAttribute('href', '/');
     await expect(page.locator('astro-island[component-url*="ArticleImageLightbox"]')).not.toHaveAttribute('ssr');
     await page.getByRole('button', { name: 'アイキャッチ画像を拡大表示' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();

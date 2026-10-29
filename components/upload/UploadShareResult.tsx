@@ -70,7 +70,7 @@ export default function UploadShareResult({
   }, [isQrOpen]);
 
   return (
-    <div className="anz-scroll relative flex h-44 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
+    <div className="anz-scroll relative flex min-h-44 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
       <button
         onClick={onReset}
         aria-label="閉じる"
@@ -80,8 +80,8 @@ export default function UploadShareResult({
         <XIcon className="h-3.5 w-3.5" />
       </button>
 
-      <p className="text-xs font-bold text-ink/50">
-        共有リンクを発行しました
+      <p role="status" className="text-xs font-bold text-ink/50">
+        アップロード完了
       </p>
 
       <div className="flex items-center gap-3">
@@ -113,6 +113,19 @@ export default function UploadShareResult({
         </button>
       </div>
 
+      <label className="block w-full text-left text-xs font-bold text-ink/60">
+        共有URL
+        <input
+          type="text"
+          readOnly
+          value={shareUrl}
+          onFocus={(event) => event.currentTarget.select()}
+          className="mt-1 min-h-11 w-full rounded border border-ink/20 bg-paper px-2 text-sm font-normal text-ink"
+        />
+      </label>
+      {copyState === "failed" && <p role="alert" className="text-xs text-brand">共有URLを選択して、手動でコピーしてください。</p>}
+      <span role="status" className="sr-only">{copyState === "copied" ? "共有URLをコピーしました" : ""}</span>
+
       {isQrOpen && <Suspense fallback={null}>
       <QrCodeModal
         url={shareUrl}
@@ -123,7 +136,7 @@ export default function UploadShareResult({
 
       <button
         onClick={onCopy}
-        className="rounded bg-ink px-5 py-2.5 text-sm font-bold text-paper transition-colors hover:bg-ink/90"
+        className="min-h-11 rounded bg-ink px-5 py-2.5 text-sm font-bold text-paper transition-colors hover:bg-ink/90"
       >
         {copyState === "copied"
           ? "コピーしました"
