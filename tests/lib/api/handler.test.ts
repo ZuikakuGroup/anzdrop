@@ -49,7 +49,7 @@ describe("withApiHandler", () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      "POST /api/example failed"
+      expect.objectContaining({ event: "api_exception", operation: "POST /api/example" })
     );
     consoleErrorSpy.mockRestore();
   });

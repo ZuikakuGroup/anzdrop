@@ -317,3 +317,10 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ## 監査記録
 
 2026-10-29の転送・例外ログの改善、検証結果、残存リスクは[コード品質監査](./quality-audit.md)を参照。共通API例外ログには固定のルート名だけを記録し、例外本文を含めない。
+
+
+## 運用ヘルスチェック
+
+`GET /api/admin/health` は既存のCloudflare Access認証を要求します。D1の `SELECT 1` とR2の予約キーへの `head` を読み取り専用で確認し、両方正常なら200、エラー・3秒のタイムアウトなら503、未認証なら403を返します。本文は `{ success, checks: { d1, r2 } }` で、各状態は `ok` / `error` / `timeout` です。応答は `no-store`。書込・転送・復号の完了は保証しません。
+
+Hono APIの応答にはサーバー生成の `X-Request-ID` を付与します。入力された同名ヘッダーは使用しません。5xxと5秒以上のAPI応答を固定ルート名で記録します。設定・制約・復旧手順は[運用Runbook](./operations.md)を参照してください。
