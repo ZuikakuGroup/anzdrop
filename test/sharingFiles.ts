@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, open, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,7 +8,7 @@ const blockSize = 1024 * 1024;
 
 // Generate real upload files without keeping a 200MiB fixture in the driver heap.
 export async function createSharingFile(filename: string, size: number, seed = 0): Promise<void> {
-  if (!Number.isSafeInteger(size) || size < SYNTHETIC_MARKER.length) throw new Error("Invalid fixture size");
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error("Invalid fixture size");
   await mkdir(path.dirname(filename), { recursive: true });
   const file = await open(filename, "w");
   try {
@@ -19,22 +21,16 @@ export async function createSharingFile(filename: string, size: number, seed = 0
   } finally { await file.close(); }
 }
 
-// Fixed-size reads compare every byte, including tails and chunk boundaries.
-// Failure messages deliberately omit file content.
+// Stream hashes so 1GiB tests do not allocate a whole fixture in the driver.
+export async function sharingFileSha256(filename: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filename)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
 export async function assertSharingFilesEqual(actual: string, expected: string): Promise<void> {
   const [aStat, eStat] = await Promise.all([stat(actual), stat(expected)]);
   if (aStat.size !== eStat.size) throw new Error("Saved file length differs");
-  const a = await open(actual, "r");
-  let e: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    e = await open(expected, "r");
-    const left = Buffer.alloc(64 * 1024), right = Buffer.alloc(64 * 1024);
-    for (let offset = 0; offset < eStat.size; offset += left.length) {
-      const length = Math.min(left.length, eStat.size - offset);
-      const [ar, er] = await Promise.all([a.read(left, 0, length, offset), e.read(right, 0, length, offset)]);
-      if (ar.bytesRead !== length || er.bytesRead !== length || !left.subarray(0, length).equals(right.subarray(0, length))) {
-        throw new Error(`Saved file bytes differ at block ${Math.floor(offset / left.length)}`);
-      }
-    }
-  } finally { await Promise.all([a.close(), e?.close()]); }
+  const [aHash, eHash] = await Promise.all([sharingFileSha256(actual), sharingFileSha256(expected)]);
+  if (aHash !== eHash) throw new Error("Saved file SHA-256 differs");
 }

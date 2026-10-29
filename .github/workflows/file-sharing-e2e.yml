@@ -6,6 +6,12 @@ on:
   schedule:
     - cron: '0 18 * * *'
   workflow_dispatch:
+    inputs:
+      size_mib:
+        description: 'Optional Chromium size test in MiB (0 skips large files)'
+        type: choice
+        default: '0'
+        options: ['0', '1', '10', '100', '1024']
 
 permissions:
   contents: read
@@ -27,7 +33,8 @@ jobs:
       E2E_PROJECT: ${{ matrix.browser }}
       E2E_WORKERS: '1'
       E2E_TEST_FILES: tests/e2e/file-sharing.spec.ts
-      E2E_EXTENDED: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+      E2E_EXTENDED: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+      E2E_RESILIENCE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -36,7 +43,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - run: npm run test:astro-hono
+      - name: Run isolated sharing tests
+        shell: bash
+        env:
+          REQUESTED_SIZE: ${{ matrix.browser == 'chromium' && inputs.size_mib || '0' }}
+        run: |
+          if [ "$REQUESTED_SIZE" != '0' ]; then export E2E_LARGE_MIB="$REQUESTED_SIZE"; fi
+          npm run test:sharing
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

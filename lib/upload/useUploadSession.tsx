@@ -210,6 +210,14 @@ export function useUploadSession() {
       return;
     }
 
+    // The API only accepts positive file sizes. Reject the whole selection
+    // before queueing, so a mixed batch cannot upload only its non-empty prefix.
+    const emptyFile = newFiles.find((pendingFile) => pendingFile.file.size === 0);
+    if (emptyFile) {
+      setError(`${emptyFile.path} は空のファイルのため送信できません。`);
+      return;
+    }
+
     const oversizedFile = newFiles.find(
       (pendingFile) => pendingFile.file.size > maxFileSizeBytes
     );

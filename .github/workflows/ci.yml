@@ -70,6 +70,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Verify Astro pages on Workers
         run: npm run test:astro-hono
+        env:
+          # Sharing is covered by the dedicated three-browser workflow.
+          E2E_TEST_FILES: tests/e2e/public-astro.spec.ts tests/e2e/account-security.spec.ts tests/e2e/smoke.spec.ts tests/e2e/astro-hono.spec.ts tests/e2e/support-admin-astro.spec.ts
       - name: Verify authorized admin Astro pages on Workers
         run: npm run test:astro-hono
         env:
