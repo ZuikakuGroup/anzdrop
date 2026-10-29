@@ -201,7 +201,7 @@ Git のテストは一時リポジトリを作り、API のテストは偽の応
 
 ## ファイル共有 E2E
 
-[File sharing E2E](../.github/workflows/file-sharing-e2e.yml) は PR と Merge Queue で Chromium・Firefox・WebKit を別ジョブ、各1ワーカーで実行する。64KiB の基本共有、パスワード、ZIP を対象とし、ジョブ上限は20分。毎日18:00 UTC（翌日03:00 JST）と手動実行では、大容量・Blob・障害・キャンセルを含む拡張スイートを実行し、上限は40分。各テストは基本60秒、拡張180秒、リトライ0回。
+[File sharing E2E](../.github/workflows/file-sharing-e2e.yml) は PR と Merge Queue で Chromium・Firefox・WebKit を別ジョブ、各1ワーカーで実行する。小容量の基本共有、パスワード、ZIP、テキスト・PNG・1MiB・空ファイル拒否を対象とし、ジョブ上限は20分。毎日18:00 UTC（翌日03:00 JST）には障害・同時利用、手動実行にはさらに10MiB・Blob・保存キャンセルを追加し、上限は40分。100MiB・1GiBは手動のsize_mib指定時のみChromiumで追加する。各テストは基本60秒、障害120秒、拡張180秒、サイズ指定300秒（1GiBは900秒）、リトライ0回。
 
 書き込みトークンや本番ストレージを使わず、既存の隔離ローカル環境で実行する。失敗時のレポート・トレースはブラウザ別に7日間保存する。ブランチ保護は変更しない。既存の post-deploy は Chromium のみを明示し、共有スイートは本番では実行しない。
 

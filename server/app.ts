@@ -26,6 +26,7 @@ import * as accountSecurityTotpDisableRoute from "./routes/account/security/totp
 import * as accountSecurityTotpSetupRoute from "./routes/account/security/totp/setup/route";
 import * as accountSignupRoute from "./routes/account/signup/route";
 import * as adminAccountsAccountIdRoute from "./routes/admin/accounts/[accountId]/route";
+import * as adminStorageRoute from "./routes/admin/storage/route";
 import * as adminAnalyticsRoute from "./routes/admin/analytics/route";
 import * as adminContactsContactIdResolveRoute from "./routes/admin/contacts/[contactId]/resolve/route";
 import * as adminContactsContactIdRoute from "./routes/admin/contacts/[contactId]/route";
@@ -117,6 +118,7 @@ registerRoute("POST", "/api/admin/accounts/:accountId", adminAccountsAccountIdRo
 registerRoute("DELETE", "/api/admin/accounts/:accountId", adminAccountsAccountIdRoute.DELETE);
 registerRoute("GET", "/api/admin/health", healthCheck);
 registerRoute("GET", "/api/admin/analytics", adminAnalyticsRoute.GET);
+registerRoute("GET", "/api/admin/storage", adminStorageRoute.GET);
 registerRoute("POST", "/api/admin/contacts/:contactId/resolve", adminContactsContactIdResolveRoute.POST);
 registerRoute("DELETE", "/api/admin/contacts/:contactId", adminContactsContactIdRoute.DELETE);
 registerRoute("GET", "/api/admin/contacts", adminContactsRoute.GET);

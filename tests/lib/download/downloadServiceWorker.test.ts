@@ -197,7 +197,7 @@ describe("download-sw.js", () => {
           type: "ANZDROP_STREAM_DOWNLOAD",
           id: "jp",
           readable: emptyStream(),
-          filename: "機密資料.zip",
+          filename: "日本語 の テキスト.txt",
           size: 3,
         },
         { postMessage: vi.fn() }
@@ -206,10 +206,10 @@ describe("download-sw.js", () => {
       const response = await sw.fetch(`${ORIGIN}/_anzdrop_download/jp`);
       const cd = response!.headers.get("Content-Disposition")!;
       expect(cd).not.toMatch(/[\r\n]/);
-      // 非 ASCII は _ 化されるが、全部消えると "download" になる。
-      expect(cd).toContain('filename="____.zip"');
+      // ASCIIの空白は保持し、非ASCII文字だけをフォールバックで置換する。
+      expect(cd).toContain('filename="___ _ ____.txt"');
       expect(cd).toContain(
-        "filename*=UTF-8''" + encodeURIComponent("機密資料.zip")
+        "filename*=UTF-8''" + encodeURIComponent("日本語 の テキスト.txt")
       );
     });
   });

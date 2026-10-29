@@ -262,3 +262,35 @@ describe("プランごとの保存期間の初期選択", () => {
     expect(periodButton("7日").getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+describe("空ファイルの選択", () => {
+  it("空ファイルの追加で既に選んだ通常ファイルを失わない", async () => {
+    await act(async () => root.render(createElement(UploadForm, { header: null, footer: null })));
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const change = async (files: File[]) => {
+      Object.defineProperty(input, "files", { configurable: true, value: files });
+      await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    };
+    await change([new File(["synthetic"], "normal.bin")]);
+    await change([new File([], "empty.bin")]);
+    expect(container.textContent).toContain("empty.bin は空のファイルのため送信できません。");
+    const dismiss = container.querySelector<HTMLButtonElement>('button[aria-label="閉じる"]')!;
+    await act(async () => dismiss.click());
+    expect(container.textContent).toContain("normal.bin");
+    expect(container.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  it.each([false, true])("混在=%s の選択を先行暗号化・転送前に拒否する", async mixed => {
+    await act(async () => root.render(createElement(UploadForm, { header: null, footer: null })));
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const files = [new File([], "empty.bin")];
+    if (mixed) files.unshift(new File(["synthetic"], "normal.bin"));
+    Object.defineProperty(input, "files", { configurable: true, value: files });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(container.textContent).toContain("empty.bin は空のファイルのため送信できません。");
+    expect(iterateEncryptedChunks).not.toHaveBeenCalled();
+    const upload = [...container.querySelectorAll("button")].find(button => button.textContent === "アップロードする")!;
+    await act(async () => upload.click());
+    expect(uploadEncryptedFile).not.toHaveBeenCalled();
+  });
+});

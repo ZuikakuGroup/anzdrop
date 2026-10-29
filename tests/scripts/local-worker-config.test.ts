@@ -26,6 +26,21 @@ describe("disposable local Wrangler configuration", () => {
     expect(local).not.toHaveProperty("tsconfig");
     expect(await readLocalWorkerConfig(file, { stripRoutes: true })).not.toHaveProperty("routes");
   });
+  it("forces disposable E2E storage to local even when source bindings are remote", async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), "anzdrop-local-config-"));
+    const file = path.join(directory, "worker.jsonc");
+    await writeFile(file, JSON.stringify({ main: "./entry.ts", account_id: "synthetic-account",
+      vars: { SITE_URL: "https://production.example", R2_ACCESS_KEY_ID: "synthetic", R2_SECRET_ACCESS_KEY: "synthetic", CLOUDFLARE_ACCOUNT_ID: "synthetic" },
+      d1_databases: [{ binding: "DB", database_id: "production-id", preview_database_id: "preview-id", remote: true }],
+      r2_buckets: [{ binding: "FILES_BUCKET", bucket_name: "production", preview_bucket_name: "preview", remote: true }],
+    }));
+    const local = await readLocalWorkerConfig(file, { isolateStorage: true });
+    expect(local).not.toHaveProperty("account_id");
+    expect(local.vars).toEqual({ SITE_URL: "http://localhost:3310" });
+    expect(local.d1_databases[0]).toMatchObject({ binding: "DB", remote: false, database_name: "anzdrop-e2e-local", database_id: "00000000-0000-0000-0000-000000000001" });
+    expect(local.d1_databases[0]).not.toHaveProperty("preview_database_id");
+    expect(local.r2_buckets[0]).toEqual({ binding: "FILES_BUCKET", remote: false, bucket_name: "anzdrop-e2e-local" });
+  });
   it("rejects invalid JSONC", async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), "anzdrop-local-config-"));
     const file = path.join(directory, "invalid.jsonc");

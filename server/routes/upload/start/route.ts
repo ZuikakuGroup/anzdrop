@@ -160,31 +160,39 @@ export const POST = withApiHandler(
         storageKey
       );
 
-    // Upload Session保存
-    await env.DB.prepare(`
-      INSERT INTO uploads (
-        id,
-        share_id,
-        storage_key,
-        upload_id,
-        encrypted_file_name,
-        file_size,
-        max_downloads,
-        created_at
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-      .bind(
-        uploadSessionId,
-        shareId,
-        storageKey,
-        multipart.uploadId,
-        encryptedFileName,
-        fileSize ?? null,
-        maxDownloads,
-        createdAt
-      )
-      .run();
+    try {
+      // Upload Session保存
+      await env.DB.prepare(`
+        INSERT INTO uploads (
+          id,
+          share_id,
+          storage_key,
+          upload_id,
+          encrypted_file_name,
+          file_size,
+          max_downloads,
+          created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+        .bind(
+          uploadSessionId,
+          shareId,
+          storageKey,
+          multipart.uploadId,
+          encryptedFileName,
+          fileSize ?? null,
+          maxDownloads,
+          createdAt
+        )
+        .run();
+
+    } catch (error) {
+      // R2 creation precedes D1 registration; compensate if registration fails.
+      try { await multipart.abort(); }
+      catch { console.error("POST /api/upload/start: multipart compensation failed"); }
+      throw error;
+    }
 
     let analyticsTransferId: string | undefined;
 

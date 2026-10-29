@@ -122,7 +122,7 @@ async function insertUpload(overrides: {
   id: string;
   shareId: string;
   storageKey: string;
-  uploadId: string;
+  uploadId?: string;
   createdAt?: string;
 }) {
   await env.DB.prepare(
@@ -132,7 +132,7 @@ async function insertUpload(overrides: {
       overrides.id,
       overrides.shareId,
       overrides.storageKey,
-      overrides.uploadId,
+      overrides.uploadId ?? (await env.FILES_BUCKET.createMultipartUpload(overrides.storageKey)).uploadId,
       "encrypted-name",
       overrides.createdAt ?? new Date().toISOString()
     )
@@ -196,7 +196,6 @@ describe("deleteShare", () => {
       id: uploadId,
       shareId,
       storageKey: `files/${shareId}/other`,
-      uploadId: "irrelevant-r2-upload-id",
     });
     await insertUploadPart(uploadId);
 
@@ -213,61 +212,6 @@ describe("deleteShare", () => {
 
   it("is a safe no-op for a shareId that does not exist", async () => {
     await expect(deleteShare(env, "no-such-share")).resolves.not.toThrow();
-  });
-
-  it("deletes more than 1000 R2 keys in awaited batches before deleting D1 rows", async () => {
-    const storageKeys = Array.from(
-      { length: 1_001 },
-      (_, index) => `files/share-many/file-${index}`
-    );
-    const deleteBatches: string[][] = [];
-    const events: string[] = [];
-
-    const bucket = wrapBinding(env.FILES_BUCKET, {
-      delete: async (keys: string | string[]) => {
-        const batch = Array.isArray(keys) ? keys : [keys];
-        const batchNumber = deleteBatches.length + 1;
-        events.push(`r2-${batchNumber}-start`);
-        await Promise.resolve();
-        deleteBatches.push(batch);
-        events.push(`r2-${batchNumber}-end`);
-      },
-    });
-    const db = wrapBinding(env.DB, {
-      prepare: (query: string) => {
-        if (query.includes("SELECT storage_key FROM files")) {
-          return {
-            bind: () => ({
-              all: async () => ({
-                results: storageKeys.map((storage_key) => ({ storage_key })),
-              }),
-            }),
-          };
-        }
-        return (env.DB.prepare as (q: string) => D1PreparedStatement)(query);
-      },
-      batch: async (statements: D1PreparedStatement[]) => {
-        events.push("d1");
-        return env.DB.batch(statements);
-      },
-    });
-    const batchedEnv = {
-      ...(env as object),
-      FILES_BUCKET: bucket,
-      DB: db,
-    } as TestEnv;
-
-    await deleteShare(batchedEnv, "share-many");
-
-    expect(deleteBatches.map((batch) => batch.length)).toEqual([1_000, 1]);
-    expect(deleteBatches.flat()).toEqual(storageKeys);
-    expect(events).toEqual([
-      "r2-1-start",
-      "r2-1-end",
-      "r2-2-start",
-      "r2-2-end",
-      "d1",
-    ]);
   });
 
   it("aborts an in-progress multipart upload and removes its uploads row", async () => {
@@ -305,11 +249,8 @@ describe("deleteShare", () => {
     ).rejects.toThrow();
   });
 
-  it("still deletes DB rows even when aborting the multipart upload fails", async () => {
-    // lib/cleanup.tsのabortMultipartUploadはtry/catchで例外を握りつぶす設計
-    // (既に完了/中断済みなどでR2側が失敗しても、DBの掃除自体は継続すべきため)。
-    // 実在しないuploadIdへのabortは実際にR2側がエラーを返すため、
-    // その保証を検証できる。
+  it("keeps tracking when R2 returns an unknown abort error", async () => {
+    // Invalid local IDs produce an internal error, not confirmed absence.
     const shareId = "share-abort-fails";
     await insertShare({ id: shareId });
     await insertUpload({
@@ -319,10 +260,9 @@ describe("deleteShare", () => {
       uploadId: "totally-bogus-upload-id-that-was-never-created",
     });
 
-    await expect(deleteShare(env, shareId)).resolves.not.toThrow();
-
-    expect(await uploadExists("upload-bad")).toBe(false);
-    expect(await shareExists(shareId)).toBe(false);
+    await expect(deleteShare(env, shareId)).rejects.toThrow();
+    expect(await uploadExists("upload-bad")).toBe(true);
+    expect(await shareExists(shareId)).toBe(true);
   });
 });
 
@@ -496,7 +436,6 @@ describe("runScheduledCleanup", () => {
       id: staleId,
       shareId: "share-scheduled",
       storageKey: "files/share-scheduled/stale",
-      uploadId: "r2-upload-scheduled-stale",
       createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
     });
 
@@ -541,7 +480,6 @@ describe("cleanupStaleUploads", () => {
       id: staleId,
       shareId,
       storageKey: `files/${shareId}/stale`,
-      uploadId: "r2-upload-stale",
       createdAt: staleCreatedAt,
     });
     await insertUploadPart(staleId);
@@ -551,7 +489,6 @@ describe("cleanupStaleUploads", () => {
       id: freshId,
       shareId,
       storageKey: `files/${shareId}/fresh`,
-      uploadId: "r2-upload-fresh",
       createdAt: new Date().toISOString(),
     });
     await insertUploadPart(freshId);
@@ -581,7 +518,6 @@ describe("cleanupStaleUploads", () => {
         id,
         shareId,
         storageKey: `files/${shareId}/${id}`,
-        uploadId: `r2-${id}`,
         createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
       });
       await insertUploadPart(id);
@@ -599,4 +535,123 @@ describe("cleanupStaleUploads", () => {
     expect(await uploadExists("stale-fail-0")).toBe(true);
     expect(await uploadExists("stale-fail-1")).toBe(true);
   });
+});
+
+describe("storage lifecycle failure recovery", () => {
+  it("keeps upload tracking on transient abort errors and retries next run", async () => {
+    await insertShare({ id: "retry-share" });
+    const multipart = await env.FILES_BUCKET.createMultipartUpload("retry-object");
+    await insertUpload({ id: "retry-upload", shareId: "retry-share", storageKey: "retry-object", uploadId: multipart.uploadId, createdAt: "2000-01-01T00:00:00.000Z" });
+    await insertUploadPart("retry-upload");
+    const bucket = wrapBinding(env.FILES_BUCKET, { resumeMultipartUpload: () => ({ abort: async () => { throw new Error("synthetic transient (10043)"); } }) });
+    const failed = await cleanupStaleUploads({ ...env, FILES_BUCKET: bucket } as TestEnv);
+    expect(failed.failed).toBe(1);
+    expect(await uploadExists("retry-upload")).toBe(true);
+    expect(await uploadPartsCountFor("retry-upload")).toBe(1);
+    expect((await cleanupStaleUploads(env)).processed).toBe(1);
+    expect(await uploadExists("retry-upload")).toBe(false);
+  });
+
+  it("accepts confirmed missing multipart uploads but not other 404-like errors", async () => {
+    await insertShare({ id: "missing-upload-share" });
+    await insertUpload({ id: "missing-upload", shareId: "missing-upload-share", storageKey: "missing-object" });
+    const bucket = wrapBinding(env.FILES_BUCKET, { resumeMultipartUpload: () => ({ abort: async () => { throw new Error("synthetic NoSuchUpload (10024)"); } }) });
+    await deleteShare({ ...env, FILES_BUCKET: bucket } as TestEnv, "missing-upload-share");
+    expect(await shareExists("missing-upload-share")).toBe(false);
+  });
+
+  it("retains completed-but-unregistered objects and their upload rows for review", async () => {
+    const shareId = "unregistered-share", key = "unregistered-object";
+    await insertShare({ id: shareId });
+    const multipart = await env.FILES_BUCKET.createMultipartUpload(key);
+    const part = await multipart.uploadPart(1, new Uint8Array([1, 2, 3]));
+    await insertUpload({ id: "unregistered-upload", shareId, storageKey: key, uploadId: multipart.uploadId, createdAt: "2000-01-01T00:00:00.000Z" });
+    await multipart.complete([{ partNumber: 1, etag: part.etag }]);
+    expect((await cleanupStaleUploads(env)).failed).toBe(1);
+    expect(await uploadExists("unregistered-upload")).toBe(true);
+    expect(await env.FILES_BUCKET.head(key)).not.toBeNull();
+    await expect(deleteShare(env, shareId)).rejects.toThrow();
+    expect(await shareExists(shareId)).toBe(true);
+    expect(await env.FILES_BUCKET.head(key)).not.toBeNull();
+  });
+
+  it("retries D1 failure after R2 deletion without losing the tracking rows", async () => {
+    await insertShare({ id: "db-retry-share" });
+    await insertFile("db-retry-share", "db-retry-object");
+    await env.FILES_BUCKET.put("db-retry-object", "synthetic");
+    await expect(deleteShare(envWithFailingDbBatch(), "db-retry-share")).rejects.toThrow();
+    expect(await filesCountFor("db-retry-share")).toBe(1);
+    expect(await env.FILES_BUCKET.head("db-retry-object")).toBeNull();
+    await deleteShare(env, "db-retry-share");
+    await deleteShare(env, "db-retry-share");
+    expect(await shareExists("db-retry-share")).toBe(false);
+  });
+
+  it("does not cascade away a file registered during deletion", async () => {
+    await insertShare({ id: "race-share" });
+    await insertFile("race-share", "old-object"); await env.FILES_BUCKET.put("old-object", "old");
+    const bucket = wrapBinding(env.FILES_BUCKET, { delete: async (keys: string | string[]) => {
+      await env.FILES_BUCKET.delete(keys);
+      await env.FILES_BUCKET.put("concurrent-object", "new");
+      await insertFile("race-share", "concurrent-object");
+    } });
+    await expect(deleteShare({ ...env, FILES_BUCKET: bucket } as TestEnv, "race-share")).rejects.toThrow(/retry/);
+    expect(await filesCountFor("race-share")).toBe(1);
+    expect(await shareExists("race-share")).toBe(true);
+    expect(await env.FILES_BUCKET.head("concurrent-object")).not.toBeNull();
+    await deleteShare(env, "race-share");
+    expect(await shareExists("race-share")).toBe(false);
+  });
+
+  it("bounds a large share and preserves remaining records for the next execution", async () => {
+    await insertShare({ id: "bounded-share" });
+    await env.DB.prepare(`INSERT INTO files (id,share_id,storage_key,encrypted_file_name,size,created_at)
+      SELECT value, 'bounded-share', value, 'encrypted', 1, '2000' FROM json_each(?)`)
+      .bind(JSON.stringify(Array.from({ length: 1_001 }, (_, n) => `bounded-${n}`))).run();
+    const batches: number[] = [];
+    const bucket = wrapBinding(env.FILES_BUCKET, { delete: async (keys: string | string[]) => { batches.push(Array.isArray(keys) ? keys.length : 1); } });
+    const scoped = { ...env, FILES_BUCKET: bucket } as TestEnv;
+    await expect(deleteShare(scoped, "bounded-share")).rejects.toThrow(/retry/);
+    expect(await filesCountFor("bounded-share")).toBe(1);
+    await deleteShare(scoped, "bounded-share");
+    expect(batches).toEqual([1_000, 1]);
+    expect(await shareExists("bounded-share")).toBe(false);
+  });
+
+  it("supports concurrent duplicate deletion", async () => {
+    await insertShare({ id: "duplicate-share" });
+    await insertFile("duplicate-share", "duplicate-object"); await env.FILES_BUCKET.put("duplicate-object", "synthetic");
+    await Promise.all([deleteShare(env, "duplicate-share"), deleteShare(env, "duplicate-share")]);
+    expect(await shareExists("duplicate-share")).toBe(false);
+    expect(await env.FILES_BUCKET.head("duplicate-object")).toBeNull();
+  });
+
+  it("dry-runs multiple batches without any R2 operation or D1 mutation", async () => {
+    for (let i = 0; i < 3; i++) await insertShare({ id: `preview-${i}`, expiresAt: "2000-01-01T00:00:00.000Z" });
+    const bucket = new Proxy(env.FILES_BUCKET, { get() { throw new Error("R2 must not be touched"); } });
+    const result = await cleanupExpiredShares({ ...env, FILES_BUCKET: bucket } as TestEnv, { dryRun: true, queryLimit: 1, maxBatches: 5 });
+    expect(result).toMatchObject({ dryRun: true, candidates: 3, processed: 0, failed: 0 });
+    for (let i = 0; i < 3; i++) expect(await shareExists(`preview-${i}`)).toBe(true);
+  });
+});
+
+it("does not remove an object referenced by a different share", async () => {
+  await insertShare({ id: "duplicate-key-a" }); await insertShare({ id: "duplicate-key-b" });
+  await insertFile("duplicate-key-a", "shared-storage-key"); await insertFile("duplicate-key-b", "shared-storage-key");
+  await env.FILES_BUCKET.put("shared-storage-key", "synthetic");
+  await expect(deleteShare(env, "duplicate-key-a")).rejects.toThrow(/uninspected file references/);
+  expect(await env.FILES_BUCKET.head("shared-storage-key")).not.toBeNull();
+  expect(await filesCountFor("duplicate-key-a")).toBe(1); expect(await filesCountFor("duplicate-key-b")).toBe(1);
+});
+it("shares a work ceiling across both scheduled cleanup phases", async () => {
+  for (const id of ["work-a", "work-b", "work-c"]) await insertShare({ id, expiresAt: "2000-01-01T00:00:00.000Z" });
+  const summary = await runScheduledCleanup(env, { workLimit: 8 });
+  expect(summary.expiredShares).toMatchObject({ processed: 1, failed: 0, workLimitReached: true, reachedBatchLimit: true });
+  expect(summary.staleUploads).toMatchObject({ processed: 0, failed: 0, workLimitReached: true });
+  const remaining = await env.DB.prepare(`SELECT COUNT(*) AS count FROM shares`).first<{ count: number }>();
+  expect(remaining?.count).toBe(2);
+  expect((await cleanupExpiredShares(env)).processed).toBe(2);
+});
+it.each([0, 901, NaN])("rejects invalid cleanup work ceiling %s", async workLimit => {
+  await expect(cleanupExpiredShares(env, { workLimit })).rejects.toThrow("Invalid cleanup work limit");
 });

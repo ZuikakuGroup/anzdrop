@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import { mkdtemp, rm, copyFile, open, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createSharingFile, assertSharingFilesEqual } from "@/test/sharingFiles";
+import { createSharingFile, assertSharingFilesEqual, sharingFileSha256 } from "@/test/sharingFiles";
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
@@ -22,9 +22,18 @@ it.each([0, 65535, 65536, 1024 * 1024 + 16])("rejects corruption at byte %i with
     const byte = Buffer.alloc(1); await handle.read(byte, 0, 1, offset); byte[0] ^= 255;
     await handle.write(byte, 0, 1, offset);
   } finally { await handle.close(); }
-  await expect(assertSharingFilesEqual(f.actual, f.expected)).rejects.toThrow(/bytes differ at block/);
+  await expect(assertSharingFilesEqual(f.actual, f.expected)).rejects.toThrow(/SHA-256 differs/);
 });
 it("rejects truncation rather than accepting a matching prefix", async () => {
   const f = await files(); await truncate(f.actual, 65536);
   await expect(assertSharingFilesEqual(f.actual, f.expected)).rejects.toThrow("length differs");
+});
+
+it("hashes an empty file using the standard SHA-256 value", async () => {
+  const f = await files(); await createSharingFile(f.expected, 0); await createSharingFile(f.actual, 0);
+  expect(await sharingFileSha256(f.actual)).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  await expect(assertSharingFilesEqual(f.actual, f.expected)).resolves.toBeUndefined();
+});
+it.each([-1, 1.5, NaN, Infinity])("rejects invalid fixture length %s", async size => {
+  const f = await files(); await expect(createSharingFile(f.actual, size)).rejects.toThrow("Invalid fixture size");
 });

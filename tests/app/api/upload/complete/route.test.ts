@@ -134,9 +134,10 @@ async function uploadPart(
 
 async function postComplete(
   body: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  runtimeEnv: TestEnv = env,
 ) {
-  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/complete/route"), testRuntime);
+  const { POST } = bindRouteHandlers(await import("@/server/routes/upload/complete/route"), () => ({ ...testRuntime(), env: runtimeEnv }));
 
   return POST(
     new Request("http://localhost/api/upload/complete", {
@@ -506,4 +507,82 @@ describe("POST /api/upload/complete", () => {
   // 数GB〜数十GBの実データをテスト内でアップロードする必要があり、
   // MAX_FILE_SIZE_BYTES(lib/limits.ts)はテストから差し替え不可能な定数のため
   // 現実的なコストで再現できない。よってこの分岐は意図的にスキップする。
+});
+
+function overrideBinding<T extends object>(target: T, overrides: Record<string, unknown>): T {
+  return new Proxy(target, { get(obj, key) {
+    if (typeof key === "string" && key in overrides) return overrides[key];
+    const value = Reflect.get(obj, key); return typeof value === "function" ? value.bind(obj) : value;
+  } });
+}
+
+describe("completion consistency", () => {
+  it("rolls back D1 and retains a completed object for diagnosis instead of unsafe re-finalization", async () => {
+    const started = await startUpload();
+    const key = await generateKey(); const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+    await uploadPart(started.uploadSessionId, started.uploadToken, 1, packed.slice());
+    const db = overrideBinding(env.DB, { batch: async (statements: D1PreparedStatement[]) => env.DB.batch([
+      statements[0], env.DB.prepare(`INSERT INTO shares (id, created_at, expires_at) VALUES (?, 'synthetic', 'synthetic')`).bind(started.shareId), ...statements.slice(1),
+    ]) });
+    const failed = await postComplete(started, {}, { ...env, DB: db } as TestEnv);
+    expect(failed.status).toBe(500);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS count FROM files WHERE share_id = ?`).bind(started.shareId).first<{ count: number }>())?.count).toBe(0);
+    const tracked = await env.DB.prepare(`SELECT storage_key FROM uploads WHERE id = ?`).bind(started.uploadSessionId).first<{ storage_key: string }>();
+    expect(tracked).not.toBeNull(); expect(await env.FILES_BUCKET.head(tracked!.storage_key)).not.toBeNull();
+    const recovered = await postComplete(started);
+    expect(recovered.status).toBe(409);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS count FROM files WHERE share_id = ?`).bind(started.shareId).first<{ count: number }>())?.count).toBe(0);
+    expect(await env.DB.prepare(`SELECT id FROM uploads WHERE id = ?`).bind(started.uploadSessionId).first()).not.toBeNull();
+    expect(await env.FILES_BUCKET.head(tracked!.storage_key)).not.toBeNull();
+  });
+
+  it("does not create duplicate file rows on concurrent completion", async () => {
+    const started = await startUpload();
+    const key = await generateKey(); const packed = await encryptAsSingleFile(new Uint8Array([4, 5, 6]), key);
+    await uploadPart(started.uploadSessionId, started.uploadToken, 1, packed.slice());
+    const responses = await Promise.all([postComplete(started), postComplete(started)]);
+    expect(responses.some(response => response.status === 200)).toBe(true);
+    expect(responses.every(response => [200, 404, 409].includes(response.status))).toBe(true);
+    const rows = await env.DB.prepare(`SELECT id, storage_key FROM files WHERE share_id = ?`).bind(started.shareId).all<{ id: string; storage_key: string }>();
+    expect(rows.results).toHaveLength(1);
+    expect(await env.FILES_BUCKET.head(rows.results[0].storage_key)).not.toBeNull();
+  });
+
+  it("rechecks expiry at the D1 commit after R2 completes", async () => {
+    const started = await startUpload();
+    const key = await generateKey(); const packed = await encryptAsSingleFile(new Uint8Array([7, 8, 9]), key);
+    await uploadPart(started.uploadSessionId, started.uploadToken, 1, packed.slice());
+    const bucket = overrideBinding(env.FILES_BUCKET, { resumeMultipartUpload: (storageKey: string, uploadId: string) => {
+      const multipart = env.FILES_BUCKET.resumeMultipartUpload(storageKey, uploadId);
+      return overrideBinding(multipart, { complete: async (parts: R2UploadedPart[]) => {
+        const result = await multipart.complete(parts);
+        await env.DB.prepare(`UPDATE shares SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?`).bind(started.shareId).run();
+        return result;
+      } });
+    } });
+    expect((await postComplete(started, {}, { ...env, FILES_BUCKET: bucket } as TestEnv)).status).toBe(409);
+    expect((await env.DB.prepare(`SELECT COUNT(*) AS count FROM files WHERE share_id = ?`).bind(started.shareId).first<{ count: number }>())?.count).toBe(0);
+    expect(await env.DB.prepare(`SELECT id FROM uploads WHERE id = ?`).bind(started.uploadSessionId).first()).not.toBeNull();
+  });
+});
+
+it("does not let a replayed completion delete an already registered object", async () => {
+  const started = await startUpload();
+  const key = await generateKey(); const packed = await encryptAsSingleFile(new Uint8Array([1, 2, 3]), key);
+  await uploadPart(started.uploadSessionId, started.uploadToken, 1, packed.slice());
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  let deletions = 0;
+  const bucket = overrideBinding(env.FILES_BUCKET, {
+    resumeMultipartUpload: () => ({ complete: async () => { entered.resolve(); await release.promise; throw new Error("synthetic missing multipart (10024)"); } }),
+    // This represents a lower-plan caller seeing a large completed object.
+    head: async () => ({ size: 6 * 1024 ** 3 }),
+    delete: async (storageKey: string) => { deletions++; await env.FILES_BUCKET.delete(storageKey); },
+  });
+  const replay = postComplete(started, {}, { ...env, FILES_BUCKET: bucket } as TestEnv);
+  await entered.promise;
+  const winner = await postComplete(started); expect(winner.status).toBe(200);
+  release.resolve(); expect((await replay).status).toBe(200);
+  expect(deletions).toBe(0);
+  const file = await env.DB.prepare(`SELECT storage_key FROM files WHERE share_id = ?`).bind(started.shareId).first<{ storage_key: string }>();
+  expect(file).not.toBeNull(); expect(await env.FILES_BUCKET.head(file!.storage_key)).not.toBeNull();
 });
