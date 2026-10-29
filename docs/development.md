@@ -159,28 +159,12 @@ E2E_LOCAL_ADMIN_BYPASS=true E2E_TEST_FILES=tests/e2e/support-admin-astro.spec.ts
 
 ```sh
 npx playwright install chromium firefox webkit
-E2E_PROJECT=firefox E2E_WORKERS=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts npm run test:astro-hono -- --grep @sharing-core
-E2E_PROJECT=webkit E2E_WORKERS=1 E2E_EXTENDED=1 E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts npm run test:astro-hono
+npm run test:sharing
+E2E_PROJECT=firefox npm run test:sharing
+E2E_PROJECT=webkit npm run test:sharing
 ```
 
-`E2E_PROJECT`は`chromium`・`firefox`・`webkit`から選びます。省略時はChromiumです。`--`以降にPlaywrightの引数を渡せます。CDPを使うパスキー検証はChromiumに限定し、Firefox・WebKitは共有スイートを実行します。本番URLでは共有スイートをスキップします。
-
-| ケース | 確認内容 |
-| --- | --- |
-| 基本 | 64KiB、誤ったパスワードからの再試行、日本語名を含む3ファイルのZIP |
-| 拡張（`E2E_EXTENDED=1`） | 16MiB＋1B、200MiB＋1B、Blob保存、暗号文破損、通信失敗、保存キャンセル後の再試行 |
-
-大容量の結果は、固定サイズずつ読み取って長さと全バイトを比較します。通常保存は転送可能ストリームとService Workerの制御を確認し、保存URLが`/_anzdrop_download/`または`blob:`であることを検証します。ブラウザの能力と保存経路はレポートに添付します。
-
-Blob保存の強制には`serviceWorkers: 'block'`を使います。受信側では保存ピッカーを無効にするため、OSの保存ダイアログはこのE2Eの対象外です。File System Access APIの分岐はVitestで確認します。
-
-障害注入はBlob保存時の対象`/api/file/*`に限ります。キャンセルのテストでは、Service Workerへ渡すストリームを最初のチャンク後で待機させ、未完了の`Download.cancel()`が`canceled`になることを確認します。その後、待機を解除して保存を再試行します。アプリがブラウザのキャンセルを検知する前提は置いていません。
-
-共有URLのコピーは`navigator.clipboard.writeText`の呼び出しを捕捉します。OSのクリップボードは実機で確認してください。送信リクエストのURL・ヘッダー・本文に、テスト用に生成した平文、ファイル名、保護パスワード、実際にエクスポートした復号鍵が含まれないことも検証します。通信監視の結果をレポートへ添付するときは、検査対象の値を含めません。トレースには合成データや鍵が含まれるため、実ユーザーのデータは使わないでください。
-
-手動確認では、保存期間「1回」のダウンロード完了後に再取得できないことと、既存共有への追加アップロードも確認してください。
-
-Safari製品の確認は[実機確認表](./safari-file-sharing-checklist.md)に記録します。Playwright WebKitの成功だけで実機確認を完了扱いにはしません。
+SHA-256による完全性確認、障害注入、大容量試験、後片付け、実機との差は[ファイル転送テスト](transfer-resilience.md)を参照してください。テストはローカル専用で、固定ポートを使うため順番に実行します。
 
 ### 公開ページだけをWorker上で検証する
 

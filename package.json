@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:sharing": "E2E_TEST_FILES=tests/e2e/file-sharing.spec.ts E2E_WORKERS=1 npm run test:astro-hono --",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "preview": "node scripts/preview-app.mjs",
