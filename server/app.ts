@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { observeApiRequest, recordApiException } from "@/lib/observability";
+import { GET as healthCheck } from "./routes/admin/health/route";
 import { verifyAccessJwt } from "@/lib/access";
 import { ADMIN_ACCESS_PATH } from "@/lib/adminPageAccess";
 import { withWorkerRuntime } from "./runtime";
@@ -54,11 +56,21 @@ import * as uploadStartRoute from "./routes/upload/start/route";
 
 export const app = new Hono<{ Bindings: CloudflareEnv & { DEPLOYMENT_ENV?: string } }>({ strict: false });
 app.use("*", async (c, next) => {
-  await next();
+  const { requestId } = await observeApiRequest(
+    () => `${["GET", "HEAD", "POST", "DELETE", "OPTIONS"].includes(c.req.method) ? c.req.method : "OTHER"} ${c.req.routePath ?? "unknown"}`,
+    async () => { await next(); return c.res; },
+  );
+  c.header("X-Request-ID", requestId);
   c.header("Cache-Control", "no-store");
   for (const [name, value] of Object.entries(buildStaticSecurityHeaders(c.env.DEPLOYMENT_ENV === "production"))) c.header(name, value);
 });
-app.onError(() => Response.json({ success: false, error: "サーバー内部でエラーが発生しました" }, { status: 500, headers: { "Cache-Control": "no-store" } }));
+app.onError(() => {
+  recordApiException("hono");
+  return Response.json(
+    { success: false, error: "サーバー内部でエラーが発生しました" },
+    { status: 500, headers: { "Cache-Control": "no-store" } },
+  );
+});
 // The path supplies the parameter names; handlers keep their Request/Response interface.
 type PathParams<Path extends string> =
   Path extends `${string}:${infer Name}/${infer Rest}` ? Name | PathParams<Rest> :
@@ -104,6 +116,7 @@ registerRoute("POST", "/api/account/signup", accountSignupRoute.POST);
 registerRoute("GET", "/api/admin/accounts/:accountId", adminAccountsAccountIdRoute.GET);
 registerRoute("POST", "/api/admin/accounts/:accountId", adminAccountsAccountIdRoute.POST);
 registerRoute("DELETE", "/api/admin/accounts/:accountId", adminAccountsAccountIdRoute.DELETE);
+registerRoute("GET", "/api/admin/health", healthCheck);
 registerRoute("GET", "/api/admin/analytics", adminAnalyticsRoute.GET);
 registerRoute("GET", "/api/admin/storage", adminStorageRoute.GET);
 registerRoute("POST", "/api/admin/contacts/:contactId/resolve", adminContactsContactIdResolveRoute.POST);

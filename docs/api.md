@@ -322,3 +322,9 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 ### `GET /api/admin/storage`
 
 既存の管理者Access認証が必要な読み取り専用診断。`Cache-Control: no-store`。`limit=1..40`（初期値20）、`afterFileId`、`objectCursor`、`scan=files|objects|both`、`summary=0|1`を受け付ける。未知・重複・書込みを意図するパラメーターは400。件数・登録平文総量、期限切れ候補、欠落・孤立・重複参照の疑いを上限付きで返す。R2容量はページ内の暗号文サイズであり全バケット容量ではない。スナップショット一貫性や削除許可を表す値ではない。[運用手順](storage-lifecycle.md)を参照。
+
+## 運用ヘルスチェック
+
+`GET /api/admin/health` は既存のCloudflare Access認証を要求します。D1の `SELECT 1` とR2の予約キーへの `head` を読み取り専用で確認し、両方正常なら200、エラー・3秒のタイムアウトなら503、未認証なら403を返します。本文は `{ success, checks: { d1, r2 } }` で、各状態は `ok` / `error` / `timeout` です。応答は `no-store`。書込・転送・復号の完了は保証しません。
+
+Hono APIの応答にはサーバー生成の `X-Request-ID` を付与します。入力された同名ヘッダーは使用しません。5xxと5秒以上のAPI応答を固定ルート名で記録します。設定・制約・復旧手順は[運用Runbook](./operations.md)を参照してください。

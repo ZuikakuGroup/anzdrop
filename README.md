@@ -54,6 +54,7 @@ npm run dev
 | アカウント・パスキー・OTP・有料プラン | [アカウント・有料プラン](./docs/accounts.md) |
 | 本番環境・Secret・反映・切り戻し | [デプロイガイド](./docs/deployment.md) |
 | CIの実行条件・失敗時の対応・PR自動分割 | [CI自動化](./docs/ci-automations.md) |
+| 障害検知・ヘルスチェック・通知設定・復旧 | [運用Runbook](./docs/operations.md) |
 | イベント・識別子・分析指標 | [計測・分析基盤](./docs/analytics.md) |
 | 通報・問い合わせ・管理画面 | [通報・モデレーション](./docs/moderation.md) |
 | 規約・ポリシーページの更新 | [規約・ポリシーページ](./docs/legal.md) |

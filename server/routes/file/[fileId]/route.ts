@@ -1,3 +1,4 @@
+import { recordDownloadFailure } from "@/lib/observability";
 import { getWorkerRuntime } from "@/server/runtime";
 import { checkShareAccessible } from "@/lib/share-auth";
 import { withApiHandler } from "@/lib/api/handler";
@@ -231,11 +232,8 @@ async function safeRestoreDownloadCount(
 ): Promise<void> {
   try {
     await restoreDownloadCount(env, fileId);
-  } catch (error) {
-    console.error(
-      `GET /api/file/[fileId]: failed to restore download_count for ${fileId}:`,
-      error
-    );
+  } catch {
+    recordDownloadFailure("download_count_restore_failed");
   }
 }
 
@@ -482,16 +480,13 @@ export const GET = withApiHandler(
     };
 
     ctx.waitUntil(
-      object.body.pipeTo(counter.writable).then(onFullyDelivered, async (error: unknown) => {
+      object.body.pipeTo(counter.writable).then(onFullyDelivered, async () => {
         if (deliveredBytes >= object.size) {
           await onFullyDelivered();
           return;
         }
         await safeRestoreDownloadCount(env, fileId);
-        console.error(
-          `GET /api/file/[fileId]: streaming aborted for ${fileId} at ${deliveredBytes}/${object.size} bytes:`,
-          error
-        );
+        recordDownloadFailure("download_stream_failed");
       })
     );
 
