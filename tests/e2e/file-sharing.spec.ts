@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { readFile, writeFile, rm, realpath } from "node:fs/promises";
-import { test, expect, firefox, type Browser, type BrowserContext, type Download, type Page, type TestInfo } from "@playwright/test";
+import { readFile, writeFile, rm, realpath, appendFile } from "node:fs/promises";
+import { test, expect, firefox, type Browser, type BrowserContext, type Download, type Page, type TestInfo, type Request as PlaywrightRequest, type Response as PlaywrightResponse } from "@playwright/test";
 import { unzipSync } from "fflate";
 import { createSharingFile, assertSharingFilesEqual, sharingFileSha256, SYNTHETIC_MARKER } from "../../test/sharingFiles";
 
@@ -190,7 +190,9 @@ async function verifyRoute(download: Download, expected: string, info: TestInfo)
   await info.attach("save-route", { body: actual, contentType: "text/plain" });
 }
 
-test.use({ trace: "retain-on-failure" });
+test.use(process.env.TRANSFER_BENCH === "1"
+  ? { trace: "off", video: "off", screenshot: "off" }
+  : { trace: "retain-on-failure" });
 
 // Delete only fixture/download directories owned by the current test, even on failure.
 // eslint-disable-next-line no-empty-pattern -- Playwright requires fixture destructuring.
@@ -413,6 +415,114 @@ test.describe("file sharing", () => {
       await save(target, info, files, await prepareSave(target, info));
       await privacy.verify(info);
     } finally { await otherBrowser.close(); }
+  });
+
+  test.describe("transfer benchmark", () => {
+    const enabled = process.env.TRANSFER_BENCH === "1";
+    const sizes = (process.env.TRANSFER_BENCH_SIZES ?? "1,10,100,500,1024").split(",").map(Number);
+    const trials = Number(process.env.TRANSFER_BENCH_TRIALS ?? "3");
+    const label = process.env.TRANSFER_BENCH_LABEL ?? "local";
+    if (enabled && (sizes.some(n => ![1, 10, 100, 500, 1024].includes(n)) || !Number.isInteger(trials) || trials < 1 || trials > 10 || !/^[a-z0-9-]+$/.test(label))) throw new Error("Invalid benchmark parameters");
+    test.skip(!enabled, "Explicit local benchmark only");
+    test.setTimeout(1_800_000);
+    for (const size of sizes) for (let trial = 1; trial <= trials; trial++) {
+      test(`${size}MiB trial ${trial} @transfer-benchmark`, async ({ page, context, browser, browserName }, info) => {
+        test.skip(browserName !== "chromium", "CDP metrics require Chromium");
+        const files = [await fixture(info, "benchmark.bin", size * MiB)];
+        await context.addInitScript(() => {
+          Object.defineProperty(window, "sharingTestState", { value: { copied: "" } });
+          Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value: string) => {
+            (window as unknown as { sharingTestState: BrowserState }).sharingTestState.copied = value;
+          } } });
+        });
+        // CDP JS heap excludes ArrayBuffers, browser/network/SW and workerd RSS.
+        const measure = async (target: Page, operation: () => Promise<void>) => {
+          const cdp = await target.context().newCDPSession(target);
+          const network = { attempts: 0, failedResponses: 0, transportFailures: 0 };
+          const isDataRequest = (request: PlaywrightRequest) => {
+            const pathname = new URL(request.url()).pathname;
+            return pathname === "/api/upload/chunk" || pathname.startsWith("/api/file/");
+          };
+          const onRequest = (request: PlaywrightRequest) => { if (isDataRequest(request)) network.attempts++; };
+          const onFailure = (request: PlaywrightRequest) => { if (isDataRequest(request)) network.transportFailures++; };
+          const onResponse = (response: PlaywrightResponse) => { if (isDataRequest(response.request()) && response.status() >= 400) network.failedResponses++; };
+          target.on("request", onRequest); target.on("requestfailed", onFailure); target.on("response", onResponse);
+          try {
+            await cdp.send("Performance.enable");
+            const metrics = async (): Promise<Record<string, number>> => {
+              const values = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map(m => [m.name, m.value]));
+              for (const name of ["JSHeapUsedSize", "TaskDuration"]) {
+                if (typeof values[name] !== "number" || !Number.isFinite(values[name])) throw new Error(`${name} metric unavailable`);
+              }
+              return values;
+            };
+            const startMetrics = await metrics();
+            let peakJsHeapBytes = startMetrics.JSHeapUsedSize;
+            const backingStorage = async () => {
+              const bytes = (await cdp.send("Runtime.getHeapUsage")).backingStorageSize;
+              if (typeof bytes !== "number" || !Number.isFinite(bytes)) throw new Error("Backing storage metric unavailable");
+              return bytes;
+            };
+            let peakBackingStorageBytes = await backingStorage();
+            let sampling = true;
+            const sampler = (async () => {
+              while (sampling) {
+                const m = await metrics(); peakJsHeapBytes = Math.max(peakJsHeapBytes, m.JSHeapUsedSize);
+                peakBackingStorageBytes = Math.max(peakBackingStorageBytes, await backingStorage());
+                await new Promise(resolve => setTimeout(resolve, 50));
+              }
+            })();
+            void sampler.catch(() => {});
+            const start = performance.now();
+            try {
+              await operation();
+              const seconds = (performance.now() - start) / 1000;
+              const end = await metrics();
+              return { seconds, mibPerSecond: size / seconds, peakJsHeapBytes, peakBackingStorageBytes, network, rendererTaskSeconds: end.TaskDuration - startMetrics.TaskDuration };
+            } finally {
+              sampling = false;
+              await sampler;
+            }
+          } finally {
+            target.off("request", onRequest); target.off("requestfailed", onFailure); target.off("response", onResponse);
+            await cdp.detach();
+          }
+        };
+        let receiver: BrowserContext | undefined;
+        let uploadMetrics: Awaited<ReturnType<typeof measure>> | undefined;
+        let downloadMetrics: Awaited<ReturnType<typeof measure>> | undefined;
+        let saveRoute: string | null = null;
+        let success = false;
+        try {
+          await selectFiles(page, files);
+          uploadMetrics = await measure(page, async () => {
+            await page.getByRole("button", { name: "アップロードする", exact: true }).click();
+            await expect(page.getByRole("status").filter({ hasText: /^アップロード完了$/ })).toBeVisible({ timeout: 900_000 });
+          });
+          const url = await copyShareUrl(page);
+          receiver = await createReceiver(browser);
+          const target = await receiver.newPage(); await target.goto(url);
+          await expect(target.getByRole("button", { name: files[0].name })).toBeVisible();
+          const route = await prepareSave(target, info);
+          saveRoute = route;
+          const filename = await transferOutput(info, "saved", "benchmark.bin");
+          downloadMetrics = await measure(target, async () => {
+            const pending = target.waitForEvent("download", { timeout: 900_000 });
+            await target.getByRole("button", { name: files[0].name }).click();
+            const download = await pending;
+            await verifyRoute(download, route, info);
+            await download.saveAs(filename);
+            expect(await download.failure()).toBeNull();
+          });
+          // Integrity verification is deliberately outside the timed interval.
+          await assertSharingFilesEqual(filename, files[0].filename);
+          success = true;
+        } finally {
+          await appendFile(`tmp/transfer-benchmark-${label}.jsonl`, JSON.stringify({ environment: "local-workerd-proxy", sizeMiB: size, trial, success, saveRoute, upload: uploadMetrics ?? null, download: downloadMetrics ?? null, browser: browser.version(), platform: process.platform, arch: process.arch }) + "\n");
+          await receiver?.close();
+        }
+      });
+    }
   });
 
   test.describe("manual sizes", () => {

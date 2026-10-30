@@ -1,0 +1,1564 @@
+{
+  "metadata": {
+    "date": "2026-10-29",
+    "environment": "local-workerd-proxy",
+    "sizesMiB": [
+      1,
+      10,
+      100,
+      500,
+      1024
+    ],
+    "trialsPerSizePerVersion": 3,
+    "host": "Apple M2 24GiB",
+    "os": "macOS 26.6.2 arm64",
+    "node": "v26.7.0",
+    "browser": "Chromium 156.0.8078.4",
+    "baseCommit": "9aa21f0",
+    "apiMiniflare": "5.20261006.1-alpha",
+    "publicMiniflare": "5.20261006.0-alpha",
+    "note": "Initial complete baseline predates network/saveRoute JSON fields; subsequent control comparisons contain both. Intentionally interrupted preliminary runs excluded. Candidate after-final stopped after 12 completed trials before 1GiB."
+  },
+  "before": [
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 1,
+      "success": true,
+      "upload": {
+        "seconds": 4.3931265,
+        "mibPerSecond": 0.22762831892047725,
+        "peakJsHeapBytes": 5836344,
+        "peakBackingStorageBytes": 5624422,
+        "rendererTaskSeconds": 0.158133
+      },
+      "download": {
+        "seconds": 0.14125075000000015,
+        "mibPerSecond": 7.079608426857903,
+        "peakJsHeapBytes": 4221172,
+        "peakBackingStorageBytes": 5736959,
+        "rendererTaskSeconds": 0.061630000000000004
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 2,
+      "success": true,
+      "upload": {
+        "seconds": 2.471033125,
+        "mibPerSecond": 0.4046890306256012,
+        "peakJsHeapBytes": 5488792,
+        "peakBackingStorageBytes": 5624448,
+        "rendererTaskSeconds": 0.103967
+      },
+      "download": {
+        "seconds": 0.15860691699999915,
+        "mibPerSecond": 6.304895265065932,
+        "peakJsHeapBytes": 4172996,
+        "peakBackingStorageBytes": 5736921,
+        "rendererTaskSeconds": 0.077347
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 3,
+      "success": true,
+      "upload": {
+        "seconds": 2.3457597910000003,
+        "mibPerSecond": 0.4263011088504074,
+        "peakJsHeapBytes": 5440272,
+        "peakBackingStorageBytes": 5624413,
+        "rendererTaskSeconds": 0.10567800000000001
+      },
+      "download": {
+        "seconds": 0.1337892920000013,
+        "mibPerSecond": 7.474439733188738,
+        "peakJsHeapBytes": 3685964,
+        "peakBackingStorageBytes": 493723,
+        "rendererTaskSeconds": 0.064063
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 1,
+      "success": true,
+      "upload": {
+        "seconds": 3.543803667000002,
+        "mibPerSecond": 2.821826754433457,
+        "peakJsHeapBytes": 5499588,
+        "peakBackingStorageBytes": 50713345,
+        "rendererTaskSeconds": 0.24881699999999998
+      },
+      "download": {
+        "seconds": 0.417653790999997,
+        "mibPerSecond": 23.94327602308313,
+        "peakJsHeapBytes": 4172732,
+        "peakBackingStorageBytes": 52923003,
+        "rendererTaskSeconds": 0.128611
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 2,
+      "success": true,
+      "upload": {
+        "seconds": 3.7308335000000006,
+        "mibPerSecond": 2.680366196990565,
+        "peakJsHeapBytes": 5449032,
+        "peakBackingStorageBytes": 50713357,
+        "rendererTaskSeconds": 0.25196
+      },
+      "download": {
+        "seconds": 0.42459241599999953,
+        "mibPerSecond": 23.55199863014042,
+        "peakJsHeapBytes": 4067204,
+        "peakBackingStorageBytes": 52922965,
+        "rendererTaskSeconds": 0.118544
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 3,
+      "success": true,
+      "upload": {
+        "seconds": 3.6580506669999995,
+        "mibPerSecond": 2.7336964165674313,
+        "peakJsHeapBytes": 5540636,
+        "peakBackingStorageBytes": 50713354,
+        "rendererTaskSeconds": 0.26028100000000004
+      },
+      "download": {
+        "seconds": 0.46471987499999884,
+        "mibPerSecond": 21.518339408229583,
+        "peakJsHeapBytes": 4247348,
+        "peakBackingStorageBytes": 8882513,
+        "rendererTaskSeconds": 0.11919099999999999
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 1,
+      "success": true,
+      "upload": {
+        "seconds": 7.922107957999997,
+        "mibPerSecond": 12.62290296094953,
+        "peakJsHeapBytes": 5560360,
+        "peakBackingStorageBytes": 210091401,
+        "rendererTaskSeconds": 1.55219
+      },
+      "download": {
+        "seconds": 5.470344375000001,
+        "mibPerSecond": 18.280384770108736,
+        "peakJsHeapBytes": 4080048,
+        "peakBackingStorageBytes": 134710984,
+        "rendererTaskSeconds": 1.0496139999999998
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 2,
+      "success": true,
+      "upload": {
+        "seconds": 9.787550958,
+        "mibPerSecond": 10.217060470910091,
+        "peakJsHeapBytes": 5621648,
+        "peakBackingStorageBytes": 210092012,
+        "rendererTaskSeconds": 1.9393770000000001
+      },
+      "download": {
+        "seconds": 4.910790667000001,
+        "mibPerSecond": 20.363319632414697,
+        "peakJsHeapBytes": 4083256,
+        "peakBackingStorageBytes": 134711253,
+        "rendererTaskSeconds": 0.9918279999999999
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 3,
+      "success": true,
+      "upload": {
+        "seconds": 9.853181624999998,
+        "mibPerSecond": 10.149006057726051,
+        "peakJsHeapBytes": 5409352,
+        "peakBackingStorageBytes": 210091802,
+        "rendererTaskSeconds": 1.976725
+      },
+      "download": {
+        "seconds": 4.916819040999995,
+        "mibPerSecond": 20.338352737029297,
+        "peakJsHeapBytes": 4074248,
+        "peakBackingStorageBytes": 134711253,
+        "rendererTaskSeconds": 1.00368
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 1,
+      "success": true,
+      "upload": {
+        "seconds": 33.85255212499999,
+        "mibPerSecond": 14.769935163344798,
+        "peakJsHeapBytes": 5241628,
+        "peakBackingStorageBytes": 235259521,
+        "rendererTaskSeconds": 8.629373999999999
+      },
+      "download": {
+        "seconds": 18.88255741699999,
+        "mibPerSecond": 26.479464034349995,
+        "peakJsHeapBytes": 4068696,
+        "peakBackingStorageBytes": 134711265,
+        "rendererTaskSeconds": 3.738633
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 2,
+      "success": true,
+      "upload": {
+        "seconds": 44.928929124999996,
+        "mibPerSecond": 11.128687234207478,
+        "peakJsHeapBytes": 5410908,
+        "peakBackingStorageBytes": 235257223,
+        "rendererTaskSeconds": 11.392076
+      },
+      "download": {
+        "seconds": 19.245787500000006,
+        "mibPerSecond": 25.979711144581632,
+        "peakJsHeapBytes": 4205272,
+        "peakBackingStorageBytes": 134711253,
+        "rendererTaskSeconds": 3.917688
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 3,
+      "success": true,
+      "upload": {
+        "seconds": 31.54383470800001,
+        "mibPerSecond": 15.850958028041918,
+        "peakJsHeapBytes": 5592224,
+        "peakBackingStorageBytes": 226868604,
+        "rendererTaskSeconds": 8.007149
+      },
+      "download": {
+        "seconds": 21.644642208000004,
+        "mibPerSecond": 23.100404949877003,
+        "peakJsHeapBytes": 4088848,
+        "peakBackingStorageBytes": 134711265,
+        "rendererTaskSeconds": 4.425848
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 1,
+      "success": true,
+      "upload": {
+        "seconds": 91.81547608300002,
+        "mibPerSecond": 11.152803902844408,
+        "peakJsHeapBytes": 5553444,
+        "peakBackingStorageBytes": 268811664,
+        "rendererTaskSeconds": 24.339177
+      },
+      "download": {
+        "seconds": 53.63257458299998,
+        "mibPerSecond": 19.092874208663837,
+        "peakJsHeapBytes": 4260632,
+        "peakBackingStorageBytes": 168268948,
+        "rendererTaskSeconds": 9.771143
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 2,
+      "success": true,
+      "upload": {
+        "seconds": 111.102407458,
+        "mibPerSecond": 9.21672197235782,
+        "peakJsHeapBytes": 5416012,
+        "peakBackingStorageBytes": 226868792,
+        "rendererTaskSeconds": 24.844653
+      },
+      "download": {
+        "seconds": 74.895023375,
+        "mibPerSecond": 13.67247053082317,
+        "peakJsHeapBytes": 4245952,
+        "peakBackingStorageBytes": 176653932,
+        "rendererTaskSeconds": 10.123539000000001
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 3,
+      "success": true,
+      "upload": {
+        "seconds": 85.11116041600006,
+        "mibPerSecond": 12.031324622939792,
+        "peakJsHeapBytes": 5488672,
+        "peakBackingStorageBytes": 243645922,
+        "rendererTaskSeconds": 22.069395
+      },
+      "download": {
+        "seconds": 57.09334012499999,
+        "mibPerSecond": 17.93554200469017,
+        "peakJsHeapBytes": 4263396,
+        "peakBackingStorageBytes": 168268948,
+        "rendererTaskSeconds": 9.80129
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    }
+  ],
+  "after": [
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 1,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 2.3536425,
+        "mibPerSecond": 0.42487336118378216,
+        "peakJsHeapBytes": 5358608,
+        "peakBackingStorageBytes": 5624398,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.09759100000000001
+      },
+      "download": {
+        "seconds": 0.14683874999999988,
+        "mibPerSecond": 6.810191451507186,
+        "peakJsHeapBytes": 4038128,
+        "peakBackingStorageBytes": 493685,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.064241
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 2,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 2.664262833000001,
+        "mibPerSecond": 0.3753383441054818,
+        "peakJsHeapBytes": 5562432,
+        "peakBackingStorageBytes": 5624472,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.120712
+      },
+      "download": {
+        "seconds": 0.14015058399999997,
+        "mibPerSecond": 7.135182540516565,
+        "peakJsHeapBytes": 3709668,
+        "peakBackingStorageBytes": 493723,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.06416699999999999
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1,
+      "trial": 3,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 2.3521807499999996,
+        "mibPerSecond": 0.42513739643520176,
+        "peakJsHeapBytes": 5610860,
+        "peakBackingStorageBytes": 5624410,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.097249
+      },
+      "download": {
+        "seconds": 0.1282662080000009,
+        "mibPerSecond": 7.796285674867638,
+        "peakJsHeapBytes": 3800764,
+        "peakBackingStorageBytes": 493685,
+        "network": {
+          "attempts": 1,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.064939
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 1,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 3.528627791999999,
+        "mibPerSecond": 2.8339628290271093,
+        "peakJsHeapBytes": 5492472,
+        "peakBackingStorageBytes": 50713342,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.238331
+      },
+      "download": {
+        "seconds": 0.5552807079999984,
+        "mibPerSecond": 18.00890946854222,
+        "peakJsHeapBytes": 4315152,
+        "peakBackingStorageBytes": 52923011,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.119329
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 2,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 6.657936624999999,
+        "mibPerSecond": 1.50196683495767,
+        "peakJsHeapBytes": 5391104,
+        "peakBackingStorageBytes": 50713345,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.302302
+      },
+      "download": {
+        "seconds": 0.8571793340000003,
+        "mibPerSecond": 11.666170197239024,
+        "peakJsHeapBytes": 4221628,
+        "peakBackingStorageBytes": 52923003,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.17157399999999998
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 10,
+      "trial": 3,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 3.4467577500000006,
+        "mibPerSecond": 2.9012772945821323,
+        "peakJsHeapBytes": 5601072,
+        "peakBackingStorageBytes": 50713345,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.240637
+      },
+      "download": {
+        "seconds": 1.0441510420000049,
+        "mibPerSecond": 9.577158473974835,
+        "peakJsHeapBytes": 4067412,
+        "peakBackingStorageBytes": 52922941,
+        "network": {
+          "attempts": 2,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.17815
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 1,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 28.075579416,
+        "mibPerSecond": 3.561814291284438,
+        "peakJsHeapBytes": 5468348,
+        "peakBackingStorageBytes": 117817426,
+        "network": {
+          "attempts": 17,
+          "failedResponses": 4,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 2.9286250000000003
+      },
+      "download": {
+        "seconds": 2.8326267080000105,
+        "mibPerSecond": 35.30292209615063,
+        "peakJsHeapBytes": 4078396,
+        "peakBackingStorageBytes": 134711265,
+        "network": {
+          "attempts": 13,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.612388
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 2,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 7.798017624999993,
+        "mibPerSecond": 12.823771990384556,
+        "peakJsHeapBytes": 5552736,
+        "peakBackingStorageBytes": 210091802,
+        "network": {
+          "attempts": 13,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 1.483185
+      },
+      "download": {
+        "seconds": 2.6737453749999984,
+        "mibPerSecond": 37.40071920648018,
+        "peakJsHeapBytes": 4078564,
+        "peakBackingStorageBytes": 134711265,
+        "network": {
+          "attempts": 13,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.573999
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 100,
+      "trial": 3,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 7.807968582999995,
+        "mibPerSecond": 12.807428582349365,
+        "peakJsHeapBytes": 5523540,
+        "peakBackingStorageBytes": 210091802,
+        "network": {
+          "attempts": 13,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 1.486403
+      },
+      "download": {
+        "seconds": 3.0287672080000045,
+        "mibPerSecond": 33.01673358581867,
+        "peakJsHeapBytes": 4327384,
+        "peakBackingStorageBytes": 134711265,
+        "network": {
+          "attempts": 13,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 0.613598
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 1,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 51.59549662500002,
+        "mibPerSecond": 9.69076823960118,
+        "peakJsHeapBytes": 5473408,
+        "peakBackingStorageBytes": 226868615,
+        "network": {
+          "attempts": 69,
+          "failedResponses": 6,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 11.686317
+      },
+      "download": {
+        "seconds": 25.938231916999996,
+        "mibPerSecond": 19.276564478255686,
+        "peakJsHeapBytes": 4288872,
+        "peakBackingStorageBytes": 134711253,
+        "network": {
+          "attempts": 63,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 4.971894
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 2,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 43.77844100000002,
+        "mibPerSecond": 11.42114676947952,
+        "peakJsHeapBytes": 5442604,
+        "peakBackingStorageBytes": 243645985,
+        "network": {
+          "attempts": 68,
+          "failedResponses": 5,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 10.893522
+      },
+      "download": {
+        "seconds": 21.603247291999985,
+        "mibPerSecond": 23.144668634384317,
+        "peakJsHeapBytes": 4253188,
+        "peakBackingStorageBytes": 134710984,
+        "network": {
+          "attempts": 63,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 4.27269
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 500,
+      "trial": 3,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 32.59861391699995,
+        "mibPerSecond": 15.338075455387797,
+        "peakJsHeapBytes": 5313952,
+        "peakBackingStorageBytes": 226868655,
+        "network": {
+          "attempts": 63,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 8.388073
+      },
+      "download": {
+        "seconds": 24.508144417000004,
+        "mibPerSecond": 20.401381332369514,
+        "peakJsHeapBytes": 4274420,
+        "peakBackingStorageBytes": 134711253,
+        "network": {
+          "attempts": 63,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 4.532204999999999
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 1,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 86.91818716699997,
+        "mibPerSecond": 11.781193710731001,
+        "peakJsHeapBytes": 5438924,
+        "peakBackingStorageBytes": 268811858,
+        "network": {
+          "attempts": 136,
+          "failedResponses": 7,
+          "transportFailures": 1
+        },
+        "rendererTaskSeconds": 23.473799999999997
+      },
+      "download": {
+        "seconds": 50.588405458000025,
+        "mibPerSecond": 20.2417923777051,
+        "peakJsHeapBytes": 4091492,
+        "peakBackingStorageBytes": 168268948,
+        "network": {
+          "attempts": 129,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 9.916924
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 2,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 85.300858167,
+        "mibPerSecond": 12.004568558914578,
+        "peakJsHeapBytes": 5610768,
+        "peakBackingStorageBytes": 226868631,
+        "network": {
+          "attempts": 136,
+          "failedResponses": 7,
+          "transportFailures": 1
+        },
+        "rendererTaskSeconds": 22.579103
+      },
+      "download": {
+        "seconds": 52.522102709,
+        "mibPerSecond": 19.49655377800651,
+        "peakJsHeapBytes": 4098940,
+        "peakBackingStorageBytes": 168268929,
+        "network": {
+          "attempts": 129,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 10.028849
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    {
+      "environment": "local-workerd-proxy",
+      "sizeMiB": 1024,
+      "trial": 3,
+      "success": true,
+      "saveRoute": "service-worker",
+      "upload": {
+        "seconds": 82.01801566700009,
+        "mibPerSecond": 12.485061869303502,
+        "peakJsHeapBytes": 5468584,
+        "peakBackingStorageBytes": 260423133,
+        "network": {
+          "attempts": 134,
+          "failedResponses": 5,
+          "transportFailures": 1
+        },
+        "rendererTaskSeconds": 22.424079999999996
+      },
+      "download": {
+        "seconds": 53.81211895899998,
+        "mibPerSecond": 19.02917074832523,
+        "peakJsHeapBytes": 4052372,
+        "peakBackingStorageBytes": 168268948,
+        "network": {
+          "attempts": 129,
+          "failedResponses": 0,
+          "transportFailures": 0
+        },
+        "rendererTaskSeconds": 10.083611
+      },
+      "browser": "156.0.8078.4",
+      "platform": "darwin",
+      "arch": "arm64"
+    }
+  ],
+  "experiments": {
+    "after-final": {
+      "configuration": {
+        "bodyFullSizeCopyEliminated": true,
+        "packetSingleCopy": true,
+        "encryptPrefetchChunks": 2
+      },
+      "results": [
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 1,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 2.3689775409999996,
+            "mibPerSecond": 0.42212303945181223,
+            "peakJsHeapBytes": 5614884,
+            "peakBackingStorageBytes": 5624359,
+            "rendererTaskSeconds": 0.103952
+          },
+          "download": {
+            "seconds": 0.14568958400000065,
+            "mibPerSecond": 6.863908678605298,
+            "peakJsHeapBytes": 3704032,
+            "peakBackingStorageBytes": 493655,
+            "rendererTaskSeconds": 0.070508
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 1,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 2.359874041,
+            "mibPerSecond": 0.4237514302145756,
+            "peakJsHeapBytes": 5410868,
+            "peakBackingStorageBytes": 5624374,
+            "rendererTaskSeconds": 0.100728
+          },
+          "download": {
+            "seconds": 0.14968758399999935,
+            "mibPerSecond": 6.680580802212723,
+            "peakJsHeapBytes": 4313416,
+            "peakBackingStorageBytes": 4688331,
+            "rendererTaskSeconds": 0.064639
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 1,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 2.3601886250000006,
+            "mibPerSecond": 0.4236949493814291,
+            "peakJsHeapBytes": 5600664,
+            "peakBackingStorageBytes": 5624362,
+            "rendererTaskSeconds": 0.10412500000000001
+          },
+          "download": {
+            "seconds": 0.16053462500000024,
+            "mibPerSecond": 6.2291857597698845,
+            "peakJsHeapBytes": 4225244,
+            "peakBackingStorageBytes": 4688328,
+            "rendererTaskSeconds": 0.076484
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 10,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 3.601803,
+            "mibPerSecond": 2.776387270486476,
+            "peakJsHeapBytes": 5433564,
+            "peakBackingStorageBytes": 50713318,
+            "rendererTaskSeconds": 0.271937
+          },
+          "download": {
+            "seconds": 1.0018510410000017,
+            "mibPerSecond": 9.981523790221807,
+            "peakJsHeapBytes": 4558816,
+            "peakBackingStorageBytes": 42437175,
+            "rendererTaskSeconds": 0.22745700000000002
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 10,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 3.536888583,
+            "mibPerSecond": 2.827343798180368,
+            "peakJsHeapBytes": 5403116,
+            "peakBackingStorageBytes": 50713306,
+            "rendererTaskSeconds": 0.245401
+          },
+          "download": {
+            "seconds": 0.4382543750000004,
+            "mibPerSecond": 22.817798453238467,
+            "peakJsHeapBytes": 4311752,
+            "peakBackingStorageBytes": 42437151,
+            "rendererTaskSeconds": 0.127061
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 10,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 3.397618999999999,
+            "mibPerSecond": 2.9432376025681526,
+            "peakJsHeapBytes": 5629264,
+            "peakBackingStorageBytes": 50713303,
+            "rendererTaskSeconds": 0.23853899999999997
+          },
+          "download": {
+            "seconds": 0.40354675000000134,
+            "mibPerSecond": 24.7802763868126,
+            "peakJsHeapBytes": 4241120,
+            "peakBackingStorageBytes": 42437172,
+            "rendererTaskSeconds": 0.11815
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 9.656347917000003,
+            "mibPerSecond": 10.355882043557065,
+            "peakJsHeapBytes": 5435556,
+            "peakBackingStorageBytes": 210091917,
+            "rendererTaskSeconds": 1.843118
+          },
+          "download": {
+            "seconds": 6.181130417,
+            "mibPerSecond": 16.178270519089743,
+            "peakJsHeapBytes": 4188740,
+            "peakBackingStorageBytes": 159876811,
+            "rendererTaskSeconds": 1.037605
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 10.431964041999999,
+            "mibPerSecond": 9.585922612212931,
+            "peakJsHeapBytes": 5489336,
+            "peakBackingStorageBytes": 210091917,
+            "rendererTaskSeconds": 1.9313259999999999
+          },
+          "download": {
+            "seconds": 5.274482499999999,
+            "mibPerSecond": 18.959205950536383,
+            "peakJsHeapBytes": 4228052,
+            "peakBackingStorageBytes": 159876645,
+            "rendererTaskSeconds": 1.036502
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 10.207290624999994,
+            "mibPerSecond": 9.79691905265018,
+            "peakJsHeapBytes": 5604920,
+            "peakBackingStorageBytes": 201703309,
+            "rendererTaskSeconds": 1.975001
+          },
+          "download": {
+            "seconds": 5.309251541000005,
+            "mibPerSecond": 18.835046564993764,
+            "peakJsHeapBytes": 4163000,
+            "peakBackingStorageBytes": 159876811,
+            "rendererTaskSeconds": 1.0349300000000001
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 500,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 42.92241104200001,
+            "mibPerSecond": 11.648926233681165,
+            "peakJsHeapBytes": 5393204,
+            "peakBackingStorageBytes": 226868611,
+            "rendererTaskSeconds": 10.340592000000001
+          },
+          "download": {
+            "seconds": 26.989605457999975,
+            "mibPerSecond": 18.52565057974181,
+            "peakJsHeapBytes": 4252312,
+            "peakBackingStorageBytes": 168267110,
+            "rendererTaskSeconds": 5.021052
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 500,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 49.972424708000005,
+            "mibPerSecond": 10.005518101665293,
+            "peakJsHeapBytes": 5541832,
+            "peakBackingStorageBytes": 218480145,
+            "rendererTaskSeconds": 10.516883
+          },
+          "download": {
+            "seconds": 25.87065483299998,
+            "mibPerSecond": 19.326917050519036,
+            "peakJsHeapBytes": 4206884,
+            "peakBackingStorageBytes": 168267091,
+            "rendererTaskSeconds": 4.141078
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 500,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 45.10455679100001,
+            "mibPerSecond": 11.08535446466837,
+            "peakJsHeapBytes": 5363440,
+            "peakBackingStorageBytes": 176537040,
+            "rendererTaskSeconds": 10.972873
+          },
+          "download": {
+            "seconds": 27.97092404200003,
+            "mibPerSecond": 17.875705473627537,
+            "peakJsHeapBytes": 4353400,
+            "peakBackingStorageBytes": 168267110,
+            "rendererTaskSeconds": 4.875326
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        }
+      ]
+    },
+    "isolate-prefetch2": {
+      "configuration": {
+        "bodyFullSizeCopyEliminated": true,
+        "packetSingleCopy": false,
+        "encryptPrefetchChunks": 2
+      },
+      "results": [
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 17.205812665999996,
+            "mibPerSecond": 5.8119893515758,
+            "peakJsHeapBytes": 5612500,
+            "peakBackingStorageBytes": 109430526,
+            "rendererTaskSeconds": 2.337235
+          },
+          "download": {
+            "seconds": 5.467950582999998,
+            "mibPerSecond": 18.288387665920506,
+            "peakJsHeapBytes": 4070684,
+            "peakBackingStorageBytes": 134710984,
+            "rendererTaskSeconds": 1.052745
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 11.214223083,
+            "mibPerSecond": 8.917247254657632,
+            "peakJsHeapBytes": 5744948,
+            "peakBackingStorageBytes": 142985052,
+            "rendererTaskSeconds": 2.178484
+          },
+          "download": {
+            "seconds": 5.446083833000004,
+            "mibPerSecond": 18.361817971669833,
+            "peakJsHeapBytes": 4180444,
+            "peakBackingStorageBytes": 134711238,
+            "rendererTaskSeconds": 1.057988
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 112.86772354099999,
+            "mibPerSecond": 0.8859928849692295,
+            "peakJsHeapBytes": 5609484,
+            "peakBackingStorageBytes": 151371490,
+            "rendererTaskSeconds": 4.5758600000000005
+          },
+          "download": {
+            "seconds": 4.090942333000013,
+            "mibPerSecond": 24.444245814305315,
+            "peakJsHeapBytes": 4351700,
+            "peakBackingStorageBytes": 134711253,
+            "rendererTaskSeconds": 0.875044
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        }
+      ]
+    },
+    "isolate-body-only": {
+      "configuration": {
+        "bodyFullSizeCopyEliminated": true,
+        "packetSingleCopy": false,
+        "encryptPrefetchChunks": 8
+      },
+      "results": [
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 13.149134375,
+            "mibPerSecond": 7.605063356119213,
+            "peakJsHeapBytes": 5626616,
+            "peakBackingStorageBytes": 134593975,
+            "rendererTaskSeconds": 2.37096
+          },
+          "download": {
+            "seconds": 6.352837166,
+            "mibPerSecond": 15.740998452658909,
+            "peakJsHeapBytes": 4274524,
+            "peakBackingStorageBytes": 134711253,
+            "rendererTaskSeconds": 1.174207
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 12.540959040999999,
+            "mibPerSecond": 7.973871828547662,
+            "peakJsHeapBytes": 5541268,
+            "peakBackingStorageBytes": 201703360,
+            "rendererTaskSeconds": 2.43176
+          },
+          "download": {
+            "seconds": 3.749343207999998,
+            "mibPerSecond": 26.671338005715064,
+            "peakJsHeapBytes": 4271076,
+            "peakBackingStorageBytes": 134711265,
+            "rendererTaskSeconds": 0.843762
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 20.047072042,
+            "mibPerSecond": 4.988259621679071,
+            "peakJsHeapBytes": 5549516,
+            "peakBackingStorageBytes": 134593917,
+            "rendererTaskSeconds": 2.512522
+          },
+          "download": {
+            "seconds": 8.156145666000004,
+            "mibPerSecond": 12.260693236127883,
+            "peakJsHeapBytes": 4441236,
+            "peakBackingStorageBytes": 134710799,
+            "rendererTaskSeconds": 1.222059
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        }
+      ]
+    },
+    "control-original": {
+      "configuration": {
+        "bodyFullSizeCopyEliminated": false,
+        "packetSingleCopy": false,
+        "encryptPrefetchChunks": 8
+      },
+      "results": [
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 8.006009333000002,
+            "mibPerSecond": 12.490617465034621,
+            "peakJsHeapBytes": 5525216,
+            "peakBackingStorageBytes": 142984915,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.4829729999999999
+          },
+          "download": {
+            "seconds": 2.704032958,
+            "mibPerSecond": 36.98179776401971,
+            "peakJsHeapBytes": 4074724,
+            "peakBackingStorageBytes": 134711265,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.589628
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 9.50899775,
+            "mibPerSecond": 10.516355417162654,
+            "peakJsHeapBytes": 5402920,
+            "peakBackingStorageBytes": 201703206,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.965566
+          },
+          "download": {
+            "seconds": 4.1957021249999995,
+            "mibPerSecond": 23.833913137959005,
+            "peakJsHeapBytes": 4065420,
+            "peakBackingStorageBytes": 134711253,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.8737050000000001
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 9.503500292000004,
+            "mibPerSecond": 10.522438778076271,
+            "peakJsHeapBytes": 5623900,
+            "peakBackingStorageBytes": 151373614,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.8963349999999999
+          },
+          "download": {
+            "seconds": 3.482990458,
+            "mibPerSecond": 28.710960080385036,
+            "peakJsHeapBytes": 4181708,
+            "peakBackingStorageBytes": 134710935,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.764435
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        }
+      ]
+    },
+    "control-body-only": {
+      "configuration": {
+        "bodyFullSizeCopyEliminated": true,
+        "packetSingleCopy": false,
+        "encryptPrefetchChunks": 8
+      },
+      "results": [
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 1,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 7.9566121249999995,
+            "mibPerSecond": 12.568163236937984,
+            "peakJsHeapBytes": 5489568,
+            "peakBackingStorageBytes": 159760115,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.517926
+          },
+          "download": {
+            "seconds": 2.753510625000001,
+            "mibPerSecond": 36.31727406172619,
+            "peakJsHeapBytes": 4251332,
+            "peakBackingStorageBytes": 134711265,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.623271
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 2,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 8.107223833000003,
+            "mibPerSecond": 12.334678560736855,
+            "peakJsHeapBytes": 5609588,
+            "peakBackingStorageBytes": 210091863,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.511588
+          },
+          "download": {
+            "seconds": 3.6194315000000024,
+            "mibPerSecond": 27.62864831120576,
+            "peakJsHeapBytes": 4092596,
+            "peakBackingStorageBytes": 134711265,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.773233
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        {
+          "environment": "local-workerd-proxy",
+          "sizeMiB": 100,
+          "trial": 3,
+          "success": true,
+          "saveRoute": "service-worker",
+          "upload": {
+            "seconds": 8.119269790999999,
+            "mibPerSecond": 12.316378513600744,
+            "peakJsHeapBytes": 5531056,
+            "peakBackingStorageBytes": 210091819,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 1.521787
+          },
+          "download": {
+            "seconds": 3.366944040999995,
+            "mibPerSecond": 29.700523317963913,
+            "peakJsHeapBytes": 4068752,
+            "peakBackingStorageBytes": 134711265,
+            "network": {
+              "attempts": 13,
+              "failedResponses": 0,
+              "transportFailures": 0
+            },
+            "rendererTaskSeconds": 0.702614
+          },
+          "browser": "156.0.8078.4",
+          "platform": "darwin",
+          "arch": "arm64"
+        }
+      ]
+    }
+  }
+}
