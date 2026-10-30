@@ -142,7 +142,7 @@ PR の自動レビューには GitHub Copilot を使う。GitHub の `copilot-co
 
 GitHub Actions を利用して Cloudflare Workers へ自動デプロイする構成になっている。
 
-- `main` ブランチの更新(PR のマージ)によって自動的にデプロイされる。
+- `main` 更新時はテスト・ビルドと、設定済みなら独立ステージングの検証を行う。本番は完全なmain SHAを指定した手動実行とproduction Environmentの承認を必要とする。運用は `docs/release-management.md` を参照する。
 - `main` はブランチ保護がかかっており、直接 push はできない(GitHub 側で拒否される)。反映するには必ず PR を経由する。
 - PR は CI(lint・型チェック・テスト)がグリーンでないとマージできない設定になっている。
 - push・PR 作成後、CI の完了を待つ必要はない。CI の結果はユーザー側で確認するため、`gh pr checks` 等で完了を待機・監視し続けなくてよい。問題があればユーザーからまとめて指摘される。

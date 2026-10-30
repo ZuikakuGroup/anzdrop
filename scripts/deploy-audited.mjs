@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
-import ts from "typescript";
+import { assertReleaseConfigs, readConfig, validateStagingPlan } from "./release-safety.mjs";
 import { parseDeployedVersion, selectDeployment } from "./deployment-provenance.mjs";
 
 const root = process.cwd();
@@ -50,18 +50,12 @@ async function sha256(file) {
   return hash.digest("hex");
 }
 
-async function readConfig(file) {
-  const parsed = ts.parseConfigFileTextToJson(file, await readFile(file, "utf8"));
-  if (parsed.error || !parsed.config?.name) throw new Error(`Invalid Wrangler config: ${file}`);
-  return parsed.config;
-}
-
 async function findDeployment(accountId, workerName, versionId, startedAt, token) {
   const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/deployments`);
   url.searchParams.set("since", new Date(startedAt).toISOString());
   url.searchParams.set("per_page", "100");
   for (let attempt = 0; attempt < 6; attempt++) {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error(`Cloudflare deployment lookup failed (HTTP ${response.status})`);
     const body = await response.json();
     if (!body.success || !Array.isArray(body.result?.deployments)) {
@@ -78,9 +72,9 @@ async function findDeployment(accountId, workerName, versionId, startedAt, token
 }
 
 async function main() {
-  if (requiredEnvironment("GITHUB_REF") !== "refs/heads/main" || requiredEnvironment("GITHUB_EVENT_NAME") !== "push") {
-    throw new Error("Production deployment requires a push to main");
-  }
+  const target = process.argv[2] ?? "production";
+  if (!["production", "staging"].includes(target) || requiredEnvironment("GITHUB_REF") !== "refs/heads/main") throw new Error("Releases require main and a known target");
+  if (target === "production" && (requiredEnvironment("GITHUB_EVENT_NAME") !== "workflow_dispatch" || requiredEnvironment("RELEASE_CONFIRMATION") !== requiredEnvironment("GITHUB_SHA"))) throw new Error("Production deployment requires explicit confirmation of the exact SHA");
   const token = requiredEnvironment("CLOUDFLARE_API_TOKEN");
   const expected = (await readFile(`${artifact}.sha256`, "utf8")).trim().split(/\s+/)[0];
   if (!/^[0-9a-f]{64}$/.test(expected) || await sha256(artifact) !== expected) {
@@ -97,16 +91,31 @@ async function main() {
   if (
     new Set(configs.map((config) => config.name)).size !== workers.length ||
     configs.some((config) => config.account_id !== accountId) ||
-    configs.slice(0, 2).some((config) => config.vars?.DEPLOYMENT_ENV !== "production")
+    configs.slice(0, 2).some((config) => config.vars?.DEPLOYMENT_ENV !== target)
   ) {
     throw new Error("Worker names, account IDs, or production settings do not match the archived deployment plan");
   }
+  const production = await readConfig(path.join(root, "wrangler.jsonc"));
+  const plan = target === "staging" ? validateStagingPlan(JSON.parse(await readFile(process.env.STAGING_PLAN_FILE ?? "config/staging.example.json", "utf8")), production) : null;
+  assertReleaseConfigs(configs, target, production, plan);
   const productionUrl = appConfig.vars?.SITE_URL;
   if (
     !productionUrl ||
     !configs[2].routes?.some((route) => route.pattern === `${new URL(productionUrl).hostname}/*`)
   ) {
     throw new Error("Router route does not match the archived production URL");
+  }
+  // Baseline was captured by preflight before any D1 migrations. Preserve it
+  // even if migrations or a later Worker deployment fail.
+  const baseline = JSON.parse(await readFile(path.join(root, "tmp/pre-release-deployments.json"), "utf8"));
+  if (baseline.environment !== target || baseline.accountId !== accountId || baseline.gitCommit !== process.env.GITHUB_SHA || baseline.artifactSha256 !== expected || baseline.workers?.length !== 3) throw new Error("Missing or stale release preflight baseline");
+  for (const config of configs) {
+    const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${config.name}/deployments`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error("Cannot verify pre-release deployments");
+    const body = await response.json();
+    const active = body.result?.deployments?.[0];
+    const previous = baseline.workers.find(worker => worker.worker === config.name)?.deployment;
+    if (!body.success || !active?.versions?.length || JSON.stringify(active.versions) !== JSON.stringify(previous?.versions)) throw new Error("Active versions changed since preflight; stop and review");
   }
   const deploymentRecords = [];
 
@@ -120,13 +129,20 @@ async function main() {
       "--no-bundle", "--message", `GitHub Actions ${process.env.GITHUB_RUN_ID}/${process.env.GITHUB_RUN_ATTEMPT} ${process.env.GITHUB_SHA}`,
     ], { CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false" });
     const versionId = parseDeployedVersion(output);
+    const record = { worker: name, versionId, lookupPending: true };
+    deploymentRecords.push(record);
+    const saveProgress = () => writeFile(path.join(root, "tmp/partial-deployment-records.json"), `${JSON.stringify({ environment: target, accountId, deployments: deploymentRecords }, null, 2)}\n`);
+    await saveProgress();
+    console.log(`Uploaded ${name}: version ${versionId}; identifying its deployment`);
     const deployment = await findDeployment(accountId, name, versionId, startedAt, token);
-    deploymentRecords.push({ worker: name, versionId, ...deployment });
+    Object.assign(record, deployment, { lookupPending: false });
+    await saveProgress();
     console.log(`Recorded ${name}: deployment ${deployment.deploymentId}, version ${versionId}`);
   }
 
   const manifest = {
     schemaVersion: 1,
+    environment: target,
     repository: requiredEnvironment("GITHUB_REPOSITORY"),
     gitCommit: requiredEnvironment("GITHUB_SHA"),
     gitRef: requiredEnvironment("GITHUB_REF"),

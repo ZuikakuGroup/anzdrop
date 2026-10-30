@@ -5,7 +5,7 @@ GitHub Actionsで検証・レビュー補助・Cloudflare Workersへのデプロ
 | Workflow | ファイル | 目的 |
 | --- | --- | --- |
 | Link Check | [`.github/workflows/link-check.yml`](../.github/workflows/link-check.yml) | Markdown / HTML / 公開 URL のリンク切れ検出 |
-| E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | 本番デプロイ成功後の Playwright スモーク |
+| E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | リリースworkflow完了後の読取り専用スモーク |
 | Weekly Development Report | [`.github/workflows/weekly-report.yml`](../.github/workflows/weekly-report.yml) | 週次の開発活動レポート Issue |
 | File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
 | Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | 停止中。CodeRabbit 用の旧処理。復旧用の手動実行のみ |
@@ -51,46 +51,17 @@ CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し�
 
 GitHub → Actions → **Link Check** → Run workflow
 
-## デプロイ後 E2E
+## リリース後のスモーク
 
-### 実行タイミング
+`E2E (post-deploy)` はDeploy workflowの成功完了後、または手動実行で、本番 `https://anzdrop.com` を読取り確認する。ステージングだけを更新したrunの後でも、本番の現状を確認する。これは本番リリースを実施した証跡ではない。
 
-- Workflow `Deploy to Cloudflare Workers` が **成功完了**したあと(`workflow_run`)
-- `workflow_dispatch`(手動。`base_url` 入力可、既定は `https://anzdrop.com`)
+`scripts/release-smoke.mjs` がHTML、参照するAstroアセット、未認証API、内部経路の非公開を確認する。リダイレクトを追わず、本番データを作成・変更しない。Playwrightの実アップロード検証はローカルと独立ステージングで行う。詳細は [リリース管理](./release-management.md) を参照する。
 
-### 対象 URL
-
-既定は本番 `https://anzdrop.com`(Workers ルーター経由)。Pages Preview は使わない。
-
-デプロイ完了後、`scripts/wait-for-url.sh` でトップが 2xx/3xx を返すまで最大180秒待つ。
-
-`workflow_run` ではデフォルトブランチのテストコードを checkout し、検証対象は常に本番 URL とする(`workflow_run.head_sha` の privileged checkout は cache poisoning 回避のため使わない)。
-
-### 実装しているテスト
-
-- Smoke: トップの「Anzdrop」見出しと「アップロードする」ボタン、致命的な pageerror がないこと
-- Navigation: `/about` `/pricing` `/blog` `/contact` `/report` `/legal/*` `/mypage/login` `/lp/secure-file-sharing` などが 4xx にならないこと、フッターリンク遷移
-
-認証が必要な `/admin` や実アップロード(Turnstile)は対象外。
-
-### 失敗時 Artifact
-
-- `playwright-report/`(HTML)
-- `test-results/`(screenshot / trace / video)
-- 保存期間 7 日。成功時はアップロードしない
-
-### ローカル実行
-
-```bash
-npx playwright install chromium
-E2E_BASE_URL=https://anzdrop.com npm run test:e2e
-# またはローカルサーバー向け
-# E2E_BASE_URL=http://127.0.0.1:3000 npm run test:e2e
+```sh
+SMOKE_ORIGIN=https://anzdrop.com EXPECTED_ORIGIN=https://anzdrop.com node scripts/release-smoke.mjs
 ```
 
-### 手動実行
-
-GitHub → Actions → **E2E (post-deploy)** → Run workflow
+上記は運用時の実行例。今回の実装作業では本番へ実行していない。失敗時はActionsログのどの検証が失敗したかを確認し、デプロイやデータ操作を自動で再試行しない。
 
 ## 毎週の開発レポート
 

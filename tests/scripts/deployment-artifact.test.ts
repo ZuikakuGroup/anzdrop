@@ -68,7 +68,9 @@ describe("deployment archive", () => {
       env: {
         ...process.env,
         GITHUB_REF: "refs/heads/main",
-        GITHUB_EVENT_NAME: "push",
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        GITHUB_SHA: "a".repeat(40),
+        RELEASE_CONFIRMATION: "a".repeat(40),
         CLOUDFLARE_API_TOKEN: "test-token",
       },
       stdio: "pipe",

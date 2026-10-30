@@ -3,62 +3,57 @@ name: Deploy to Cloudflare Workers
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      production_commit_sha:
+        description: 'Approve production release: enter the exact main commit SHA (empty = staging only)'
+        type: string
+        required: false
 
-# 公開リポジトリのビルド成果物に GitHub Artifact Attestation を付ける。
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
+# Staging, production and recovery share this lock; never cancel a partial release.
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run check -- lint
-
-      - name: Type check
-        run: npm run check -- types
-
-      - name: Type check router Worker
-        run: npm run check -- router
-
-      - name: Type check public Astro pages
-        run: npm run check -- public
-
-      - name: Test
-        run: npm run check -- test
-
-      - name: Build and archive deployable Workers
+      - run: npm ci
+      - run: npm run check -- lint
+      - run: npm run check -- types
+      - run: npm run check -- router
+      - run: npm run check -- public
+      - run: npm run check -- test
+      - run: npx playwright install --with-deps chromium
+      - name: Isolated upload/download E2E and build verification
+        run: npm run test:sharing
+        env:
+          E2E_WORKERS: '1'
+      - name: Build and archive production Workers (no deployment)
         run: bash scripts/prepare-auditable-deployment.sh
         env:
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-
-      - name: Attest deployment archive
-        uses: actions/attest@v4
+      - uses: actions/attest@v4
         with:
           subject-path: tmp/anzdrop-deploy.tar
-
-      - name: Save deployment archive
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
           name: deployment-build-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -67,20 +62,144 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply DB --remote
+  staging:
+    needs: build
+    if: vars.STAGING_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Write non-secret staging resource plan
+        run: node -e 'require("node:fs").mkdirSync("tmp",{recursive:true}); require("node:fs").writeFileSync("tmp/staging-plan.json",process.env.STAGING_PLAN_JSON)'
+        env:
+          STAGING_PLAN_JSON: ${{ vars.STAGING_PLAN_JSON }}
+      - name: Build isolated staging archive
+        id: staging-build
+        run: bash scripts/prepare-auditable-deployment.sh staging
+        env:
+          STAGING_PLAN_FILE: tmp/staging-plan.json
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+      - uses: actions/attest@v4
+        with:
+          subject-path: tmp/anzdrop-deploy.tar
+      - name: Validate bindings and existing resource/secret metadata
+        run: node scripts/release-preflight.mjs staging
+        env:
+          STAGING_PLAN_FILE: tmp/staging-plan.json
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Apply only staging migrations
+        run: npx wrangler d1 migrations apply DB --remote --config tmp/auditable-payload/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Deploy staging Workers
+        run: node scripts/deploy-audited.mjs staging
+        env:
+          STAGING_PLAN_FILE: tmp/staging-plan.json
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Verify staging route and API
+        run: node scripts/release-smoke.mjs
+        env:
+          SMOKE_ORIGIN: ${{ steps.staging-build.outputs.staging_origin }}
+          EXPECTED_ORIGIN: ${{ steps.staging-build.outputs.staging_origin }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - run: npx playwright install --with-deps chromium
+      - name: Verify synthetic E2E sharing on staging
+        run: npx playwright test tests/e2e/release-staging.spec.ts --project=chromium --workers=1
+        env:
+          E2E_RELEASE_STAGING: '1'
+          E2E_BASE_URL: ${{ steps.staging-build.outputs.staging_origin }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+      - name: Preserve staging release and partial-failure evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/anzdrop-deploy.tar
+            tmp/anzdrop-deploy.tar.sha256
+            tmp/deployment-manifest.json
+            tmp/pre-release-deployments.json
+            tmp/partial-deployment-records.json
+          retention-days: 90
 
-      - name: Deploy attested Workers and identify deployments
-        run: node scripts/deploy-audited.mjs
+  deploy:
+    needs: [build, staging]
+    if: github.event_name == 'workflow_dispatch' && inputs.production_commit_sha != ''
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: deployment-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp
+      - name: Verify production archive attestation and source commit
+        run: >-
+          gh attestation verify tmp/anzdrop-deploy.tar
+          --repo "$GITHUB_REPOSITORY"
+          --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/deploy.yml"
+          --source-digest "$GITHUB_SHA" --source-ref refs/heads/main
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Extract already attested archive for preflight
+        run: |
+          cd tmp
+          sha256sum -c anzdrop-deploy.tar.sha256
+          mkdir -p auditable-payload
+          tar -xf anzdrop-deploy.tar -C auditable-payload
+      - name: Verify approval protection, bindings and required secrets
+        run: node scripts/release-preflight.mjs production
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.production_commit_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GH_TOKEN: ${{ secrets.ENVIRONMENT_READ_TOKEN || github.token }}
+      - name: Apply reviewed backward-compatible production migrations
+        run: npx wrangler d1 migrations apply DB --remote --config tmp/auditable-payload/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      - name: Save successful deployment manifest
+      - name: Deploy verified production archive
+        run: node scripts/deploy-audited.mjs production
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.production_commit_sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Read-only production smoke
+        run: node scripts/release-smoke.mjs
+        env:
+          SMOKE_ORIGIN: https://anzdrop.com
+          EXPECTED_ORIGIN: https://anzdrop.com
+      - name: Preserve successful and partial deployment evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: deployment-manifest-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tmp/deployment-manifest.json
-          if-no-files-found: error
+          path: |
+            tmp/deployment-manifest.json
+            tmp/pre-release-deployments.json
+            tmp/partial-deployment-records.json
+          if-no-files-found: warn
           retention-days: 90
