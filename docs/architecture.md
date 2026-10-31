@@ -46,7 +46,7 @@ LPはAstroのブラウザスクリプトから既存の`track('landing_view')`�
 
 ## Cloudflareバインディング
 
-[`wrangler.jsonc`](../wrangler.jsonc) で定義されているバインディング(型定義は `worker-configuration.d.ts` に `wrangler types` で自動生成):
+[`wrangler.jsonc`](../wrangler.jsonc) で定義されているバインディングは次のとおりです。型定義は `worker-configuration.d.ts` に `wrangler types` で自動生成します。
 
 | バインディング | 種類 | 用途 |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ LPはAstroのブラウザスクリプトから既存の`track('landing_view')`�
 | `/report/rights`(`apps/public/src/pages/report/rights.astro`) | 権利者向け申し立てフォーム |
 | `/admin`(`apps/public/src/pages/admin/index.astro`) | 通報管理画面(要Cloudflare Access認証) |
 | `/mypage/signup`・`/mypage/login`・`/mypage/recover` | アカウント作成・ログイン・パスワード再設定([`accounts.md`](./accounts.md)) |
-| `/mypage`(`apps/public/src/pages/mypage/index.astro`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の着地先 |
+| `/mypage`(`apps/public/src/pages/mypage/index.astro`) | マイページ。現在のプラン・契約状態(自動更新中/解約予約中/有効期限/無料)・プラン内容・パスワード再設定の注意書き([`accounts.md`](./accounts.md))。ログイン後の遷移先 |
 | `/mypage/billing`(`apps/public/src/pages/mypage/billing.astro`) | Stripe/Bitcoin決済導線・カード契約の解約/再開。Standard・Premiumを購入できる（`lib/plan.ts`の`PURCHASABLE_PLANS`）。`/admin`付与中は現在プラン表示のみで契約ボタンをグレーアウトする |
 | `/pricing`(`apps/public/src/pages/pricing.astro`) | プラン比較(Free・Standard・Premium)の紹介ページ。Standard・Premiumのカードから購入画面へ案内する |
 | `/about`(`apps/public/src/pages/about.astro`) | サービス紹介ページ(理念・非営利であること、E2E暗号化の仕組み、OSSであること、よくある質問) |
@@ -111,8 +111,8 @@ Reactの画面コンポーネントは表示と操作の接続を担当します
 新しい共有の保存期間は無料・未ログインでは7日、Standardでは15日、Premiumでは30日を初期選択する。ログイン中の実効プランを取得して適用し、手動で選んだ期間や開始済みアップロードの期間は遅れて届いたプラン取得結果で上書きしない。「新しく送る」で初期化する際も現在のプランの初期値へ戻す。詳細設定での期間変更とサーバー側のプラン上限検証は従来どおり。
 
 
-1. キュー先頭のファイルは、選択直後に最初の8MiBチャンクだけをブラウザで先行暗号化する。「アップロードする」を押すと同じストリームの続きから処理する。後続ファイルは順番が来てから暗号化を始める。チャンクごとにAES-256-GCMを使い、送信中の先読みキューは1ファイル・最大8チャンク（平文換算64MiB）に限る。暗号化の付加データや、キューから取り出して送信処理中のデータは別に保持する。選択数に比例して先読みバッファが増えることはない。鍵生成と暗号化形式は[E2EEの設計](./crypto.md)を参照。
-2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。レスポンスの `uploadMode` が `"direct"` か `"proxy"` かを返す(R2 S3 Secrets の有無で決定)。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
+1. キュー先頭のファイルは選択直後に最初の8MiBチャンクだけをブラウザで先行暗号化する。「アップロードする」を押すと同じストリームの続きから処理する。後続ファイルは順番が来てから暗号化を始める。チャンクごとにAES-256-GCMを使い、送信中の先読みキューは1ファイル・最大8チャンク（平文換算64MiB）に限る。暗号化の付加データや、キューから取り出して送信処理中のデータは別に保持する。選択数に比例して先読みバッファが増えることはない。鍵生成と暗号化形式は[E2EEの設計](./crypto.md)を参照。
+2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。レスポンスの `uploadMode` に `"direct"` または `"proxy"` を返す(R2 S3 Secrets の有無で決定)。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
 3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、パートとしてR2へ送る(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
    - **direct**: `POST /api/upload/part-urls` で署名付きPUT URLを取得(`contentLength` を署名に含め `UPLOAD_PART_SIZE` 超を拒否) → ブラウザからR2へ直接PUT → `POST /api/upload/part-ack` でETagを `upload_parts` に記録。暗号文はWorkerを往復しない。
    - **proxy**(Secrets未設定時のフォールバック): 従来どおり `POST /api/upload/chunk` でWorker経由。
@@ -131,17 +131,17 @@ Reactの画面コンポーネントは表示と操作の接続を担当します
 
 1. `GET /api/download/[shareId]` で共有の有効期限・ファイル一覧(暗号化済みファイル名・サイズ)・パスワード保護の有無(`wrappedKey`/`keySalt` の有無)を取得。
 2. パスワード保護がない場合はURLフラグメントから直接鍵をインポートしてファイル名を復号。パスワード保護がある場合はユーザー入力のパスワードから鍵を導出し、ラップされた鍵をアンラップしてから同様に復号(詳細は [`crypto.md`](./crypto.md))。
-3. ファイル本体は `GET /api/file/[fileId]` からダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。回数を数えないファイルは、暗号文を複数のHTTP `Range` リクエスト(既定8MiBのウィンドウ・6本並列)で並列取得し、順番に連結し直してから復号する(`lib/download/parallelFetch.ts`。単一コネクションの逐次ダウンロードより実効速度が上がる。連結後のバイト列は単一ストリームと同一なので復号側は変更なし)。回数を数えるファイル(保存期間「1回」など)は、サーバー側のダウンロード数カウントを1回に保つため単一の `GET` のまま取得する。復号済み平文の保存経路(`lib/download/saveFile.ts`):
+3. ファイル本体は `GET /api/file/[fileId]` からダウンロードし、受信しながらチャンクごとに復号(`lib/crypto/stream.ts`)。回数を数えないファイルは、暗号文を複数のHTTP `Range` リクエスト(既定8MiBのウィンドウ・6本並列)で並列取得し、順番に連結し直してから復号する(`lib/download/parallelFetch.ts`。単一コネクションの逐次ダウンロードより実効速度が上がる。連結後のバイト列は単一ストリームと同一なので復号側は変更なし)。回数を数えるファイル(保存期間「1回」など)は、サーバー側のダウンロード数カウントを1回に保つため単一の `GET` のまま取得する。復号済み平文は次の経路で保存する(`lib/download/saveFile.ts`)。
    - ファイルサイズが 200MB(`SMALL_FILE_NO_PICKER_THRESHOLD_BYTES`)未満: ダウンロードのたびに保存先ダイアログが出る煩わしさを避けるため、`showSaveFilePicker` の環境判定自体を行わず、下記の Service Worker 経路 → Blob 経路へ直行する。
    - 200MB 以上で `showSaveFilePicker` が使える環境(Chromium 系): ユーザーが選んだ保存先へ逐次書き込み。ファイル全体をメモリに載せない。
    - 200MB 以上で `showSaveFilePicker` が使えない、または 200MB 未満で Service Worker が使える環境(Firefox/Safari 等): 復号済みストリームを Service Worker(`public/download-sw.js`)へ転送し、`Content-Disposition: attachment` の Response としてストリーミングダウンロードさせる(`lib/download/streamDownloadSaver.ts`。GitHub issue #61)。これもファイル全体をメモリに載せない。Service Worker はダウンロードページのマウント時に登録され、初回訪問直後などまだページを制御していない間は次の Blob 経路になる。
    - どちらも使えない場合: Blob に集めてから保存(最後の手段。大容量ファイルではタブが落ちうる)。
    - **「全てダウンロード」**(`lib/download/downloadAll.ts`)は環境と合計サイズに応じて経路を選ぶ。合計が 200MiB(`SMALL_FILE_NO_PICKER_THRESHOLD_BYTES`)未満なら、個別ダウンロードと同様に `showSaveFilePicker` を使わず、Service Worker 経由のストリーミング ZIP → メモリ内 ZIP の順で保存する。合計が 200MiB 以上で `showSaveFilePicker` が使え、かつ ZIP が zip64 不要な範囲(単体・合計とも約 4GiB = `0xFFFFFFFF` バイト以内)なら、選んだ `.zip` へストリーミング ZIP を書き出す(`streamFilesAsZip`。1ファイル分も ZIP 全体もメモリに載せない。GitHub issue #59)。`showSaveFilePicker` を使わない場合に Service Worker が使えれば、SW 経由でストリーミング ZIP をダウンロードする(issue #61)。SW への受け渡しは ZIP 生成(= ファイルの fetch)を始める前に行うため、一過性の不通で失敗しても 1回限りファイルの枠を消費しておらず、下のメモリ内 ZIP へ安全にフォールバックできる。zip64 が必要な(約 4GiB を超える)場合は `showDirectoryPicker` でフォルダを選ばせ1ファイルずつストリーミング保存。いずれも不可なら合計サイズが上限(512MiB)以内でメモリ内 ZIP、超える場合は個別ダウンロードを案内して中断する。
-   - ZIPの保存名は、復号した先頭ファイル名から拡張子と相対パスを除いた名前を使う。複数ファイルなら残りの件数を加える(例: `report-ほか2件.zip`)。全てクライアント側で決め、ファイル名を新たにサーバーへ送らない。
+   - ZIPの保存名は復号した先頭ファイル名から拡張子と相対パスを除いた名前を使う。複数ファイルなら残りの件数を加える(例: `report-ほか2件.zip`)。全てクライアント側で決め、ファイル名を新たにサーバーへ送らない。
 4. ダウンロード回数の上限チェックと加算は1つの原子的な `UPDATE` で行う(同時アクセスでも上限を超えない)。回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、**実際にクライアントへ届いたバイト数**で後処理を分ける(GitHub issue #62)。
    - 全バイト届いた場合: それが最後の1回だったならR2オブジェクトとDBレコードを削除(`ctx.waitUntil()` で、レスポンスのストリーミングはブロックしない)。「最後のバイト送出直後にクライアントが接続を閉じる」ケースは `pipeTo` が reject するが、届いたバイト数が `object.size` に達していれば完走扱いにする。
    - 全バイト届く前に中断(通信断・タブクローズなど)された場合: このダウンロードは「消費されなかった」とみなし、加算しておいた `download_count` を戻す。これにより「1回」ファイルでも、途中で切れたらもう一度取得し直せる(削除は完走時のみ)。
-   - この中断検知は「Cloudflare Workers がクライアント切断時にレスポンスの `ReadableStream` を cancel する」挙動に依存する。**本番相当のプレビュー/本番で「大容量の『1回』ファイルをタブクローズ/通信断 → もう一度取得できる」ことを一度は実機確認すること。** また、中断直後(`ctx.waitUntil` の回数戻しが完了する前のミリ秒オーダー)にクライアントが即座に再取得すると 404(既に上限到達)を踏みうる。人間の再クリックより速い自動リトライ実装がクライアント側に入る場合は、この窓を考慮すること(既知の軽微な制約)。
+   - この中断検知は「Cloudflare Workers がクライアント切断時にレスポンスの `ReadableStream` を cancel する」挙動に依存する。**本番相当のプレビュー/本番で「大容量の『1回』ファイルをタブクローズ/通信断 → もう一度取得できる」ことを一度は実機確認すること。** また、中断直後(`ctx.waitUntil` の回数戻しが完了する前のミリ秒オーダー)にクライアントが即座に再取得すると 404(既に上限到達)が返ることがある。人間の再クリックより速い自動リトライ実装がクライアント側に入る場合は、この時間差を考慮すること(既知の軽微な制約)。
 
 復号時は、受信データが空の場合もファイル一覧の平文サイズと照合する。空ではないはずのファイルは切断エラーとして扱う。保存をキャンセルした場合は、待機中の暗号文読み取りを中断してから復号ジェネレータを終了する。
 
@@ -160,7 +160,7 @@ R2の不明なabort障害や未登録の完成実体がある場合は、D1追�
 
 ## レート制限
 
-無認証・無課金で呼べるエンドポイントの連打で、Workers リクエスト・D1 行読み取り・R2 オペレーションといった課金コストが暴走しないようにするための多層防御です(GitHub issue #81)。非営利・コスト回収を前提とした運用のため、「壊さないこと」を最優先に、暴走を頭打ちにすることだけを狙っています。
+無認証・無課金で呼べるエンドポイントの連打で、Workers リクエスト・D1 行読み取り・R2 オペレーションといった課金コストが過度に増えないようにするための多層防御です(GitHub issue #81)。非営利・コスト回収を前提とした運用のため、「壊さないこと」を最優先に、費用の過度な増加を抑えることだけを狙っています。
 
 | 層 | 設定場所 | 数える単位 | 守るもの |
 | --- | --- | --- | --- |
@@ -182,16 +182,16 @@ R2の不明なabort障害や未登録の完成実体がある場合は、D1追�
 
 `FORM_RATE_LIMITER` は全利用者で枠を共有する。Turnstile検証に失敗した送信は枠を消費しないが、有効なトークンを大量取得する相手が枠を使い切ると、その地域の正当な送信も一時的に429になる。フォーム間の枠は独立。ユーザー確認済みのコスト保護策として導入し、Cloudflareの一時カウンタ以外に新しい永続データは保存しない。
 
-**閾値を決めるときに外してはいけない前提**:
+**閾値を決めるときに外してはいけない前提**
 
 - **カウンタは Cloudflare のロケーション(データセンター)単位**で、ベストエフォート・結果的整合。グローバルな厳密カウンタではないので、実効的な上限は設定値より緩くなる。
 - **キーごとに独立して数える**。つまり `shareId` / `fileId` を毎回変える相手(列挙)には何の制約にもならない。列挙の抑止は外側の WAF ルールの役目。
 - **同じキーを共有する利用者は合算される**。`fileId` / `shareId` をキーにする以上、同じファイル・同じ共有を同じ地域から同時に使う全員が1つの枠を分け合う。「1人あたりでは到達しない」だけでは不十分で、多人数同時のケースを必ず見積もること。
 - **枠を締めすぎると、それ自体が新しい DoS 手段になる**。共有 URL を知る第三者が低速な連打(WAF の IP ルールが反応しない速度)で枠を使い切り、正当な利用者を締め出せてしまう。`SHARE_RATE_LIMITER` の閾値が「1ページロード1回」から見て過剰に緩いのはこのため。
 
-設計上の要点:
+設計上の要点は次のとおりです。
 
-- **フェイルオープン**: バインディングが未設定の環境や Cloudflare 側の一時障害では、制限をかけずに通します。レート制限は認証・認可の関門ではなくコストの保険であり、ここで配信やアップロードが丸ごと止まる方が利用者への影響がはるかに大きいためです。
+- **フェイルオープン**: バインディングが未設定の環境や Cloudflare 側の一時障害では、制限をかけずにリクエストを受け付けます。レート制限は認証・認可を担うものではなくコスト増加に備えるためのものであり、ここで配信やアップロードが丸ごと止まる方が利用者への影響がはるかに大きいためです。
 - **できるだけ手前で弾く**: `GET /api/file/[fileId]` は D1 / R2 に触る前、`POST /api/upload/chunk` は8MiBのボディを読み込む前にチェックします。超過したリクエスト自体がコストを発生させないようにするためです。
 - **429 で弾いた分は「消費」しない**: 保存期間「1回」のファイルの `download_count` は加算されません。
 - **429 は利用者に「一時的だ」と伝える**: ダウンロード画面は429を専用の文言(`lib/download/errors.ts` の `RATE_LIMITED_MESSAGE`)で表示します。汎用の「URLが正しいかご確認のうえ」に丸めると、待てば直る混雑なのに「リンクが壊れている」と読めてしまうためです。
@@ -209,7 +209,7 @@ Cookie認証の状態変更APIは既存のOrigin検証を維持します。暗�
 
 ## アカウント認証の境界
 
-パスワード、任意のOTP、パスキーの入口は `lib/account/passwordAuthentication.ts` / `passkeys.ts` / `securityStore.ts` に分ける。必要な認証が完了した後に `grantSession.ts` で開始時の `session_version` を条件付き更新に照合し、セッションを発行する。設定・復旧と競合しても旧世代の認証を新世代へ引き上げない。
+パスワード、任意のOTP、パスキーの認証処理は `lib/account/passwordAuthentication.ts` / `passkeys.ts` / `securityStore.ts` に分ける。必要な認証が完了した後に `grantSession.ts` で開始時の `session_version` を条件付き更新に照合し、セッションを発行する。設定・復旧と競合しても旧世代の認証を新世代へ引き上げない。
 
 パスキーはSimpleWebAuthnでOrigin・RP ID・署名・本人確認を検証する。登録はdiscoverable credential必須・attestationなし。OTPは独立したアカウント単位の試行枠を持ち、コード再利用を時間ステップの条件付き更新で拒否する。設定変更の再認証証明は対象操作に限定し、異なる変更に流用しない。ログには秘密・認証応答・検証例外を含めない。
 
@@ -219,7 +219,7 @@ Cookie認証の状態変更APIは既存のOrigin検証を維持します。暗�
 
 `apps/public` が `/about`、`/pricing`、`/legal/{terms,privacy,tokushoho}`、`/lp/secure-file-sharing`、`/blog` と記事・分類・タグ・著者ページ、`/robots.txt`、`/sitemap.xml` を提供する。生成アセットは `/_public-astro/`。URLは維持し、共通React部品をSSRする。ヘッダー、画像拡大、LPの既存計測だけをReact islandとして実行し、FAQとブログのページ送りはHTML標準機能を使う。
 
-`/about` のFAQは、`::details-content` と `interpolate-size` に対応するブラウザーで高さ・透明度を300msで変化させる。JavaScriptや追加のデータ保存は不要。未対応のブラウザーは標準の開閉を維持し、`prefers-reduced-motion: reduce` ではアニメーションを無効にする。
+`/about` のFAQは`::details-content` と `interpolate-size` に対応するブラウザーで高さ・透明度を300msで変化させる。JavaScriptや追加のデータ保存は不要。未対応のブラウザーは標準の開閉を維持し、`prefers-reduced-motion: reduce` ではアニメーションを無効にする。
 
 ブログ取得・検証は `lib/blog/core.ts` で共通化する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
 

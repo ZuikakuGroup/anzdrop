@@ -26,7 +26,7 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
 - 新規共有作成時(`shareId`未指定時)は、アップローダーの実効プラン(未ログインは常にfree)がfreeの場合のみ `turnstileToken` によるTurnstile検証が必須。Standard/Premiumはログイン済みアカウントであることが分かっているため検証をスキップする(`isTurnstileRequiredForPlan()`、[`lib/plan.ts`](../lib/plan.ts))。既存共有への相乗り(`shareId`指定時)は `uploadToken` の一致で認可し、プランに関わらずTurnstile再検証は行わない。
 - リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
   - `wrappedKey`/`keySalt` は新規共有かつパスワード保護を設定した場合のみ。
-  - `encryptedFileName`・`wrappedKey`・`keySalt` は、クライアントが送る base64url(パディングなし)を前提に、ヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する(不正な文字・長さは400)。`encrypted_file_name` は `GET /api/file/[fileId]` の `Content-Disposition` ヘッダに載るため、制御文字・改行・`"` の混入を入口で防ぎ、さらに `GET /api/file/[fileId]` 側でもヘッダ生成直前に安全な文字集合へ丸める(`safeAttachmentFilename`。検証前に保存された古い行・破損データ対策)。
+  - `encryptedFileName`・`wrappedKey`・`keySalt` は、クライアントが送る base64url(パディングなし)を前提に、ヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する(不正な文字・長さは400)。`encrypted_file_name` は `GET /api/file/[fileId]` の `Content-Disposition` ヘッダに載るため、制御文字・改行・`"` の混入をアップロード開始時に防ぎ、さらに `GET /api/file/[fileId]` 側でもヘッダ生成直前に安全な文字集合へ丸める(`safeAttachmentFilename`。検証前に保存された古い行・破損データ対策)。
 - レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt, uploadMode, analyticsTransferId? }`
   - `uploadMode` は `"direct"`(ブラウザからR2へ署名付きURLで直接PUT)または `"proxy"`(従来どおりWorker経由)。R2 S3 API用Secrets(`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `CLOUDFLARE_ACCOUNT_ID`)が揃っているときだけ `direct`。未設定(ローカル等)は `proxy` にフォールバックする([`deployment.md`](./deployment.md)参照)。
   - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。`ANALYTICS_SECRET`未設定などでID生成に失敗した場合は省略されるが、フィールドがなくても成功レスポンスとして有効。`shareId`自体を既に返しているため追加の情報漏洩にはならない。
@@ -105,7 +105,7 @@ GETと同じ期限・停止状態・回数上限を確認し、R2のメタデー
 - **`Range` リクエスト(並列ダウンロード)**: 回数を数えないファイル(`max_downloads IS NULL`)への `Range: bytes=...` は、有効期限・一時停止の確認だけを済ませて部分応答(206 + `Content-Range`)を返す。1回の論理的なダウンロードが複数のサブリクエストに分かれるだけなので `download_count` は加算しない。クライアント([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))は暗号文を既定8MiBのウィンドウに分けて複数本並列取得し、順番に連結し直してから復号する(単一コネクションの逐次ダウンロードより実効速度が上がる)。回数を数えるファイルは `Range` を無視して全体を返し、下記の単一GET+原子的加算の経路を通る(クライアントも回数制限ファイルには `Range` を使わない)。回数を数えないファイルの通常(非Range)応答には `Accept-Ranges: bytes` を付ける。
 - ダウンロード回数の上限チェックと加算を1つの `UPDATE ... RETURNING` で原子的に行い、条件を満たさない(既に上限到達)場合は404扱い。
 - 回数を数えるファイル(保存期間「1回」など)は、R2 のボディを `TransformStream` 経由でクライアントへ流し、転送が最後まで完了したときだけ後処理を行う(GitHub issue #62)。
-  - 完走かつ最後の1回だった場合: レスポンスをブロックせず `ctx.waitUntil()` で裏からR2オブジェクトとDBレコードを削除。
+  - 完走かつ最後の1回だった場合: レスポンスをブロックせず `ctx.waitUntil()` で非同期にR2オブジェクトとDBレコードを削除。
   - 通信断などで中断された場合: 加算しておいた `download_count` を1つ戻し、再取得できるようにする(削除は完走時のみ)。
   - R2 からオブジェクトを取得できなかった場合(`get` が `null` を返す/一時障害で reject する)も、加算を戻してから 404(reject 時は 500)を返す。R2 側の一時的な不整合で取得し直せる。
 - レスポンスの `Content-Type` は常に `application/octet-stream` 固定(`X-Content-Type-Options: nosniff` と合わせて sniffing を防ぐ)。
@@ -196,7 +196,7 @@ GETと同じ期限・停止状態・回数上限を確認し、R2のメタデー
 
 ### `POST /api/billing/stripe/webhook`
 
-Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接叩くエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、初回未確定のまま終端になった場合(`incomplete_expired`、または支払い実績の無い`canceled`)ではゴミポインタだけ外して`plan`は維持、かつて有効だった終端(`canceled`で支払い済み / `unpaid`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す。`customer.subscription.deleted`も同じ判定。Hibikiが知るがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
+Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証とイベント振り分けは Hibiki（`@hibiki-js/core` / `@hibiki-js/stripe`）が行う。人間が直接呼び出すエンドポイントではない。`customer.subscription.updated`は`active`/`trialing`で`plan`/`plan_expires_at`を同期し、初回未確定のまま終端になった場合(`incomplete_expired`、または支払い実績の無い`canceled`)では不要な参照だけ外して`plan`は維持、かつて有効だった終端(`canceled`で支払い済み / `unpaid`)では`sync`と同じく`downgradeExpiredCardPlan()`で即時ダウングレードして`stripe_subscription_id`を外す。`customer.subscription.deleted`も同じ判定。Hibikiが対応しているがハンドラ未登録のイベントは204、Hibiki非対応のイベントは200で受理する（どちらもプラン状態は変更しない）。ハンドラ内で失敗した場合は500（`HIBIKI_HANDLER_FAILED`）を返し、`stripe_events`への完了マークは付けない（成功後にのみ記録するため、再送で再実行できる）。
 
 ### `POST /api/billing/stripe/sync`
 
@@ -205,7 +205,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証
 - アカウントID単位のレート制限あり(認証チェックの後)。超過時はStripe APIを呼ばず429(`Retry-After: 60`)。
 - レスポンス: `{ success: true, accountId, plan, planExpiresAt, subscription, adminGranted }`。`subscription`は`{ state: "active"|"canceling"|"past_due", currentPeriodEnd: string|null }`または`null`。`"canceling"`は期間末で終了予定(自動更新停止済み)、`"past_due"`は更新の決済に失敗しdunningリトライ中(お支払い方法の更新か自動更新の停止が必要)を表し、このとき`currentPeriodEnd`は常に`null`(Stripeの`current_period_end`が未払いの次期を指しうるため、支払い済みの期限としては使わない)。`adminGranted`は`/admin`付与中(実効有料・生きているカード契約なし・有効なBitcoin前払いなし)かどうか。
   - `subscription`が`null`になるのは、契約が無い / Subscriptionが`active`・`trialing`・`past_due`のいずれでもない(`incomplete`・`canceled`等) / retrieveが失敗し`plan_expires_at`も過去のとき。
-  - 初回未確定のまま終端になった場合(`incomplete_expired`、支払い実績の無い`canceled`)はゴミポインタだけ外し、`plan` / `plan_expires_at`は維持する。
+  - 初回未確定のまま終端になった場合(`incomplete_expired`、支払い実績の無い`canceled`)は不要な参照だけ外し、`plan` / `plan_expires_at`は維持する。
   - Stripe取得が**404**(Stripe側にSubscriptionが無い)の場合は、`accounts`を一切書き換えない。404はモード/APIキーの取り違えや破損IDでも起きるうえ、`stripe_subscription_id`まで外すと本物の削除時に後続の`customer.subscription.deleted`が突き合わせ先を失うため。実際のダウングレードは署名検証済みの`deleted`と`effectivePlan()`に委ねる。要約は次項と同じ暫定フォールバック。
   - Stripe取得が**404含め失敗**(モード不一致・レート制限・タイムアウト・Stripe障害)した場合は`accounts`を書き換えず、`stripe_subscription_id`があり`plan_expires_at`が未来なら暫定で`{ state: "active", currentPeriodEnd: planExpiresAt }`を返す(`active`/`canceling`の区別は付かない)。
 
@@ -227,7 +227,7 @@ Stripeからのサーバー間Webhook。`stripe-signature` ヘッダーの検証
 
 ### `POST /api/billing/btc/webhook`
 
-OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`hashed_order`(HMAC-SHA256、鍵はAPIキー自体)で署名検証する。人間が直接叩くエンドポイントではない。
+OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`hashed_order`(HMAC-SHA256、鍵はAPIキー自体)で署名検証する。人間が直接呼び出すエンドポイントではない。
 
 ## 管理画面API(要Cloudflare Access認証)
 
@@ -274,7 +274,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 
 ### `GET /api/admin/accounts/[accountId]`
 
-アカウントIDを指定して現在のプラン状況を取得する。`/admin/accounts` 画面の検索欄から使う、読み取り専用ルートのためOrigin検証は行わない。レスポンスの `account` は `exists`(アカウントの有無)・`storedPlan`(`accounts.plan` の正規化値。期限切れでも有料値のまま)・`effectivePlan`(期限切れを加味した実効プラン)・`planExpiresAt`・`indefinite`(「無期限」の番兵値か)・`hasStripeSubscription`(`accounts.stripe_subscription_id` が **Stripe 上でいま管理対象として生きている契約**(`active` / `trialing` / `past_due`)を指しているか。`stripe.subscriptions.retrieve()` で確認し、`incomplete` / `incomplete_expired` / `canceled` / `unpaid` のゴミポインタでは `false`。`retrieve` 失敗時は保守的に `true`。表示専用で `accounts` は書き換えない)。存在しないアカウントIDでも200で `exists: false` を返す。
+アカウントIDを指定して現在のプラン状況を取得する。`/admin/accounts` 画面の検索欄から使う、読み取り専用ルートのためOrigin検証は行わない。レスポンスの `account` は `exists`(アカウントの有無)・`storedPlan`(`accounts.plan` の正規化値。期限切れでも有料値のまま)・`effectivePlan`(期限切れを加味した実効プラン)・`planExpiresAt`・`indefinite`(「無期限」の番兵値か)・`hasStripeSubscription`(`accounts.stripe_subscription_id` が **Stripe 上でいま管理対象として生きている契約**(`active` / `trialing` / `past_due`)を指しているか。`stripe.subscriptions.retrieve()` で確認し、`incomplete` / `incomplete_expired` / `canceled` / `unpaid` の不要な参照では `false`。`retrieve` 失敗時は保守的に `true`。表示専用で `accounts` は書き換えない)。存在しないアカウントIDでも200で `exists: false` を返す。
 
 ### `POST /api/admin/accounts/[accountId]`
 
@@ -309,7 +309,7 @@ OpenNodeからのサーバー間Webhook(`application/x-www-form-urlencoded`)。`
 | `POST /api/account/security/totp/disable` | `{}` → `{ success: true }`、全セッション失効 |
 | `POST /api/account/security/cancel` | `{}` → `{ success: true }`、設定途中情報とCookieを削除 |
 
-`action` は `passkey-add` / `passkey-delete` / `totp-enable` / `totp-disable`。削除では `targetId` に対象の認証情報IDを指定する。設定取得以外は有効なセッションと、同じ操作に対する再認証を要求する（再認証・中止API自体は証明不要）。コードは6桁の文字列。OTPはアカウント単位5分5回の上限で429、無効・期限切れ・再送・世代不一致は403、未ログインは401、不正本文は400。DB・暗号化・検証の障害時は認証を通さない。
+`action` は `passkey-add` / `passkey-delete` / `totp-enable` / `totp-disable`。削除では `targetId` に対象の認証情報IDを指定する。設定取得以外は有効なセッションと、同じ操作に対する再認証を要求する（再認証・中止API自体は証明不要）。コードは6桁の文字列。OTPはアカウント単位5分5回の上限で429、無効・期限切れ・再送・世代不一致は403、未ログインは401、不正本文は400。DB・暗号化・検証の障害時は認証を許可しない。
 
 ## 登録・通報・問い合わせの回数制限
 

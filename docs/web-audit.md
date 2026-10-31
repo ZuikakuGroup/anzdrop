@@ -11,13 +11,13 @@ Pull Request 作成・更新時と `main` への push 時に、本番ビルド�
 
 ## ローカル実行
 
-1. 本番ビルド(監査用にブログ seed を許可):
+1. 本番ビルドを実行する(監査用にブログ seed を許可)。
 
 ```bash
 WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run build
 ```
 
-2. 別ターミナルで production server を起動:
+2. 別ターミナルで production server を起動する。
 
 ```bash
 WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run start -- --hostname 127.0.0.1 --port 3000
@@ -30,7 +30,7 @@ WEB_AUDIT=true BLOG_USE_SEED_DATA=true SITE_URL=http://127.0.0.1:3000 npm run st
 
 Lighthouse の `is-on-https` / `redirects-http` もローカル HTTP 計測向けに assertion から除外しています(本番は Cloudflare 終端の HTTPS)。
 
-3. 検査:
+3. 検査を実行する。
 
 ```bash
 SITE_URL=http://127.0.0.1:3000 npm run audit:seo
@@ -43,14 +43,14 @@ SITE_URL=http://127.0.0.1:3000 npm run audit:web
 
 ## 対象ページ
 
-`config/web-audit.json` の `pages` が SEO / Lighthouse 共通の対象です。初期値:
+`config/web-audit.json` の `pages` が SEO / Lighthouse 共通の対象です。初期値は次のとおりです。
 
 - `/`
 - `/about`
 - `/pricing`
 - `/lp/secure-file-sharing`
 
-追加・削除はこの配列を編集します。一時的に上書きする場合:
+対象ページを追加・削除するには、この配列を編集します。一時的に上書きする場合は、次のように指定します。
 
 ```bash
 SEO_AUDIT_PAGES=/,/about npm run audit:seo
@@ -97,7 +97,7 @@ LIGHTHOUSE_PAGES=/ npm run audit:lighthouse
 - Performance: 10 ポイント超の悪化で FAIL
 - その他: 5 ポイント超の悪化で FAIL
 
-初期状態は `pages: {}`(固定閾値のみ)です。ローカル実測値をそのまま入れると Actions runner で Performance が下振れしてフレークしやすいので、GitHub Actions 上の緑ランの Artifact(`lighthouse-summary.json` の `medians`)から転記してください。
+初期状態は `pages: {}`(固定閾値のみ)です。ローカル実測値をそのまま入れると Actions runner で Performance が下振れしてフレークしやすいので、GitHub Actions 上で成功した run の Artifact(`lighthouse-summary.json` の `medians`)から転記してください。
 
 ### Artifact
 

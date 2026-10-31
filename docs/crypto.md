@@ -1,10 +1,10 @@
 # E2EE(エンドツーエンド暗号化)の設計
 
-Anzdropの核となる設計方針は「サーバーは平文はもちろん、復号鍵も一度も見ない」ことです。暗号化・復号は常にブラウザの [Web Crypto API](https://developer.mozilla.org/ja/docs/Web/API/Web_Crypto_API) 上で行われ、実装は [`lib/crypto/`](../lib/crypto/) にまとまっています。
+Anzdropの中心となる設計方針は「サーバーは平文はもちろん、復号鍵も一度も見ない」ことです。暗号化・復号は常にブラウザの [Web Crypto API](https://developer.mozilla.org/ja/docs/Web/API/Web_Crypto_API) 上で行われ、実装は [`lib/crypto/`](../lib/crypto/) にまとまっています。
 
 ## 使用アルゴリズム
 
-[`lib/crypto/types.ts`](../lib/crypto/types.ts) で定義:
+[`lib/crypto/types.ts`](../lib/crypto/types.ts) で定義しています。
 
 | 項目 | 値 |
 | --- | --- |
@@ -19,10 +19,10 @@ Anzdropの核となる設計方針は「サーバーは平文はもちろん、�
 
 1. アップロード時、ブラウザは `generateKey()` でファイル(共有)ごとに1本のAES-256-GCM鍵を生成する(`lib/crypto/key.ts`)。同じ鍵は、1回のアップロード操作で追加された複数ファイルの間でも使い回される。
 2. ファイルを8MiBごとに分割し(`iterateFileChunks`)、チャンクごとに個別のIVで暗号化する(`encryptChunk`, `lib/crypto/encrypt.ts`)。チャンクごとに異なるIVを使うことで、同一鍵での大量データ暗号化によるIV再利用リスクを避けている。
-3. 各チャンクの認証タグには、GCMのAAD(Additional Authenticated Data)として「ファイルごとのランダムなsalt(`FILE_SALT_LENGTH`, `generateFileSalt()`)」「そのファイル内でのチャンク番号」「最終チャンクか否か」をバインドする(`buildChunkAad`, `lib/crypto/aad.ts`)。AAD自体は送受信されず、暗号化・復号の両側が同じ入力から独立に再計算して照合する。これにより、R2/D1を操作できる主体(妥協されたサーバーや悪意あるインフラ管理者)が、ストレージ上でチャンクを並べ替える・重複させる・(鍵を使い回す同一share内の別ファイルの)チャンクと差し替えるといった改ざんを行っても、対象チャンクのGCM認証タグ検証が必ず失敗するため検知できる(各チャンク単体の改ざん検知に加えて、ストリーム全体としての順序・完全性も保証する。GitHub issue #1)。
+3. 各チャンクの認証タグには、GCMのAAD(Additional Authenticated Data)として「ファイルごとのランダムなsalt(`FILE_SALT_LENGTH`, `generateFileSalt()`)」「そのファイル内でのチャンク番号」「最終チャンクか否か」をバインドする(`buildChunkAad`, `lib/crypto/aad.ts`)。AAD自体は送受信されず、暗号化・復号の両側が同じ入力から独立に再計算して照合する。これにより、R2/D1を操作できる主体(侵害されたサーバーや悪意あるインフラ管理者)が、ストレージ上でチャンクを並べ替える・重複させる・(鍵を使い回す同一share内の別ファイルの)チャンクと差し替えるといった改ざんを行っても、対象チャンクのGCM認証タグ検証が必ず失敗するため検知できる(各チャンク単体の改ざん検知に加えて、ストリーム全体としての順序・完全性も保証する。GitHub issue #1)。
 4. 各暗号化チャンクは `IV(12B) + 暗号文 + GCM認証タグ(16B)` の形式でバイナリ化する(`packChunk`, `lib/crypto/packet.ts`)。ファイルの最初のパケットに限り、その直前にファイルsalt(16B, 秘匿不要)を平文のまま埋め込む(`iterateEncryptedChunks`, `lib/crypto/stream.ts`)。
 5. R2へのアップロードは、この「salt + 全パケット」のバイト列を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB, `lib/upload/partSize.ts`)ちょうどで切り出してマルチパートで送る(`uploadChunksFromStream`, `lib/upload/chunkUploader.ts`)。R2は「最終パート以外は同一サイズ」を要求するため、先頭パケットにだけ付くsalt(16B)の分でパートサイズを不均一にしない狙い(パケットごとに1パートにすると3パート以上のアップロードが `complete()` で失敗する。GitHub issue #34)。ストレージ上のバイト列自体は連結結果と同一で、復号側の実装には影響しない。
-6. ダウンロード時は逆に、受信したバイトストリームをパケット境界(最終パケットを除き固定長)で切り出しながら、AADを検証しつつ復号し、順次書き出す(`iterateDecryptedChunks`, `lib/crypto/stream.ts`)。非空ファイルの暗号文が全欠落する場合を含め、ストリームが末尾パケットごと欠落したまま無音に終了するケース(通信切断・改ざんによる切り詰め)は、期待バイト数との比較で検出しエラーにする。回数を数えないファイルは、暗号文を複数のHTTP `Range` リクエストで並列取得してから順番に連結し直したものをこのストリームとして渡す(`fetchDecryptedStream` → `createParallelCiphertextStream`, `lib/download/parallelFetch.ts`)。連結結果は単一ストリームと完全に同一なので、パケット切り出し・AAD検証・切り詰め検知はいずれも変更なしで機能する。
+6. ダウンロード時は逆に、受信したバイトストリームをパケット境界(最終パケットを除き固定長)で切り出しながら、AADを検証しつつ復号し、順次書き出す(`iterateDecryptedChunks`, `lib/crypto/stream.ts`)。非空ファイルの暗号文が全欠落する場合を含め、ストリームが末尾パケットごと欠落したままエラーを出さずに終了するケース(通信切断・改ざんによる切り詰め)は、期待バイト数との比較で検出しエラーにする。回数を数えないファイルは、暗号文を複数のHTTP `Range` リクエストで並列取得してから順番に連結し直したものをこのストリームとして渡す(`fetchDecryptedStream` → `createParallelCiphertextStream`, `lib/download/parallelFetch.ts`)。連結結果は単一ストリームと完全に同一なので、パケット切り出し・AAD検証・切り詰め検知はいずれも変更なしで機能する。
 
 ### 互換性(AAD保護導入前にアップロード済みのファイル)
 
@@ -61,7 +61,7 @@ https://<host>/d/{shareId}#{復号鍵(base64url)}
 
 この方式のポイントは、サーバーが侵害されて `wrappedKey`/`keySalt`/暗号化済みファイルすべてが流出したとしても、パスワードを知らない攻撃者は総当たり以外にファイルを復号する手段がないこと。パスワード未設定時は `wrappedKey`/`keySalt` ともに `NULL` で、代わりにURLフラグメントの鍵がそのまま使われる(上記「鍵の受け渡し」参照)。
 
-`GET /api/download/[shareId]` は `shareId` さえ分かれば誰でも `wrappedKey`/`keySalt` を取得できる(パスワード入力画面を出すために必要)。そのため総当たり耐性はパスワードの強度そのものに依存する。弱いパスワード(短い数字列など)だと PBKDF2 のオフライン総当たりが現実的になり「パスワード保護したから公開の場にURLを貼っても安全」という前提が崩れるため、アップローダー側で最小 8 文字を要求する(`lib/passwordPolicy.ts` の `validateSharePassword`。アカウントのパスワードと同じ下限。GitHub issue #80)。パスワードはサーバーへ送られないため、この検証はクライアント(`lib/upload/useUploadSession.tsx`)側でのみ行える。長さは UTF-16 のコードユニット数ではなく Unicode コードポイント数で数える(サロゲートペアを含む 4 文字のパスワードが 8 文字として通ってしまうのを防ぐため)。
+`GET /api/download/[shareId]` は `shareId` さえ分かれば誰でも `wrappedKey`/`keySalt` を取得できる(パスワード入力画面を出すために必要)。そのため総当たり耐性はパスワードの強度そのものに依存する。弱いパスワード(短い数字列など)だと PBKDF2 のオフライン総当たりが現実的になり「パスワード保護したから公開の場にURLを貼っても安全」とは言えないため、アップローダー側で最小 8 文字を要求する(`lib/passwordPolicy.ts` の `validateSharePassword`。アカウントのパスワードと同じ下限。GitHub issue #80)。パスワードはサーバーへ送られないため、この検証はクライアント(`lib/upload/useUploadSession.tsx`)側でのみ行える。長さは UTF-16 のコードユニット数ではなく Unicode コードポイント数で数える(サロゲートペアを含む 4 文字のパスワードが 8 文字として通ってしまうのを防ぐため)。
 
 なお共有の鍵をラップするのは共有を新規作成するときだけなので、パスワードの検証も新規作成時のみ行う。共有作成後に同じ共有へファイルを追加したり失敗を再試行したりする場合、パスワードは既に確定していて変更できない(入力欄もチェックボックスも編集不可になる)。
 

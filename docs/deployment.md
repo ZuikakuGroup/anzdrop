@@ -25,7 +25,7 @@ main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チ�
 - GitHub Actions Artifactの保存期間は90日（組織・リポジトリの設定で短縮される場合がある）。それを超える長期保存が必要なら別途アーカイブを設計する。releaseやmainへの自動書き戻しは行わず、`contents: read`を維持する。
 - GitHub ActionsのAction参照は既存workflowと同じメジャーバージョンタグを使用する。タグの更新を信頼する運用であり、Action本体まで固定したい場合は全ActionをコミットSHAへpinする追加変更が必要。
 
-検証例（`RUN_ID`と`ATTEMPT`は対象のActions runに置き換える）:
+検証例を以下に示す。`RUN_ID`と`ATTEMPT`は対象のActions runに置き換える。
 
 ```bash
 gh run download "$RUN_ID" -R ZuikakuGroup/anzdrop -n "deployment-build-$RUN_ID-$ATTEMPT" -D build
@@ -70,7 +70,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 | `R2_SECRET_ACCESS_KEY` | 上記トークンのシークレットキー |
 | `CLOUDFLARE_ACCOUNT_ID` | S3エンドポイント(`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`)用のアカウントID |
 
-これら3つが揃っているときだけ `POST /api/upload/start` が `uploadMode: "direct"` を返す。未設定(ローカル Miniflare 等)では `"proxy"` にフォールバックし、従来の `/api/upload/chunk` 経路を使う。
+R2直アップロード用の3つのSecretが揃っているときだけ `POST /api/upload/start` が `uploadMode: "direct"` を返す。未設定(ローカル Miniflare 等)では `"proxy"` にフォールバックし、従来の `/api/upload/chunk` 経路を使う。
 
 #### R2 直アップロード用トークンと CORS
 
@@ -134,9 +134,9 @@ Rate Limiting Rules は**ゾーン単位の機能**なので、Worker を `*.wor
    - 特性(With the same characteristics): **IP**
    - 閾値・期間・アクション・継続時間: プランごとに選べる値が違う(**Free プランはルール1本・カウント期間10秒・Block・継続10秒のみ**)。
 
-閾値を決めるときの注意として、**1回のダウンロード/アップロードが多数のリクエストに分かれる**ことを必ず考慮する。ダウンロードは8MiBウィンドウ×並列6本、アップロードは8MiBパート×最大12並列なので、高速回線の正当な利用者でも数秒間に数十リクエストを出す。ここを見誤ると正当な大容量転送を壊すため、ルール投入後は **Security Events** でしばらく実トラフィックを観察し、正当な利用がマッチしていないことを確認してから閾値を締めること。
+閾値を決めるときの注意として、**1回のダウンロード/アップロードが多数のリクエストに分かれる**ことを必ず考慮する。ダウンロードは8MiBウィンドウ×並列6本、アップロードは8MiBパート×最大12並列なので、高速回線の正当な利用者でも数秒間に数十リクエストを出す。ここを見誤ると正当な大容量転送ができなくなるため、ルール投入後は **Security Events** でしばらく実トラフィックを観察し、正当な利用がマッチしていないことを確認してから閾値を締めること。
 
-アクションについては、`fetch`/`XHR` で呼ばれる API に **Managed Challenge を当てても正しく解決できず UX を壊す**ため、Block を選ぶ(Free プランでは Block のみ)。
+アクションについては、`fetch`/`XHR` で呼ばれる API に **Managed Challenge を当てても正しく解決できず利用を妨げる**ため、Block を選ぶ(Free プランでは Block のみ)。
 
 ## セキュリティレスポンスヘッダ
 
@@ -150,7 +150,7 @@ AstroのmiddlewareとHonoが共通ヘッダーを設定します。AstroのHTML�
 
 `/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`の`verifyAccessJwt()`)でもJWT検証による多層防御を行っている。`/api/admin/**`(JSON API)は未検証時に`403`を返すが、`/admin`ページ自体(`apps/public/src/pages/admin/index.astro`)は管理画面の存在を明かさないよう`404`を返す。
 
-新しい環境でセットアップする場合の概略:
+新しい環境では、次の手順でセットアップする。
 
 1. Cloudflare Zero Trustダッシュボードで `/admin*` と `/api/admin/*` を保護対象としたAccessアプリケーションを作成し、許可するIdP/メールアドレス等のポリシーを設定する。
 2. 作成したアプリの Audience Tag を `wrangler.jsonc` の `CF_ACCESS_AUD` に、チームドメイン(`https://<team>.cloudflareaccess.com`)を `CF_ACCESS_TEAM_DOMAIN` に設定する。
@@ -158,7 +158,7 @@ AstroのmiddlewareとHonoが共通ヘッダーを設定します。AstroのHTML�
 
 ## 有料プラン(Stripe / Bitcoin)のセットアップ
 
-設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境でセットアップする場合の概略:
+設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境では、次の手順でセットアップする。
 
 1. Stripeダッシュボード(またはStripe API)でStandard用・Premium用それぞれの月額サブスクリプションProduct/Priceを作成し、そのidを`wrangler.jsonc`の`STRIPE_PRICE_ID_STANDARD`・`STRIPE_PRICE_ID_PREMIUM`に設定する。Webhook(`server/routes/billing/stripe/webhook/route.ts`)はSubscriptionの実際のPrice IDを見てプランを判定するため、ここで設定したid以外のPriceで契約された場合はプランが反映されない(意図しないプラン活性化を防ぐための防御的な挙動)。
 2. Stripeダッシュボードで秘密鍵・公開可能キーを取得し、秘密鍵は`wrangler secret put STRIPE_SECRET_KEY`で設定する。公開可能キーはGitHub Secretsの`STRIPE_PUBLISHABLE_KEY`に設定する(ビルド時に`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`としてクライアントへ埋め込まれる、公開情報)。

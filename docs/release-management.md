@@ -1,6 +1,6 @@
 # ステージング検証と承認付きリリース
 
-本番は、同じmainコミットのステージング検証を通したうえで、人間がコミットSHAを指定し、GitHub Environmentで別の承認者が承認してから更新する。今回の作業ではリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作は行っていない。設定例は未設定のままではリリースできない。
+同じmainコミットのステージング検証に成功したうえで、人間がコミットSHAを指定し、GitHub Environmentで別の承認者が承認してから、本番を更新する。今回の作業ではリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作は行っていない。設定例は未設定のままではリリースできない。
 
 ## 現在の3 Workerと既存の成果物管理を使う
 
@@ -72,7 +72,7 @@ production jobは同じrunの本番用tarをダウンロードし、署名のwor
 
 `tests/e2e/release-staging.spec.ts` は、検証済みplanとOriginが一致するステージング、または既存の使い捨てローカル環境だけで小さな合成ファイルを送信する。Accessヘッダーは同じOriginだけに付け、第三者へのリクエストには付けない。トークンがtraceに残らないよう記録を無効にし、Service Workerを止めて小さなファイルの通常保存経路を検証する。1日保持の合成データがステージングに残るため、容量を監視し、必要に応じて対象をドライラン確認して人間が片付ける。ステージングのCronは今回有効にしない。新たな自動削除を有効化する際は承認が必要。
 
-ローカルでの再現例:
+ローカルでの再現例を以下に示す。
 
 ```sh
 node scripts/prepare-staging-config.mjs --template
@@ -87,7 +87,7 @@ bash scripts/prepare-auditable-deployment.sh
 
 Versions & Deploymentsには新Versionのアップロード、無トラフィックの保存、割合指定の配信がある。ただし、3 Workerを別々に5→25→50→100%に進めると、APP・PUBLIC・ルーターの新旧組合せと、複数リクエストにまたがる共有処理が増える。CloudflareもService Binding間のversion skewを説明している。AstroではHTMLとハッシュ付きアセットを別リクエストで取得する点にも注意が必要。
 
-今回は、独立ステージングでの検証と、承認後に同じソースの3 Workerを各100%へ順次更新する方式を採る。Workerのコードとアセットは同じVersionで管理するが、古いHTMLを開いたブラウザーから旧アセットが要求される問題までは解消しない。HTMLの既存no-storeを維持し、リリース境界で開きっぱなしのタブも確認する。
+今回は独立ステージングでの検証と、承認後に同じソースの3 Workerを各100%へ順次更新する方式を採る。Workerのコードとアセットは同じVersionで管理するが、古いHTMLを開いたブラウザーから旧アセットが要求される問題までは解消しない。HTMLの既存no-storeを維持し、リリースをまたいで開きっぱなしのタブも確認する。
 
 将来の割合配信には、APIの新旧互換性、version affinity/overrides、旧アセット保持、Version別のエラー率・共有成功率、昇格／中止の観測時間を設計する必要がある。現時点では十分な実トラフィックと判定指標を測っていないため、5%等を安全な閾値と決めない。Version URLも本番Bindingへ接続する可能性があり、独立ステージングの代用にしない。
 
@@ -125,13 +125,13 @@ Workersのロールバックはデータ・外部リソース・Cron/Route等の
 - ESLint、TypeScript、ルーターの型チェック、Astroチェックも成功。Astroは40ファイルでエラー・警告ともに0件だった。
 - 独立した検証エージェントがレビューし、指摘されたリダイレクト時の認証情報漏洩を修正・再検証した。未解消の重大な指摘はない。
 
-ステージングのブラウザーテストは、認証情報の転送を防ぐため同一originを含めてリダイレクトを拒否する。
+ステージングのブラウザーテストは認証情報の転送を防ぐため同一originを含めてリダイレクトを拒否する。
 
 ## 適用前に残る確認
 
 GitHub上のworkflow実行、Environment承認、Cloudflareの実リソース照合、Access/WAF、実ステージングでの共有、実際のrollbackは未実施。ローカル検証に成功しても、この接続確認が完了したことにはならない。初回は非本番でリリース途中の失敗・復旧の演習を行い、承認者、監視指標、当番連絡、停止判断を決めてから本番運用に移す。
 
-一次資料:
+参照した一次資料は次のとおり。
 
 - [Cloudflare gradual deployments](https://developers.cloudflare.com/workers/versions-and-deployments/gradual-deployments/)
 - [Cloudflare rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
