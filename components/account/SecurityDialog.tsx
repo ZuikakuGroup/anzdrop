@@ -70,9 +70,9 @@ export default function SecurityDialog({ open, busy, title, onClose, dialogRef, 
     }}
     className="m-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-lg border border-ink/10 bg-paper p-6 text-ink shadow-[0_16px_64px_-24px_rgba(0,0,0,0.3)] backdrop:bg-ink/40 backdrop:backdrop-blur-xs sm:p-8">
     <div className="flex items-start justify-between gap-4">
-      <h2 id="security-dialog-title" ref={heading} tabIndex={-1} className="pt-1 text-2xl font-black leading-snug tracking-normal outline-none">{title}</h2>
+      <h2 id="security-dialog-title" ref={heading} tabIndex={-1} className="pt-1 text-2xl font-bold leading-snug tracking-normal outline-none">{title}</h2>
       <button type="button" disabled={!open || busy} onClick={onClose} aria-label="閉じる"
-        className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-30"><XIcon className="h-4 w-4" /></button>
+        className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink focus-visible:outline-2 focus-visible:outline-brand disabled:opacity-30"><XIcon className="h-4 w-4" /></button>
     </div>
     <div className="mt-3 space-y-6">{children}</div>
   </dialog>;

@@ -16,7 +16,7 @@ export default function PasswordGate({
 }: PasswordGateProps) {
   return (
     <div className="anz-scroll flex h-40 flex-col justify-center gap-2 overflow-y-auto rounded border-2 border-ink p-6">
-      <span className="text-sm font-bold text-ink/50">
+      <span className="text-sm font-bold text-ink/60">
         パスワードで保護されています
       </span>
       <PasswordInput

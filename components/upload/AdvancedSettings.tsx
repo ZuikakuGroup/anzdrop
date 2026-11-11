@@ -38,7 +38,7 @@ export default function AdvancedSettings({
   return (
     <div className="mt-3 space-y-3">
       <div>
-        <span className="text-xs font-bold text-ink/50">保存期間</span>
+        <span className="text-xs font-bold text-ink/60">保存期間</span>
         <div className="mt-1.5 flex gap-2">
           {RETENTION_OPTIONS.filter((option) =>
             isRetentionAllowedForPlan(option.value, plan)
@@ -61,7 +61,7 @@ export default function AdvancedSettings({
       </div>
 
       <div>
-        <label className="flex items-center gap-2 text-xs font-bold text-ink/50">
+        <label className="flex items-center gap-2 text-xs font-bold text-ink/60">
           <input
             type="checkbox"
             checked={usePassword}
@@ -72,7 +72,7 @@ export default function AdvancedSettings({
           パスワードを設定する
         </label>
         {hasCreatedShare && (
-          <p className="mt-1.5 text-xs text-ink/50">
+          <p className="mt-1.5 text-xs text-ink/60">
             共有作成後はパスワード設定を変更できません。
           </p>
         )}

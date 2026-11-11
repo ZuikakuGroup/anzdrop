@@ -63,7 +63,7 @@ export default function QrCodeModal({ url, isOpen, onClose }: QrCodeModalProps) 
           onClick={onClose}
           aria-label="閉じる"
           title="閉じる"
-          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
         >
           <XIcon className="h-3.5 w-3.5" />
         </button>

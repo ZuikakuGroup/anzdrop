@@ -8,7 +8,7 @@ function PrimaryCta({ className = "" }: { className?: string }) {
   return (
     <a
       href="/"
-      className={"inline-flex min-h-12 items-center justify-center gap-3 rounded bg-brand-action px-6 py-3 text-sm font-black text-paper transition-colors hover:bg-brand-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand " + className}
+      className={"inline-flex min-h-12 items-center justify-center gap-3 rounded bg-brand-action px-6 py-3 text-sm font-bold text-paper transition-colors hover:bg-brand-text focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand " + className}
     >
       無料でファイルを送る <ArrowRightIcon className="h-4 w-4 shrink-0" />
     </a>
@@ -40,7 +40,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
           <div className="mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-[1.1fr_0.9fr] md:gap-8 lg:gap-16">
             <div className="max-w-[39rem]">
               <p className="text-sm font-bold text-brand-text">登録不要の暗号化ファイル共有</p>
-              <h1 id="hero-heading" className="mt-5 text-[clamp(2.35rem,5vw,4.25rem)] font-extrabold leading-[1.22] tracking-tight">
+              <h1 id="hero-heading" className="mt-5 text-[clamp(2.35rem,5vw,4.25rem)] font-bold leading-[1.22] tracking-tight">
                 ファイルは、<br />送る前に<span className="text-brand">暗号化。</span>
               </h1>
               <p className="mt-6 max-w-[32rem] text-base leading-8 text-ink/75 sm:text-lg sm:leading-9">
@@ -72,7 +72,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
           <div className="mx-auto max-w-6xl">
             <div className="max-w-2xl">
               <p className="text-sm font-bold text-brand-text">使い方</p>
-              <h2 id="steps-heading" className="mt-3 text-3xl font-extrabold leading-snug tracking-tight sm:text-4xl">選んで、送って、リンクを渡す。</h2>
+              <h2 id="steps-heading" className="mt-3 text-3xl font-bold leading-snug tracking-tight sm:text-4xl">選んで、送って、リンクを渡す。</h2>
               <p className="mt-4 text-base leading-8 text-ink/70">受け取る人も、共有リンクをブラウザで開くだけです。</p>
             </div>
             <ol className="mt-10 grid gap-4 md:grid-cols-3 md:gap-5">
@@ -91,7 +91,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
           <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[0.9fr_1.1fr] md:items-center md:gap-12 lg:gap-20">
             <div>
               <p className="text-sm font-bold text-brand-text">暗号化の仕組み</p>
-              <h2 id="privacy-heading" className="mt-3 text-3xl font-extrabold leading-snug tracking-tight sm:text-4xl">復号鍵は、サーバーに送らない。</h2>
+              <h2 id="privacy-heading" className="mt-3 text-3xl font-bold leading-snug tracking-tight sm:text-4xl">復号鍵は、サーバーに送らない。</h2>
               <p className="mt-5 text-base leading-8 text-ink/75">
                 ファイルは送信前にブラウザ内で暗号化します。通常の共有の場合、復号鍵は共有URLの「#」以降に入り、この部分はサーバーへ送られません。
               </p>
@@ -115,7 +115,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
         <section aria-labelledby="plan-heading" className="px-5 py-16 sm:px-8 sm:py-24">
           <div className="mx-auto max-w-6xl">
             <div className="flex flex-wrap items-end justify-between gap-4">
-              <div><p className="text-sm font-bold text-brand-text">無料プラン</p><h2 id="plan-heading" className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">登録なしで、無料から。</h2></div>
+              <div><p className="text-sm font-bold text-brand-text">無料プラン</p><h2 id="plan-heading" className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">登録なしで、無料から。</h2></div>
               <a href="/pricing" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">料金プランを見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></a>
             </div>
             <dl className="mt-10 grid border-y border-ink/15 sm:grid-cols-3 sm:divide-x sm:divide-ink/15">
@@ -129,7 +129,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
 
         <section aria-labelledby="faq-heading" className="border-t border-ink/10 px-5 py-16 sm:px-8 sm:py-24">
           <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
-            <h2 id="faq-heading" className="text-3xl font-extrabold tracking-tight sm:text-4xl">よくある質問</h2>
+            <h2 id="faq-heading" className="text-3xl font-bold tracking-tight sm:text-4xl">よくある質問</h2>
             <FaqAccordion
               native={nativeFaq}
               items={FAQS}
@@ -141,7 +141,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
 
         <section className="border-t border-ink/10 px-5 py-16 sm:px-8 sm:py-20">
           <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-7 md:flex-row md:items-center">
-            <div><h2 className="text-3xl font-extrabold leading-snug tracking-tight sm:text-4xl">準備ができたら、ファイルを選ぶだけ。</h2><p className="mt-3 text-sm text-ink/65">登録なしで、そのまま始められます。</p></div>
+            <div><h2 className="text-3xl font-bold leading-snug tracking-tight sm:text-4xl">準備ができたら、ファイルを選ぶだけ。</h2><p className="mt-3 text-sm text-ink/65">登録なしで、そのまま始められます。</p></div>
             <PrimaryCta className="w-full shrink-0 sm:w-auto" />
           </div>
         </section>

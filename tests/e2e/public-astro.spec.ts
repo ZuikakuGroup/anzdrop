@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { generateKey, exportKey, encodeBase64Url, encryptChunk, packChunk, iterateEncryptedChunks } from '../../lib/crypto';
 
 test.describe('Astro公開ページ（ローカルWorkers）', () => {
   test.skip(process.env.PUBLIC_ASTRO_TEST !== 'true', 'Astro seed preview専用');
@@ -158,6 +159,23 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     release();
     await expect(page).toHaveURL(/\/$/);
   });
+  test('元の杏色と700ウェイトの見出し、送受信の導入文を維持する', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Anzdrop', exact: true })).toHaveCSS('font-weight', '700');
+    await expect(page.getByRole('button', { name: 'アップロードする', exact: true })).toHaveCSS('background-color', 'rgb(241, 90, 34)');
+    await expect(page.locator('main')).toContainText('ファイル名だけで、わかってしまうことがある。');
+    await expect(page.locator('main')).toContainText('中身もファイル名も、エンドツーエンド暗号化。');
+    await page.goto('/pricing');
+    await expect(page.getByRole('heading', { name: '料金プラン', exact: true })).toHaveCSS('font-weight', '700');
+    const premium = page.getByRole('heading', { name: 'Premium', exact: true }).locator('..');
+    await expect(premium.getByRole('link', { name: '有料プランを選ぶ' })).toHaveCSS('background-color', 'rgb(241, 90, 34)');
+    await page.route('**/api/download/ui-brand-review', route => route.fulfill({ status: 404, json: { success: false } }));
+    await page.goto('/d/ui-brand-review');
+    await expect(page.getByRole('heading', { name: 'ダウンロード', exact: true })).toHaveCSS('font-weight', '700');
+    await expect(page.locator('main')).toContainText('ナウでヤングな暗号化ファイル共有サービス');
+    await expect(page.locator('main')).toContainText('プライバシーにこだわっており、いい感じに暗号化されます。');
+  });
+
   test('Standardの料金と購入導線を公開する', async ({ page }) => {
     await page.goto('/pricing');
     const card = page.getByRole('heading', { name: 'Standard', exact: true }).locator('..');
@@ -165,8 +183,45 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(card).toContainText('20GB');
     await expect(card).toContainText('15日');
     await expect(card).not.toContainText('準備中');
-    await expect(card.getByRole('link', { name: '始める' })).toHaveAttribute('href', '/mypage/billing');
+    await expect(card.getByRole('link', { name: '有料プランを選ぶ' })).toHaveAttribute('href', '/mypage/billing');
   });
+  test('プレビューはキーボード操作を内側に保ち、Escで閉じて元のボタンへ戻る', async ({ page }) => {
+    // Synthetic encrypted image served entirely by browser routes; no server storage.
+    const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6L9sAAAAASUVORK5CYII=', 'base64');
+    const file = new File([Uint8Array.from(bytes)], 'preview.png');
+    const key = await generateKey();
+    const name = encodeBase64Url(packChunk(await encryptChunk(new TextEncoder().encode(file.name), key)));
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of iterateEncryptedChunks(file, key)) chunks.push(chunk);
+    await page.route('**/api/download/preview-review', route => route.fulfill({ json: {
+      success: true,
+      share: { id: 'preview-review', expires_at: '2099-01-01', wrappedKey: null, keySalt: null, previewAllowed: true },
+      files: [{ id: 'preview-file', name, size: bytes.length, isOneTime: false }],
+    } }));
+    await page.route('**/api/file/preview-file', route => route.fulfill({ contentType: 'application/octet-stream', body: Buffer.concat(chunks) }));
+    await page.goto(`/d/preview-review#${encodeBase64Url(await exportKey(key))}`);
+    const trigger = page.getByRole('button', { name: 'プレビュー', exact: true });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: file.name });
+    await expect(dialog).toBeVisible();
+    const close = dialog.getByRole('button', { name: '閉じる', exact: true });
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.querySelector('dialog')?.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => document.querySelector('dialog')?.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await close.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
   test('ブログのページ送り・記事・画像拡大・404', async ({ page, request }) => {
     await page.goto('/blog');
     const articleCard = page.locator('main article').first();

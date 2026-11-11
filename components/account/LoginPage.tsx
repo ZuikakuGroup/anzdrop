@@ -123,7 +123,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <label
                 htmlFor="login-account-id"
-                className="text-xs font-bold text-ink/50"
+                className="text-xs font-bold text-ink/60"
               >
                 アカウントID
               </label>
@@ -145,7 +145,7 @@ export default function LoginPage() {
             <div className="space-y-1">
               <label
                 htmlFor="login-password"
-                className="text-xs font-bold text-ink/50"
+                className="text-xs font-bold text-ink/60"
               >
                 パスワード
               </label>
@@ -167,7 +167,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
               {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
               {isSubmitting ? "ログイン中..." : "ログインする"}
@@ -175,7 +175,7 @@ export default function LoginPage() {
 
             {canUsePasskey ? <button type="button" onClick={passkeyLogin} disabled={isSubmitting}
               className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold disabled:opacity-30">パスキーでログイン</button>
-              : <p className="text-xs text-ink/50">このブラウザではパスキーを利用できません。パスワードでログインしてください。</p>}
+              : <p className="text-xs text-ink/60">このブラウザではパスキーを利用できません。パスワードでログインしてください。</p>}
 
             <p
               role="alert"
@@ -184,7 +184,7 @@ export default function LoginPage() {
               {error}
             </p>
 
-            <div className="flex justify-between text-xs text-ink/50">
+            <div className="flex justify-between text-xs text-ink/60">
               <a
                 href="/mypage/signup"
                 className="font-bold text-brand hover:underline"
