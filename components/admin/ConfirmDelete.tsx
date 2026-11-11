@@ -21,7 +21,7 @@ export default function ConfirmDelete({ children, pending, onConfirm, onCancel }
       <button
         onClick={onCancel}
         disabled={pending}
-        className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+        className="rounded px-2 py-1 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
       >
         キャンセル
       </button>

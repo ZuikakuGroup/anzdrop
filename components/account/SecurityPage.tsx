@@ -16,9 +16,9 @@ import type { SecurityAction, SecurityStatus, SecurityResponse } from "@/lib/acc
 import OtpInput from "./OtpInput";
 
 const subscribe = () => () => {};
-const buttonStyle = "rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30";
-const primaryStyle = "rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30";
-const cancelStyle = "rounded px-4 py-3 text-sm font-bold text-ink/50 transition-colors hover:bg-ink/[0.03] hover:text-ink disabled:opacity-30";
+const buttonStyle = "rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30";
+const primaryStyle = "rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30";
+const cancelStyle = "rounded px-4 py-3 text-sm font-bold text-ink/60 transition-colors hover:bg-ink/[0.03] hover:text-ink disabled:opacity-30";
 type PendingAction = { action: SecurityAction; targetId?: string; name?: string };
 
 async function fetchSecurityStatus(): Promise<SecurityStatus | null> {
@@ -174,8 +174,8 @@ export default function SecurityPage() {
       <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
       <div className="space-y-1">
         <a href="/mypage" className="text-sm text-ink/60 hover:text-ink">← マイページ</a>
-        <h1 className="text-2xl font-black leading-snug tracking-normal">ログイン・セキュリティ</h1>
-        <p className="text-xs text-ink/50">パスキーと認証アプリは、必要に応じて設定できます。</p>
+        <h1 className="text-2xl font-bold leading-snug tracking-normal">ログイン・セキュリティ</h1>
+        <p className="text-xs text-ink/60">パスキーと認証アプリは、必要に応じて設定できます。</p>
       </div>
       {!status ? <div className="rounded border border-ink/10 p-4">
         {error ? <><p role="alert" className="mb-4 text-sm text-brand">{error}</p><button onClick={load} className={buttonStyle}>再読み込み</button></> : <Spinner className="h-6 w-6 text-brand" />}
@@ -183,7 +183,7 @@ export default function SecurityPage() {
         <section className="rounded border border-ink/15 bg-ink/[0.02] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-bold">パスキー</h2>
-            <span className="text-xs font-bold text-ink/50">{status.passkeys.length ? `登録済み ${status.passkeys.length}件` : "未登録"}</span>
+            <span className="text-xs font-bold text-ink/60">{status.passkeys.length ? `登録済み ${status.passkeys.length}件` : "未登録"}</span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-ink/65">指紋・顔認証・端末のPINでログインできます。</p>
           {status.passkeys.length > 0 && <ul className="mt-5 divide-y divide-ink/10 border-y border-ink/10">{status.passkeys.map((key) => <li key={key.id} className="flex items-center justify-between gap-4 py-4">
@@ -198,7 +198,7 @@ export default function SecurityPage() {
         <section className="rounded border border-ink/15 bg-ink/[0.02] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-bold">認証アプリのOTP</h2>
-            <span className={`text-xs font-bold ${status.totpEnabled ? "text-brand" : "text-ink/50"}`}>{status.totpEnabled ? "有効" : "未設定"}</span>
+            <span className={`text-xs font-bold ${status.totpEnabled ? "text-brand" : "text-ink/60"}`}>{status.totpEnabled ? "有効" : "未設定"}</span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-ink/65">有効化すると、パスワードログインに認証コードが必要になります。パスキーではコードなしでログインできます。</p>
           <button disabled={busy || done} onClick={(event) => choose({ action: status.totpEnabled ? "totp-disable" : "totp-enable" }, event.currentTarget)} className={`mt-4 w-full ${buttonStyle}`}>{status.totpEnabled ? "OTPを解除" : "OTPを設定"}</button>
@@ -223,11 +223,11 @@ export default function SecurityPage() {
         choose({ action: "passkey-add", name });
       }} className="space-y-5">
         <p className="text-sm leading-relaxed text-ink/60">あとで見分けられる名前を付けてください。</p>
-        <div className="space-y-2 pt-2"><label htmlFor="passkey-name" className="text-xs font-bold text-ink/50">パスキーの表示名</label>
+        <div className="space-y-2 pt-2"><label htmlFor="passkey-name" className="text-xs font-bold text-ink/60">パスキーの表示名</label>
           <input id="passkey-name" name="name" required maxLength={64} placeholder="自分のスマートフォン" className="w-full rounded border-2 border-ink/20 px-3 py-2 text-base outline-none focus:border-brand" /></div>
         <div className="grid grid-cols-2 gap-3 pt-3"><button type="button" onClick={() => void cancel()} className={cancelStyle}>キャンセル</button><button className={primaryStyle}>次へ</button></div>
       </form> : setup ? <form onSubmit={confirmOtp} className="space-y-5">
-        <p className="border-l-2 border-brand pl-3 text-xs font-bold text-ink/50">2 / 2　認証アプリに登録</p>
+        <p className="border-l-2 border-brand pl-3 text-xs font-bold text-ink/60">2 / 2　認証アプリに登録</p>
         <p className="text-sm leading-relaxed text-ink/70">認証アプリでQRコードを読み取り、表示された6桁コードを入力してください。確認するまでOTPは有効になりません。</p>
         <canvas ref={canvas} role="img" aria-label="認証アプリ登録用QRコード" className="mx-auto max-w-full" />
         <details className="rounded border border-ink/15 bg-ink/[0.02] p-3"><summary className="cursor-pointer text-sm font-bold">QRコードを読み取れない場合</summary><p className="mt-3 text-xs text-ink/60">手入力用の秘密（他の人に共有しないでください）</p><p className="mt-2 break-all font-mono text-sm">{setup.secret}</p></details>
@@ -235,7 +235,7 @@ export default function SecurityPage() {
         <p className="text-xs text-ink/60">設定は10分で期限切れになります。</p>
         <div className="grid grid-cols-1 gap-2 pt-3 sm:grid-cols-2"><button type="button" disabled={busy} onClick={() => void cancel()} className={cancelStyle}>設定を中止</button><button disabled={busy} className={primaryStyle}>{busy ? "確認中…" : "OTPを有効にする"}</button></div>
       </form> : pending ? <div className="space-y-5">
-        <p className="border-l-2 border-brand pl-3 text-xs font-bold text-ink/50">{pending.action === "passkey-add" ? "2 / 3" : pending.action === "totp-enable" ? "1 / 2" : "最終確認"}　本人確認</p>
+        <p className="border-l-2 border-brand pl-3 text-xs font-bold text-ink/60">{pending.action === "passkey-add" ? "2 / 3" : pending.action === "totp-enable" ? "1 / 2" : "最終確認"}　本人確認</p>
         {pending.action === "passkey-add" && <p className="break-all text-sm">登録するパスキー: <strong>{pending.name}</strong></p>}
         {pending.action === "passkey-delete" && <p className="break-all text-sm">削除するパスキー: <strong>{status?.passkeys.find((key) => key.id === pending.targetId)?.name}</strong></p>}
         {pending.action === "totp-disable" && <p className="text-sm leading-relaxed">OTPを解除すると、パスワードだけでログインできるようになります。</p>}
@@ -243,7 +243,7 @@ export default function SecurityPage() {
         {hasPasskey && <button disabled={busy} onClick={reauthenticateWithPasskey} className={`${primaryStyle} w-full`}>{busy ? "確認中…" : "パスキーで本人確認"}</button>}
         {hasPasskey && !passwordMethod && <button disabled={busy} onClick={() => setPasswordMethod(true)} className="w-full text-sm text-ink/65 underline underline-offset-4">パスワードで確認する</button>}
         {showPassword && <form onSubmit={reauthenticate} className="space-y-4">
-          <div className="space-y-2"><label htmlFor="security-password" className="text-xs font-bold text-ink/50">現在のパスワード</label>
+          <div className="space-y-2"><label htmlFor="security-password" className="text-xs font-bold text-ink/60">現在のパスワード</label>
             <PasswordInput id="security-password" name="password" value={password} onChange={setPassword} autoComplete="current-password" disabled={busy} className="w-full rounded border-2 border-ink/20 py-2 pl-3 pr-10 text-base outline-none focus:border-brand" /></div>
           {status?.totpEnabled && <><OtpInput id="security-otp" disabled={busy} /><p className="text-xs text-ink/60">ログイン直後は、認証アプリのコードが次に変わってから入力してください。</p></>}
           <button disabled={busy} className={`${hasPasskey ? buttonStyle : primaryStyle} w-full`}>{busy ? "確認中…" : "本人確認して続ける"}</button>

@@ -117,7 +117,7 @@ function PayButton({ returnUrl, onSuccess, onCancel }: PayButtonProps) {
         <button
           type="submit"
           disabled={!stripe || !elements || isSubmitting}
-          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
         >
           {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
           支払いを確定する
@@ -127,7 +127,7 @@ function PayButton({ returnUrl, onSuccess, onCancel }: PayButtonProps) {
           type="button"
           onClick={onCancel}
           disabled={isSubmitting}
-          className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
+          className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
         >
           やめる
         </button>

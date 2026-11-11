@@ -50,7 +50,7 @@ const FAQ_ITEMS: { question: string; answer: React.ReactNode }[] = [
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="flex items-center gap-3 text-lg font-black">
+    <h2 className="flex items-center gap-3 text-lg font-bold">
       <span
         aria-hidden="true"
         className="h-[1.1em] w-1 shrink-0 rounded-sm bg-brand"
@@ -72,11 +72,11 @@ export default function AboutPage({ showChrome = true, nativeFaq = false }: { sh
               aria-hidden="true"
               className="pointer-events-none absolute -right-6 -top-8 h-40 w-40 text-brand/10"
             />
-            <h1 className="relative text-2xl font-black leading-snug tracking-normal sm:text-3xl">
+            <h1 className="relative text-2xl font-bold leading-snug tracking-normal sm:text-3xl">
               Anzdropとは
             </h1>
             <p className="relative max-w-md text-sm leading-relaxed text-ink/60">
-              アカウントIDとパスワードだけで、必要な分だけご利用いただけます。
+              登録せずに使える、暗号化ファイル共有。
             </p>
           </div>
 
@@ -112,7 +112,7 @@ export default function AboutPage({ showChrome = true, nativeFaq = false }: { sh
               href="https://github.com/ZuikakuGroup/anzdrop"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded border-2 border-ink px-4 py-2.5 text-sm font-medium tracking-wider text-ink transition-colors hover:bg-ink/[0.03]"
+              className="inline-flex items-center gap-2 rounded border-2 border-ink px-4 py-2.5 text-sm font-medium tracking-normal text-ink transition-colors hover:bg-ink/[0.03]"
             >
               開発に参加する
               <ArrowUpRightIcon className="h-4 w-4" />

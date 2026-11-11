@@ -28,7 +28,7 @@ export default function LegalLayout({
               aria-hidden="true"
               className="pointer-events-none absolute -right-6 -top-8 h-40 w-40 text-brand/10"
             />
-            <h1 className="relative text-2xl font-black leading-snug tracking-normal sm:text-3xl">
+            <h1 className="relative text-2xl font-bold leading-snug tracking-normal sm:text-3xl">
               {title}
             </h1>
             {description ? (
@@ -36,14 +36,14 @@ export default function LegalLayout({
                 {description}
               </p>
             ) : null}
-            <p className="relative text-xs text-ink/40">
+            <p className="relative text-xs text-ink/60">
               最終改定日: {lastUpdated}
             </p>
           </div>
 
           {children}
 
-          <nav className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-ink/50">
+          <nav className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-ink/60">
             <a href="/legal/terms" className="hover:text-ink hover:underline">
               利用規約
             </a>
@@ -74,7 +74,7 @@ export function LegalSection({
 }) {
   return (
     <section className="space-y-3 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
-      <h2 className="flex items-center gap-3 text-lg font-black">
+      <h2 className="flex items-center gap-3 text-lg font-bold">
         <span
           aria-hidden="true"
           className="h-[1.1em] w-1 shrink-0 rounded-sm bg-brand"
@@ -108,7 +108,7 @@ export function LegalLink({
 
 export function LegalList({ items }: { items: React.ReactNode[] }) {
   return (
-    <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/30">
+    <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
       {items.map((item, index) => (
         <li key={index}>{item}</li>
       ))}

@@ -128,6 +128,8 @@ export function useDownloadActions({ files, setFiles, key, previewAllowed, setEr
       return;
     }
 
+    // Disabling the trigger while fetching can move focus to the document body.
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     busy.current = true;
     setPreviewLoadingId(file.id);
     setError("");
@@ -137,7 +139,7 @@ export function useDownloadActions({ files, setFiles, key, previewAllowed, setEr
       const blob = new Blob([bytes as BlobPart], { type: mimeType });
       const url = URL.createObjectURL(blob);
 
-      if (mounted.current) setPreview({ file, url, kind });
+      if (mounted.current) setPreview({ file, url, kind, trigger });
       else URL.revokeObjectURL(url);
     } catch (err) {
       if (mounted.current) {

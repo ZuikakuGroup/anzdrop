@@ -24,10 +24,10 @@ export default function UploadFilePicker({
     >
       {files.length === 0 ? (
         <>
-          <span className="text-base font-black">
+          <span className="text-base font-bold">
             ファイルを選択
           </span>
-          <span className="text-xs font-bold text-ink/50">
+          <span className="text-xs font-bold text-ink/60">
             タップ・クリックで選択<br />ファイル・フォルダをドロップ
           </span>
         </>
@@ -39,7 +39,7 @@ export default function UploadFilePicker({
               className="flex items-center justify-between gap-4 px-2 py-2"
             >
               <span className="truncate">{pendingFile.path}</span>
-              <span className="shrink-0 font-bold text-ink/40">
+              <span className="shrink-0 font-bold text-ink/60">
                 {formatBytes(pendingFile.file.size)}
               </span>
             </li>

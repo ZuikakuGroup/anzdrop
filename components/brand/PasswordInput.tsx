@@ -53,7 +53,7 @@ export default function PasswordInput({
         onClick={() => setIsVisible((prev) => !prev)}
         aria-label={isVisible ? "パスワードを隠す" : "パスワードを表示"}
         title={isVisible ? "パスワードを隠す" : "パスワードを表示"}
-        className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+        className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
       >
         {isVisible ? (
           <EyeOffIcon className="h-4 w-4" />

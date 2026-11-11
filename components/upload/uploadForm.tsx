@@ -83,16 +83,17 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
+            <h1 className="text-2xl font-bold leading-snug tracking-normal">
               Anzdrop
             </h1>
-            <p className="text-xs text-ink/50">
+            <p className="text-xs text-ink/60">
               登録不要の暗号化ファイル共有
             </p>
           </div>
 
           <div className="border-l-2 border-brand py-0.5 pl-3 text-[13px] leading-relaxed text-ink/60">
-            ファイルを選んで、暗号化して送る。<br/>発行された共有リンクを相手に送ってください。
+            ファイル名だけで、わかってしまうことがある。<br />
+            中身もファイル名も、エンドツーエンド暗号化。
           </div>
 
           <div className="space-y-5">
@@ -137,7 +138,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
                 onFocus={preloadAdvancedSettings}
                 aria-expanded={showAdvanced}
                 aria-controls="upload-advanced-settings"
-                className="flex items-center gap-1 text-xs font-bold text-ink/50 hover:text-ink"
+                className="flex items-center gap-1 text-xs font-bold text-ink/60 hover:text-ink"
               >
                 詳細設定
                 <ChevronIcon
@@ -178,7 +179,7 @@ export default function UploadForm({ header, footer }: UploadFormProps) {
               onPointerDown={prepareTurnstile}
               onFocus={prepareTurnstile}
               disabled={isUploading || !!shareUrl}
-              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
               {isUploading && <Spinner className="h-4 w-4 text-paper" />}
               {isUploading ? "アップロード中..." : "アップロードする"}

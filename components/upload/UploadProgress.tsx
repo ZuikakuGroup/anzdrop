@@ -9,7 +9,7 @@ export default function UploadProgress({ progress }: UploadProgressProps) {
   return (
     <div className="flex h-40 flex-col items-center justify-center gap-3 rounded border-2 border-ink p-6 text-center">
       <Spinner className="h-6 w-6 text-brand" />
-      <span className="text-xs font-bold text-ink/50">
+      <span className="text-xs font-bold text-ink/60">
         アップロード中... {progress}%
       </span>
       <div role="progressbar" aria-label="アップロード進捗" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} className="h-1 w-full max-w-[180px] overflow-hidden rounded-full bg-ink/10">
