@@ -45,7 +45,7 @@
     "@simplewebauthn/server": "^14.0.3",
     "@stripe/react-stripe-js": "^7.0.1",
     "@stripe/stripe-js": "^10.2.1",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "astro": "^7.4.4",
     "aws4fetch": "^1.0.20",
     "chart.js": "^4.6.1",
