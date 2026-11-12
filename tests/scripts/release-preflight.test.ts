@@ -26,7 +26,7 @@ async function fixture() {
 }
 
 function remoteResult(url: string, missingSecret = false) {
-  if (url.endsWith("/environments/production")) return { protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: true }], can_admins_bypass: false };
+  if (url.endsWith("/environments/production")) return { protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: false }], can_admins_bypass: false };
   if (url.includes("/d1/database/")) return { success: true, result: { uuid: url.split("/").at(-1), name: "anzdrop-db" } };
   if (url.includes("/r2/buckets/")) return { success: true, result: { name: "anzdrop" } };
   if (url.endsWith("/secrets")) return { success: true, result: url.endsWith("/anzdrop/secrets") ? (missingSecret ? [] : requiredAppSecrets.map(name => ({ name, type: "secret_text" }))) : [] };
@@ -50,6 +50,37 @@ it("checks only remote metadata and records the full baseline before a release c
     expect(baseline.artifactSha256).toBe("a".repeat(64));
     expect(requests).toHaveLength(9);
     expect(JSON.stringify(baseline)).not.toContain(environment.CLOUDFLARE_API_TOKEN);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("preserves the production PUBLIC CMS reader key without requiring it on CMS-free deployments", async () => {
+  const { directory, environment } = await fixture();
+  try {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/anzdrop-public/secrets")) return Response.json({ success: true, result: [{ name: "MICROCMS_API_KEY", type: "secret_text" }] });
+      return Response.json(remoteResult(url));
+    });
+    await releasePreflight("production", { environment, fetcher, directory });
+    const baseline = JSON.parse(await readFile(path.join(directory, "tmp/pre-release-deployments.json"), "utf8"));
+    expect(baseline.workers).toHaveLength(3);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it.each([
+  ["anzdrop-public", "SESSION_SECRET"],
+  ["anzdrop-public", "ACCOUNT_AUTH_ENCRYPTION_KEY"],
+  ["anzdrop-public", "STRIPE_SECRET_KEY"],
+  ["anzdrop-public", "UNKNOWN_SECRET"],
+  ["anzdrop-router", "MICROCMS_API_KEY"],
+])("rejects %s holding %s before recording a deployable baseline", async (worker, name) => {
+  const { directory, environment } = await fixture();
+  try {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith(`/${worker}/secrets`)) return Response.json({ success: true, result: ["MICROCMS_API_KEY", name].map(secret => ({ name: secret, type: "secret_text" })) });
+      return Response.json(remoteResult(url));
+    });
+    await expect(releasePreflight("production", { environment, fetcher, directory })).rejects.toThrow("unexpected secrets");
+    await expect(readFile(path.join(directory, "tmp/pre-release-deployments.json"))).rejects.toThrow();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

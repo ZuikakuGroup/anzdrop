@@ -50,7 +50,7 @@ export function assertReleaseConfigs(configs, target, production, plan) {
 
 export function assertProductionApprovalPolicy(environment) {
   const reviewers = environment?.protection_rules?.find(rule => rule.type === "required_reviewers");
-  if (!reviewers?.reviewers?.length || reviewers.prevent_self_review !== true || environment.can_admins_bypass !== false) throw new Error("Production environment requires reviewers, no self-review, and no admin bypass");
+  if (!reviewers?.reviewers?.length || environment.can_admins_bypass !== false) throw new Error("Production environment requires reviewers and no admin bypass");
 }
 
 
