@@ -27,7 +27,7 @@ API・Astro・ルーターを決定論的なtarにまとめ、SHA-256とGitHub A
 
 1. ステージング用の3 Worker、D1、R2、ルーターの専用Routeを準備する。可能ならCloudflareアカウントも本番と分ける。同じアカウントでもD1・R2・Worker名は分離する。
 2. 専用ホスト全体をCloudflare Accessで保護する。管理者向けのaudienceは本番と別にする。APP・PUBLICのworkers.devとVersion URLは公開しない。preflightは資格情報なしのトップ・APIアクセスが設定済みAccessチームのログインへリダイレクトされることも確認する。Service Authのみで401を返す設定はこの検証を通らないため、利用者のログインポリシーと専用サービストークンの許可を併用する。Access/WAF/DNS設定全体をWorkerデプロイが作成・検証するわけではないため、初回リリース前に人間が確認する。
-3. APPの必須Secretを個別に設定する。空の既存Workerを作り、Secretと初期Versionを用意する初回bootstrapは通常リリースと分けて承認・実施する。PUBLIC・ルーターにはアプリSecretを設定しない。
+3. APPの必須Secretを個別に設定する。空の既存Workerを作り、Secretと初期Versionを用意する初回bootstrapは通常リリースと分けて承認・実施する。PUBLIC・ルーターには認証・決済Secretを設定しない。本番PUBLICは既存ブログのGET専用 `MICROCMS_API_KEY` だけを許可する（未設定も可）。ルーターと初期ステージングPUBLICはSecretを持たない。
 4. ステージング全体にAccessを適用したことを確認して、Turnstileの公式テスト用サイトキーとSecretを設定する。Accessサービストークンはステージング専用とし、本番Accessアプリを許可対象にしない。
 5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionにはRequired reviewers、管理者の保護ルール回避禁止を設定する。一人で開発・運用する場合は本人をRequired reviewerに指定し、Prevent self-reviewを無効にする。実行者本人も承認できるが、完全なmain SHAを指定した手動実行、同じrunのステージング成功、Environmentでの明示的な承認は引き続き必須とする。設定を確認できない場合は本番preflightを失敗させる。
 6. ステージング設定・Secret・アクセス経路をレビューした後、リポジトリ変数 `STAGING_RELEASE_ENABLED=true` でステージングの自動更新を有効にする。今回はこの変数も設定していない。
@@ -135,7 +135,7 @@ Workersのロールバックはデータ・外部リソース・Cron/Route等の
 - 同じCloudflareアカウント内に `anzdrop-staging-db`、非公開R2バケット `anzdrop-staging`、ステージング用3 Workerを作成した。Workerは初期化用の503応答だけを返し、workers.dev・Preview URLは無効にした。アプリの配信・マイグレーションは未実施。
 - `staging.anzdrop.com` のDNSと専用ルート、ホスト全体のAccess保護を設定した。本人ログインとステージング専用CIサービストークンを許可する。未認証のトップ・account API・upload APIがAccessログインへ転送され、CI資格情報では初期化Workerへ到達することを確認した。
 - ステージングAPPには本番と別に生成したセッション鍵・OTP暗号化鍵とTurnstile公式テストSecretを設定した。PUBLIC・ルーターにはアプリSecretを設定していない。GitHub staging EnvironmentにはAccess資格情報、リソースplan、公式テスト用サイトキーを設定した。
-- 専用デプロイトークンの発行は接続の権限不足（`Account API Tokens Write`）により未完了。`STAGING_RELEASE_ENABLED` は未設定のまま。本番は更新しておらず、ステージング共有E2E・本番リリースは未実施。
+- 専用デプロイトークンを管理画面で作成し、GitHub staging Environmentの `CLOUDFLARE_API_TOKEN` に保存した。有効期限は2027-02-10。Workers Scripts Write、D1 Write、R2 Storage Read、Account Settings Readとanzdrop.comのWorkers Routes Writeを許可する。Workers・D1の権限は同アカウント内の本番にも届くため、完全な権限分離ではない。`STAGING_RELEASE_ENABLED=true` とし、mainのステージング検証を手動実行した。検証の成功はrun結果で確認する。本番は更新していない。
 
 初回導入時（2026-10-30）はGitHub上のworkflow実行、Environment承認、Cloudflareの実リソース照合、Access/WAF、実ステージングでの共有、実際のrollbackが未実施だった。2026-11-12時点の整備済み項目と未完了項目は上記を参照する。ローカル検証に成功しても、この接続確認が完了したことにはならない。初回は非本番でリリース途中の失敗・復旧の演習を行い、承認者、監視指標、当番連絡、停止判断を決めてから本番運用に移す。
 

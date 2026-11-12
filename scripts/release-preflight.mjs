@@ -33,7 +33,8 @@ export async function releasePreflight(target, { environment = process.env, fetc
     if (!Array.isArray(secrets)) throw new Error("Invalid secrets metadata");
     const names = new Set(secrets.map(secret => secret.name));
     if (index === 0 && requiredAppSecrets.some(name => !names.has(name))) throw new Error("Required account/upload secrets are missing");
-    if (index !== 0 && names.size) throw new Error("PUBLIC and router must not hold application secrets");
+    const allowedPublicSecrets = target === "production" && index === 1 ? new Set(["MICROCMS_API_KEY"]) : new Set();
+    if (index !== 0 && [...names].some(name => !allowedPublicSecrets.has(name))) throw new Error("PUBLIC and router contain unexpected secrets");
     if (target === "staging" && ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "CLOUDFLARE_ACCOUNT_ID", "STRIPE_SECRET_KEY", "OPENNODE_API_KEY"].some(name => names.has(name))) throw new Error("Staging defaults to proxy uploads and disabled billing; remove direct-upload/payment credentials");
   }
   if (target === "production") {
