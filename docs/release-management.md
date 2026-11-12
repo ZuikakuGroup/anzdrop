@@ -30,7 +30,7 @@ API・Astro・ルーターを決定論的なtarにまとめ、SHA-256とGitHub A
 3. APPの必須Secretを個別に設定する。空の既存Workerを作り、Secretと初期Versionを用意する初回bootstrapは通常リリースと分けて承認・実施する。PUBLIC・ルーターには認証・決済Secretを設定しない。本番PUBLICは既存ブログのGET専用 `MICROCMS_API_KEY` だけを許可する（未設定も可）。ルーターと初期ステージングPUBLICはSecretを持たない。
 4. ステージング全体にAccessを適用したことを確認して、Turnstileの公式テスト用サイトキーとSecretを設定する。Accessサービストークンはステージング専用とし、本番Accessアプリを許可対象にしない。
 5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionにはRequired reviewers、管理者の保護ルール回避禁止を設定する。一人で開発・運用する場合は本人をRequired reviewerに指定し、Prevent self-reviewを無効にする。実行者本人も承認できるが、完全なmain SHAを指定した手動実行、同じrunのステージング成功、Environmentでの明示的な承認は引き続き必須とする。設定を確認できない場合は本番preflightを失敗させる。
-6. ステージング設定・Secret・アクセス経路をレビューした後、リポジトリ変数 `STAGING_RELEASE_ENABLED=true` でステージングの自動更新を有効にする。今回はこの変数も設定していない。
+6. ステージング設定・Secret・アクセス経路をレビューした後、リポジトリ変数 `STAGING_RELEASE_ENABLED=true` でステージングの自動更新を有効にする。初回導入時（2026-10-30）はこの変数を設定していない。
 
 Workers作成・実行、D1・R2容量、Actions/Artifacts等には契約による利用料が発生し得る。作成や有料プランの変更は、権限と費用を確認してから人間が行う。
 
