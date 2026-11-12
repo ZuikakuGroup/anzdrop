@@ -72,6 +72,24 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     const landing = events.find(event => event.eventName === 'landing_view')!;
     expect(landing.context.landingPath).toBe('/lp/secure-file-sharing');
   });
+  test('ファイル選択の枠はクリックでは残らずキーボード操作では表示する', async ({ page }) => {
+    await page.goto('/');
+    const input = page.getByLabel('送信するファイルを選択');
+    const picker = page.locator('label').filter({ has: input });
+    for (const selected of [false, true]) {
+      if (selected) await input.setInputFiles({ name: 'focus.txt', mimeType: 'text/plain', buffer: Buffer.from('focus') });
+      const chooser = page.waitForEvent('filechooser');
+      await picker.click();
+      await chooser;
+      await expect(input).toBeFocused();
+      await expect(picker).toHaveCSS('outline-style', 'none');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Shift+Tab');
+      await expect(input).toBeFocused();
+      await expect(picker).toHaveCSS('outline-style', 'solid');
+      await expect(picker).toHaveCSS('outline-width', '2px');
+    }
+  });
   test('トップのSEO情報と送信フォームをモバイルでもSSRする', async ({ page, request }) => {
     const response = await request.get('/?utm_source=search');
     expect(response.status()).toBe(200);
