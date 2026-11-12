@@ -63,11 +63,15 @@ describe("staging isolation", () => {
   });
 });
 
-it("requires actual production reviewers and rejects unprotected/self-approvable environments", () => {
+it("requires production reviewers and rejects missing protection or admin bypass", () => {
   expect(() => assertProductionApprovalPolicy({})).toThrow();
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: false }], can_admins_bypass: false })).toThrow();
+  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [] }], can_admins_bypass: false })).toThrow();
   expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: true }], can_admins_bypass: true })).toThrow();
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: true }], can_admins_bypass: false })).not.toThrow();
+  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }] }] })).toThrow();
+});
+
+it.each([false, true])("accepts required approval with prevent_self_review=%s", preventSelfReview => {
+  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: preventSelfReview }], can_admins_bypass: false })).not.toThrow();
 });
 
 it("plans explicit recovery in reverse dependency order without guessing stable versions", () => {

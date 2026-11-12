@@ -2,9 +2,9 @@
 
 ## ビルド・ステージング・承認付きデプロイ
 
-main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpushだけでは本番へデプロイしない。** 本番はmainの完全なSHAを指定したworkflow_dispatch、同じrunのステージング成功、production Environmentの別の承認者による承認を必要とする。
+main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpushだけでは本番へデプロイしない。** 本番はmainの完全なSHAを指定したworkflow_dispatch、同じrunのステージング成功、production Environmentの承認（一人で運用する場合は本人による承認を許可）を必要とする。
 
-ステージングの準備、Secretsの分離、初回bootstrap、最小権限、割合配信の判断と復旧手順は [リリース管理](./release-management.md) を参照する。GitHub/Cloudflare側の設定・リソースは今回作成・変更していない。未設定のままでは本番リリースへ進めない。
+ステージングの準備、Secretsの分離、初回bootstrap、最小権限、割合配信の判断と復旧手順は [リリース管理](./release-management.md) を参照する。初回導入時（2026-10-30）はGitHub/Cloudflare側の設定・リソースを作成していない。環境設定と初回bootstrapの完了を確認してから本番リリースへ進める。
 
 既存の成果物管理を使い、次の順で本番を更新する。
 

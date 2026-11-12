@@ -26,7 +26,7 @@ async function fixture() {
 }
 
 function remoteResult(url: string, missingSecret = false) {
-  if (url.endsWith("/environments/production")) return { protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: true }], can_admins_bypass: false };
+  if (url.endsWith("/environments/production")) return { protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: false }], can_admins_bypass: false };
   if (url.includes("/d1/database/")) return { success: true, result: { uuid: url.split("/").at(-1), name: "anzdrop-db" } };
   if (url.includes("/r2/buckets/")) return { success: true, result: { name: "anzdrop" } };
   if (url.endsWith("/secrets")) return { success: true, result: url.endsWith("/anzdrop/secrets") ? (missingSecret ? [] : requiredAppSecrets.map(name => ({ name, type: "secret_text" }))) : [] };

@@ -1,6 +1,6 @@
 # ステージング検証と承認付きリリース
 
-同じmainコミットのステージング検証に成功したうえで、人間がコミットSHAを指定し、GitHub Environmentで別の承認者が承認してから、本番を更新する。今回の作業ではリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作は行っていない。設定例は未設定のままではリリースできない。
+同じmainコミットのステージング検証に成功したうえで、人間がコミットSHAを指定し、GitHub Environmentで承認してから、本番を更新する。初回導入時（2026-10-30）はリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作を行っていない。設定例は未設定のままではリリースできない。
 
 ## 現在の3 Workerと既存の成果物管理を使う
 
@@ -29,7 +29,7 @@ API・Astro・ルーターを決定論的なtarにまとめ、SHA-256とGitHub A
 2. 専用ホスト全体をCloudflare Accessで保護する。管理者向けのaudienceは本番と別にする。APP・PUBLICのworkers.devとVersion URLは公開しない。preflightは資格情報なしのトップ・APIアクセスが設定済みAccessチームのログインへリダイレクトされることも確認する。Service Authのみで401を返す設定はこの検証を通らないため、利用者のログインポリシーと専用サービストークンの許可を併用する。Access/WAF/DNS設定全体をWorkerデプロイが作成・検証するわけではないため、初回リリース前に人間が確認する。
 3. APPの必須Secretを個別に設定する。空の既存Workerを作り、Secretと初期Versionを用意する初回bootstrapは通常リリースと分けて承認・実施する。PUBLIC・ルーターにはアプリSecretを設定しない。
 4. ステージング全体にAccessを適用したことを確認して、Turnstileの公式テスト用サイトキーとSecretを設定する。Accessサービストークンはステージング専用とし、本番Accessアプリを許可対象にしない。
-5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionにはRequired reviewers、自己承認禁止、管理者の保護ルール回避禁止を設定する。設定を確認できない場合は本番preflightを失敗させる。
+5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionにはRequired reviewers、管理者の保護ルール回避禁止を設定する。一人で開発・運用する場合は本人をRequired reviewerに指定し、Prevent self-reviewを無効にする。実行者本人も承認できるが、完全なmain SHAを指定した手動実行、同じrunのステージング成功、Environmentでの明示的な承認は引き続き必須とする。設定を確認できない場合は本番preflightを失敗させる。
 6. ステージング設定・Secret・アクセス経路をレビューした後、リポジトリ変数 `STAGING_RELEASE_ENABLED=true` でステージングの自動更新を有効にする。今回はこの変数も設定していない。
 
 Workers作成・実行、D1・R2容量、Actions/Artifacts等には契約による利用料が発生し得る。作成や有料プランの変更は、権限と費用を確認してから人間が行う。
@@ -129,7 +129,15 @@ Workersのロールバックはデータ・外部リソース・Cron/Route等の
 
 ## 適用前に残る確認
 
-GitHub上のworkflow実行、Environment承認、Cloudflareの実リソース照合、Access/WAF、実ステージングでの共有、実際のrollbackは未実施。ローカル検証に成功しても、この接続確認が完了したことにはならない。初回は非本番でリリース途中の失敗・復旧の演習を行い、承認者、監視指標、当番連絡、停止判断を決めてから本番運用に移す。
+### 環境整備の状況（2026-11-12）
+
+- GitHubの `staging` / `production` Environmentsを作成し、対象をmainに制限した。productionのRequired reviewerは `namiyama814`、本人承認を許可し、管理者の保護ルール回避は禁止した。コード側の本人承認対応はmainへの反映が必要。
+- 同じCloudflareアカウント内に `anzdrop-staging-db`、非公開R2バケット `anzdrop-staging`、ステージング用3 Workerを作成した。Workerは初期化用の503応答だけを返し、workers.dev・Preview URLは無効にした。アプリの配信・マイグレーションは未実施。
+- `staging.anzdrop.com` のDNSと専用ルート、ホスト全体のAccess保護を設定した。本人ログインとステージング専用CIサービストークンを許可する。未認証のトップ・account API・upload APIがAccessログインへ転送され、CI資格情報では初期化Workerへ到達することを確認した。
+- ステージングAPPには本番と別に生成したセッション鍵・OTP暗号化鍵とTurnstile公式テストSecretを設定した。PUBLIC・ルーターにはアプリSecretを設定していない。GitHub staging EnvironmentにはAccess資格情報、リソースplan、公式テスト用サイトキーを設定した。
+- 専用デプロイトークンの発行は接続の権限不足（`Account API Tokens Write`）により未完了。`STAGING_RELEASE_ENABLED` は未設定のまま。本番は更新しておらず、ステージング共有E2E・本番リリースは未実施。
+
+初回導入時（2026-10-30）はGitHub上のworkflow実行、Environment承認、Cloudflareの実リソース照合、Access/WAF、実ステージングでの共有、実際のrollbackが未実施だった。2026-11-12時点の整備済み項目と未完了項目は上記を参照する。ローカル検証に成功しても、この接続確認が完了したことにはならない。初回は非本番でリリース途中の失敗・復旧の演習を行い、承認者、監視指標、当番連絡、停止判断を決めてから本番運用に移す。
 
 参照した一次資料は次のとおり。
 
