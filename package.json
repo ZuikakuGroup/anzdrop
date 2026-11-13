@@ -36,7 +36,7 @@
     "check": "node scripts/check.mjs"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.4.4",
+    "@astrojs/cloudflare": "^14.4.6",
     "@astrojs/react": "^7.1.2",
     "@cloudflare/workers-types": "^5.20261104.1",
     "@hibiki-js/core": "^0.2.0",
