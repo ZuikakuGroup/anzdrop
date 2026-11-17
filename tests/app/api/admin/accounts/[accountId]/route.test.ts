@@ -291,6 +291,21 @@ describe("GET /api/admin/accounts/[accountId]", () => {
     }
   );
 
+  it("does not log provider exception details while preserving the conservative subscription result", async () => {
+    authorize();
+    await insertTestAccount(env, { id: "acct-private-log", stripeSubscriptionId: "sub_private_log" });
+    const marker = "synthetic-sensitive-provider-error";
+    mockSubscriptionsRetrieve.mockRejectedValueOnce(new Error(marker));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await getRoute("acct-private-log");
+      expect(response.status).toBe(200);
+      expect((await readJson<{ account: AdminAccountInfo }>(response)).account.hasStripeSubscription).toBe(true);
+      expect(log).toHaveBeenCalled();
+      expect(log.mock.calls.flat().map(String).join(" ")).not.toContain(marker);
+    } finally { log.mockRestore(); }
+  });
+
   it("does not clear plan / expiry / pointer while resolving the live Stripe status (GET stays read-only)", async () => {
     authorize();
     await insertTestAccount(env, {

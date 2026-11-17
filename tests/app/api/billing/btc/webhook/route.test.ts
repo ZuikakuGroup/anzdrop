@@ -336,6 +336,86 @@ describe("POST /api/billing/btc/webhook", () => {
     expect(afterSecond?.plan_expires_at).toBe(afterFirst?.plan_expires_at);
   });
 
+  it.each(["accounts", "btc_payments"])("rolls back settlement if updating %s fails, then applies a retry exactly once", async (table) => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const chargeId = "charge-outage";
+    await insertPendingPayment({ accountId, chargeId });
+    const payload = { id: chargeId, status: "paid", hashed_order: await hmacHex(env.OPENNODE_API_KEY, chargeId) };
+    // 実SQLiteで更新を失敗させ、トランザクションのロールバックも検証する。
+    await env.DB.prepare(`CREATE TRIGGER audit_settlement_failure BEFORE UPDATE ON ${table}
+      BEGIN SELECT RAISE(ABORT, 'simulated settlement outage'); END`).run();
+    try {
+      expect((await postWebhook(payload)).status).toBe(500);
+      expect((await getAccount(accountId))?.plan).toBe("free");
+      const payment = await env.DB.prepare("SELECT status, extends_plan_until FROM btc_payments WHERE opennode_charge_id = ?")
+        .bind(chargeId).first<{ status: string; extends_plan_until: string | null }>();
+      expect(payment).toEqual({ status: "pending", extends_plan_until: null });
+    } finally {
+      await env.DB.prepare("DROP TRIGGER audit_settlement_failure").run();
+    }
+    expect((await postWebhook(payload)).status).toBe(200);
+    const settled = await getAccount(accountId);
+    expect(settled?.plan).toBe("premium");
+    expect((await postWebhook(payload)).status).toBe(200);
+    expect(await getAccount(accountId)).toEqual(settled);
+  });
+
+  it("stacks concurrent distinct payments without losing either purchased period", async () => {
+    const future = new Date(Date.now() + 10 * 86400_000).toISOString();
+    const { accountId } = await insertTestAccount(env, { plan: "standard", planExpiresAt: future });
+    const ids = ["charge-concurrent-a", "charge-concurrent-b"];
+    for (const chargeId of ids) await insertPendingPayment({ accountId, chargeId });
+    const payloads = await Promise.all(ids.map(async id => ({ id, status: "paid", hashed_order: await hmacHex(env.OPENNODE_API_KEY, id) })));
+    const responses = await Promise.all(payloads.map(postWebhook));
+    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    expect((await getAccount(accountId))?.plan_expires_at).toBe(
+      new Date(Date.parse(future) + 2 * env.OPENNODE_BTC_DAYS_PER_CHARGE * 86400_000).toISOString()
+    );
+  });
+
+  it("applies simultaneous deliveries of the same charge only once", async () => {
+    const future = new Date(Date.now() + 10 * 86400_000).toISOString();
+    const { accountId } = await insertTestAccount(env, { plan: "standard", planExpiresAt: future });
+    const chargeId = "charge-simultaneous-replay";
+    await insertPendingPayment({ accountId, chargeId });
+    const payload = { id: chargeId, status: "paid", hashed_order: await hmacHex(env.OPENNODE_API_KEY, chargeId) };
+    const responses = await Promise.all([postWebhook(payload), postWebhook(payload)]);
+    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    expect((await getAccount(accountId))?.plan_expires_at).toBe(
+      new Date(Date.parse(future) + env.OPENNODE_BTC_DAYS_PER_CHARGE * 86400_000).toISOString()
+    );
+  });
+
+  it("recalculates from a concurrent account update instead of overwriting its paid period", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const chargeId = "charge-competing-update";
+    await insertPendingPayment({ accountId, chargeId, plan: "standard" });
+    const future = new Date(Date.now() + 10 * 86400_000).toISOString();
+    const originalDb = env.DB;
+    let injected = false;
+    env.DB = new Proxy(originalDb, { get(target, key) {
+      if (key === "batch") return async (statements: D1PreparedStatement[]) => {
+        if (!injected) {
+          injected = true;
+          await target.prepare("UPDATE accounts SET plan = 'premium', plan_expires_at = ? WHERE id = ?").bind(future, accountId).run();
+        }
+        return target.batch(statements);
+      };
+      const value = Reflect.get(target, key);
+      return typeof value === "function" ? value.bind(target) : value;
+    } });
+    try {
+      const response = await postWebhook({ id: chargeId, status: "paid", hashed_order: await hmacHex(env.OPENNODE_API_KEY, chargeId) });
+      expect(response.status).toBe(200);
+      expect(injected).toBe(true);
+      expect(await getAccount(accountId)).toEqual({
+        plan: "premium", plan_expires_at: new Date(Date.parse(future) + env.OPENNODE_BTC_DAYS_PER_CHARGE * 86400_000).toISOString(),
+      });
+    } finally {
+      env.DB = originalDb;
+    }
+  });
+
   it("is a safe no-op when the charge id does not match any known payment", async () => {
     const hashedOrder = await hmacHex(env.OPENNODE_API_KEY, "charge-unknown");
 

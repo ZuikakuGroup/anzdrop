@@ -20,7 +20,7 @@ const {
 const { SMALL_FILE_NO_PICKER_THRESHOLD_BYTES } = await import(
   "@/lib/download/saveFile"
 );
-const { unzipSync } = await import("fflate");
+const { unzipSync, Unzip } = await import("fflate");
 
 function file(
   id: string,
@@ -75,6 +75,33 @@ afterEach(() => {
 });
 
 describe("downloadAllFiles — 経路の選択", () => {
+  it("preserves all files when duplicate suffixes collide with existing names", async () => {
+    const blob = stubBlobDownload();
+    fetchAndDecrypt.mockImplementation(async (f: DecryptedFile) => new TextEncoder().encode(f.id));
+    const files = [file("a", "a.txt", 1), file("b", "a.txt", 1), file("c", "a (1).txt", 1)];
+    expect((await downloadAllFiles(files, KEY)).started).toBe(true);
+    const entries = unzipSync(blob.blobParts()[0] as Uint8Array);
+    expect(Object.keys(entries)).toHaveLength(3);
+    expect(Object.values(entries).map(bytes => new TextDecoder().decode(bytes)).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("preserves a file literally named __proto__ in the in-memory ZIP", async () => {
+    const blob = stubBlobDownload();
+    fetchAndDecrypt.mockResolvedValue(new TextEncoder().encode("payload"));
+    expect((await downloadAllFiles([file("a", "__proto__", 7)], KEY)).started).toBe(true);
+    // unzipSync自身も通常のobjectへ代入するため、イベントAPIで実エントリを読む。
+    const entries = new Map<string, string>();
+    const unzip = new Unzip(entry => {
+      entry.ondata = (error, bytes) => {
+        if (error) throw error;
+        entries.set(entry.name, (entries.get(entry.name) ?? "") + new TextDecoder().decode(bytes));
+      };
+      entry.start();
+    });
+    unzip.push(blob.blobParts()[0] as Uint8Array, true);
+    expect([...entries]).toEqual([["__proto__", "payload"]]);
+  });
+
   it("合計サイズが閾値以上で showSaveFilePicker があり zip64 不要なら、ストリーミング ZIP をディスクへ書く", async () => {
     const writes: Uint8Array[] = [];
     const createWritable = vi.fn(async () => ({

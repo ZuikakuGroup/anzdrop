@@ -3,6 +3,7 @@ import { getWorkerRuntime } from "@/server/runtime";
 import { Hibiki } from "@hibiki-js/core";
 import { stripe as hibikiStripe } from "@hibiki-js/stripe";
 import type Stripe from "stripe";
+import { recordApiException } from "@/lib/observability";
 import { withApiHandler } from "@/lib/api/handler";
 import { readBodyWithinLimit } from "@/lib/api/body";
 import {
@@ -306,9 +307,9 @@ async function processEventOnce(
     await run();
   } catch (error) {
     // Hibiki はハンドラ例外を HIBIKI_HANDLER_FAILED に包むため、
-    // withApiHandler の catch には届かない。原因はここで残す。
+    // withApiHandler の catch には届かない。固定ラベルだけを残す。
     // 完了マークは付けていないので、Stripe再送で再実行できる。
-    console.error("POST /api/billing/stripe/webhook handler failed:", error);
+    recordApiException("POST /api/billing/stripe/webhook handler");
     throw error;
   }
 
