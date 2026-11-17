@@ -128,13 +128,14 @@ D1 を含むサーバー側の永続ストレージに、新しい種類の情�
 - 検証エージェントの指摘をすべて無条件に採用する必要はないが、採用しなかった場合は、その理由を説明できる状態にすること。
 - 検証を省略してユーザーへ提出してはいけない。
 
-### GitHub Copilot によるレビュー
+### GitHub Copilot と CodeRabbit によるレビュー
 
-PR の自動レビューには GitHub Copilot を使う。GitHub の `copilot-code-review` ルールセットで、main と `review-split/**` 向けの PR 作成時・追加 push 時・Draft のレビューを有効にしている。設定値は [`config/copilot-review-ruleset.json`](config/copilot-review-ruleset.json)、運用は [`docs/ci-automations.md`](docs/ci-automations.md) を参照する。
+PR の自動レビューには GitHub Copilot と CodeRabbit を併用する。GitHub の `copilot-code-review` ルールセットで、main と `review-split/**` 向けの PR 作成時・追加 push 時・Draft のレビューを有効にしている。設定値は [`config/copilot-review-ruleset.json`](config/copilot-review-ruleset.json)、運用は [`docs/ci-automations.md`](docs/ci-automations.md) を参照する。
 
-- PR を作成・更新した場合、現在の HEAD に対する Copilot のレビュー提出と、指摘が解消されていることを確認してからマージする。自動レビューの設定だけでレビュー完了とは判断しない。
+- CodeRabbit は `.coderabbit.yaml` で、日本語・Draft・追加 push・生成済みの分割 PR の自動レビューを有効にする。
+- PR を作成・更新した場合、現在の HEAD に対する Copilot と CodeRabbit 両方のレビュー提出と、指摘が解消されていることを確認してからマージする。自動レビューの設定だけでレビュー完了とは判断しない。
 - 指摘の内容を確認し、妥当なものは修正する。採用しない場合は理由を PR 上で説明し、レビューコメントを解決済みにする。
-- 指摘が残ったままマージしたり、ユーザーにマージを促したりしない。移行前の CodeRabbit の指摘も同様に扱う。
+- 指摘が残ったままマージしたり、ユーザーにマージを促したりしない。CodeRabbit の指摘も同様に扱う。
 - `Review coverage and split` は CodeRabbit 専用のため停止している。Copilot のレビュー完了判定には使わない。旧処理の再開にはレビュー判定の対応と再検証が必要。
 - 既存の分割 PR は先頭から main 向けになったものだけを Squash merge する。下流 PR を生成ブランチへ直接マージしない。署名付き操作記録は編集しない。
 
