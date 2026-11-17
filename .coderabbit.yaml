@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# 自動レビューは GitHub の copilot-code-review ルールセットで行う。
 language: ja-JP
 reviews:
   auto_review:
-    enabled: false
+    enabled: true
+    auto_incremental_review: true
+    drafts: true
+    base_branches:
+      - '^review-split/[0-9]+/[0-9]+$'
+    auto_pause_after_reviewed_commits: 0

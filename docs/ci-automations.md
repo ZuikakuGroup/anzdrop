@@ -10,7 +10,7 @@ GitHub Actionsで検証・レビュー補助・Cloudflare Workersへのデプロ
 | File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
 | Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | 停止中。CodeRabbit 用の旧処理。復旧用の手動実行のみ |
 
-## PR は Copilot が自動レビューする
+## PR は Copilot と CodeRabbit が自動レビューする
 
 GitHub の [copilot-code-review ルールセット](https://github.com/ZuikakuGroup/anzdrop/rules/25293669)で、main と `review-split/**` 向けの PR を自動レビューする。PR 作成時に加え、Draft と追加 push も対象にしている。既存の `test` 必須チェックとマージキューは維持する。
 
@@ -18,7 +18,9 @@ GitHub の [copilot-code-review ルールセット](https://github.com/ZuikakuGr
 
 自動レビューの実行には、投稿者の Copilot 利用資格と利用枠が必要になる。設定の有効化だけでレビュー済みとは判断せず、現在の HEAD に対するレビュー提出と指摘の解消を確認する。実行されない場合は [GitHub の設定手順](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)を確認する。
 
-CodeRabbit の自動レビューは [`.coderabbit.yaml`](../.coderabbit.yaml) の `reviews.auto_review.enabled: false` で停止する。この停止設定は main への反映後に有効になる。移行前の未解消コメントは引き続き対応する。
+CodeRabbit の自動レビューは [`.coderabbit.yaml`](../.coderabbit.yaml) の `reviews.auto_review.enabled: true` で有効にする。日本語で、main と生成済みの `review-split/<PR番号>/<連番>` 向けのPRを対象にし、Draft・追加pushもレビューする。`auto_pause_after_reviewed_commits: 0` でコミット数による自動停止を無効にする。Copilot のルールセットは引き続き有効にする。
+
+設定の反映と実際のレビュー完了は別に確認する。マージ前には、現在のHEADに対する両Botのレビュー提出と、妥当な指摘の解消を確認する。CodeRabbit GitHub Appの接続・利用枠などは設定ファイルだけでは保証できない。設定項目は[CodeRabbit公式リファレンス](https://docs.coderabbit.ai/reference/configuration)を参照する。
 
 CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し、Workflow の自動トリガーも削除した。分割スクリプトと署名付き操作記録は復旧用に残す。Copilot の判定には対応していないため、そのまま再有効化しない。
 
