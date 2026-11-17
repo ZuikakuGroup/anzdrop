@@ -23,7 +23,9 @@ function getExtension(filename: string): string | null {
 export function guessPreviewMimeType(filename: string): string | null {
   const ext = getExtension(filename);
 
-  return ext ? (PREVIEW_MIME_TYPES[ext] ?? null) : null;
+  return ext && Object.hasOwn(PREVIEW_MIME_TYPES, ext)
+    ? PREVIEW_MIME_TYPES[ext]
+    : null;
 }
 
 export function isPreviewableFile(filename: string): boolean {

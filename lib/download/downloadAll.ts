@@ -58,12 +58,18 @@ function archiveFilename(files: DecryptedFile[]): string {
 }
 
 function assignZipNames(files: DecryptedFile[]): NamedFile[] {
-  const usedNames = new Map<string, number>();
+  const usedNames = new Set<string>();
+  const nextSuffix = new Map<string, number>();
 
   return files.map((file) => {
-    const count = usedNames.get(file.name) ?? 0;
-    usedNames.set(file.name, count + 1);
-    return { file, name: withDuplicateSuffix(file.name, count) };
+    let count = nextSuffix.get(file.name) ?? 0;
+    let name = withDuplicateSuffix(file.name, count);
+    while (usedNames.has(name)) {
+      name = withDuplicateSuffix(file.name, ++count);
+    }
+    usedNames.add(name);
+    nextSuffix.set(file.name, count + 1);
+    return { file, name };
   });
 }
 
@@ -232,7 +238,7 @@ export async function downloadAllFiles(
     );
   }
 
-  const zipInput: Record<string, Uint8Array> = {};
+  const zipInput: Record<string, Uint8Array> = Object.create(null);
   const availableFiles: DecryptedFile[] = [];
 
   for (const { file, name } of named) {

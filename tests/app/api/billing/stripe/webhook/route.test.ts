@@ -1043,6 +1043,26 @@ const first = await postWebhook(event);
     expect(eventRows?.count).toBe(1);
   });
 
+  it("keeps provider exception details out of logs and responses", async () => {
+    const { accountId } = await insertTestAccount(env, { plan: "free" });
+    const marker = "synthetic-provider-private-context";
+    mockSubscriptionsRetrieve.mockRejectedValueOnce(new Error(marker));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const event = fakeEvent("evt_private_error", "customer.subscription.updated", {
+        id: "sub_private_error", status: "active", metadata: { accountId },
+        ...subscriptionWithPrice(env.STRIPE_PRICE_ID_PREMIUM, Math.floor(Date.now() / 1000) + 86400),
+      });
+      const response = await postWebhook(event);
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain(marker);
+      expect(log).toHaveBeenCalled();
+      expect(log.mock.calls.flat().map(value => typeof value === "object" && !(value instanceof Error) ? JSON.stringify(value) : String(value)).join(" ")).not.toContain(marker);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("does not permanently mark an event as processed if handling it throws, so a Stripe retry can still succeed", async () => {
     // 完了マークは業務処理の成功後にだけ付ける。失敗したイベントは
     // stripe_events に残らないので、Stripe再送で再実行できる。

@@ -71,7 +71,7 @@ async function hasLiveStripeSubscription(
     // /mypage/billing の契約管理フローと同じ isManageableSubscriptionStatus に
     // 一本化する。
     return isManageableSubscriptionStatus(subscription.status);
-  } catch (error) {
+  } catch {
     // retrieve に失敗した場合(404・レート制限・タイムアウト・Stripe 障害)は
     // 保守的に「紐づいている」(true)扱いにして警告を残す。sync 側の
     // reconcileFromStripe と同じ考え方:
@@ -83,8 +83,7 @@ async function hasLiveStripeSubscription(
     // 警告を消すと、実際にはカード契約があるアカウントへ管理者が付与・取り消しを
     // して sync / Webhook に巻き戻される事故を招く。過剰な警告は無害。
     console.error(
-      "/api/admin/accounts/[accountId]: subscription retrieve failed:",
-      error
+      "/api/admin/accounts/[accountId]: subscription retrieve failed"
     );
 
     return true;

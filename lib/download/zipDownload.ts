@@ -18,6 +18,26 @@ export function withDuplicateSuffix(name: string, count: number): string {
 export function zipFiles(
   input: Record<string, Uint8Array>
 ): Promise<Uint8Array> {
+  // fflateのzip()は内部で通常のobjectへ名前をコピーするため、この名前を
+  // 落としてしまう。エントリを直接渡せる既存のストリーム経路で保持する。
+  if (Object.hasOwn(input, "__proto__")) {
+    const chunks: Uint8Array[] = [];
+    return streamFilesAsZip(Object.entries(input).map(([name, bytes]) => ({
+      name,
+      open: async () => new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(bytes); controller.close(); },
+      }),
+    })), {
+      write: async chunk => { chunks.push(chunk); },
+      close: async () => {},
+      abort: async () => {},
+    }).then(() => {
+      const output = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+      let offset = 0;
+      for (const chunk of chunks) { output.set(chunk, offset); offset += chunk.byteLength; }
+      return output;
+    });
+  }
   return new Promise((resolve, reject) => {
     zip(input, (err, data) => {
       if (err) {

@@ -1,12 +1,14 @@
 import { getWorkerRuntime } from "@/server/runtime";
 import { verifyOpenNodeSignature } from "@/lib/opennode";
-import { extendPaidPeriod, getAccountPlanInfo, PLAN_RANK, type Plan } from "@/lib/plan";
+import { extendPaidPeriod, effectivePlan, normalizeStoredPlan, PLAN_RANK, type Plan } from "@/lib/plan";
 import { withApiHandler } from "@/lib/api/handler";
 import { readBodyWithinLimit } from "@/lib/api/body";
 
 type BtcPaymentRecord = {
+  id: string;
   account_id: string;
   plan: Plan;
+  status: string;
 };
 
 export const POST = withApiHandler(
@@ -56,60 +58,35 @@ export const POST = withApiHandler(
       return Response.json({ success: true });
     }
 
-    // status='pending'のものだけを'paid'にUPDATEすることで、OpenNodeからの
-    // 再送(リトライ)による有効期限の二重加算を防ぐ(1回目以降はchanges=0)。
-    const updateResult = await env.DB.prepare(
-      `
-      UPDATE btc_payments
-      SET status = 'paid'
-      WHERE opennode_charge_id = ? AND status = 'pending'
-    `
-    )
-      .bind(chargeId)
-      .run();
-
-    if (updateResult.meta.changes !== 1) {
-      return Response.json({ success: true, note: "already processed" });
+    // 既存列だけで決済と付与を同一トランザクションにする。アカウントの
+    // 読取後に別決済や管理更新が入った場合は、最新値を読み直して再計算する。
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const payment = await env.DB.prepare(
+        `SELECT id, account_id, plan, status FROM btc_payments WHERE opennode_charge_id = ? LIMIT 1`
+      ).bind(chargeId).first<BtcPaymentRecord>();
+      if (!payment || payment.status !== "pending") {
+        return Response.json({ success: true, note: "already processed" });
+      }
+      const account = await env.DB.prepare(
+        `SELECT plan, plan_expires_at FROM accounts WHERE id = ? LIMIT 1`
+      ).bind(payment.account_id).first<{ plan: string; plan_expires_at: string | null }>();
+      if (!account) return Response.json({ success: true });
+      const currentPlan = effectivePlan(normalizeStoredPlan(account.plan), account.plan_expires_at);
+      const newPlan = PLAN_RANK[currentPlan] > PLAN_RANK[payment.plan] ? currentPlan : payment.plan;
+      const newExpiry = extendPaidPeriod(account.plan_expires_at, env.OPENNODE_BTC_DAYS_PER_CHARGE);
+      const results = await env.DB.batch([
+        env.DB.prepare(`UPDATE accounts SET plan = ?, plan_expires_at = ?
+          WHERE id = ? AND plan = ? AND plan_expires_at IS ?
+            AND EXISTS (SELECT 1 FROM btc_payments WHERE id = ? AND status = 'pending')`)
+          .bind(newPlan, newExpiry, payment.account_id, account.plan, account.plan_expires_at, payment.id),
+        // changes()は直前のUPDATEの更新行数。競合時に0行なら決済も確定しない。
+        env.DB.prepare(`UPDATE btc_payments SET status = 'paid', extends_plan_until = ?
+          WHERE id = ? AND status = 'pending' AND changes() = 1`)
+          .bind(newExpiry, payment.id),
+      ]);
+      if (results[0].meta.changes === 1) return Response.json({ success: true });
     }
-
-    const payment = await env.DB.prepare(
-      `SELECT account_id, plan FROM btc_payments WHERE opennode_charge_id = ? LIMIT 1`
-    )
-      .bind(chargeId)
-      .first<BtcPaymentRecord>();
-
-    if (!payment) {
-      return Response.json({ success: true });
-    }
-
-    const { plan: currentEffectivePlan, planExpiresAt: currentExpiresAt } =
-      await getAccountPlanInfo(payment.account_id, env);
-
-    // 既にアクティブな上位プラン(例: premium)を、より安価なプラン
-    // (例: standard)の支払いで誤って格下げしない。有効期限はどちらの
-    // 場合も延長する(支払った分は無駄にしない)。
-    const newPlan =
-      PLAN_RANK[currentEffectivePlan] > PLAN_RANK[payment.plan]
-        ? currentEffectivePlan
-        : payment.plan;
-
-    const newExpiry = extendPaidPeriod(
-      currentExpiresAt,
-      env.OPENNODE_BTC_DAYS_PER_CHARGE
-    );
-
-    await env.DB.prepare(
-      `UPDATE accounts SET plan = ?, plan_expires_at = ? WHERE id = ?`
-    )
-      .bind(newPlan, newExpiry, payment.account_id)
-      .run();
-
-    await env.DB.prepare(
-      `UPDATE btc_payments SET extends_plan_until = ? WHERE opennode_charge_id = ?`
-    )
-      .bind(newExpiry, chargeId)
-      .run();
-
-    return Response.json({ success: true });
+    // 高競合時も処理済みにはせず、Webhookの再送で再試行する。
+    throw new Error("Bitcoin settlement conflicted repeatedly");
   }
 );

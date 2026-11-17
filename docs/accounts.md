@@ -111,7 +111,7 @@ Bitcoinはカードのような自動引き落としができないため、「N
 - `POST /api/billing/btc/charge`はリクエストボディの`plan`に応じた金額(`OPENNODE_BTC_CHARGE_AMOUNT_USD_STANDARD`/`_PREMIUM`)でOpenNodeのcharge(請求)を作成し、ホスト型チェックアウトURLへリダイレクトする(受理するのは`PURCHASABLE_PLANS`のプランのみ。`standard`と`premium`)。どのプラン向けの支払いかは`btc_payments.plan`列に記録しておき、Webhook確定時に読み戻して`accounts.plan`へ反映する(OpenNodeのWebhook本文にはプラン種別の情報が含まれないため)。
 - OpenNodeのWebhook(`POST /api/billing/btc/webhook`)は`application/x-www-form-urlencoded`で届く(JSONではない)。署名検証は別のWebhookシークレットではなく、**charge作成に使ったAPIキー自体をHMAC鍵として使う**(`hashed_order = HMAC-SHA256(apiKey, chargeId)`、[`lib/opennode.ts`](../lib/opennode.ts))。
 - 支払いが確定(`status = "paid"`)すると、`extendPaidPeriod()`(`lib/plan.ts`)で有効期限を延長する。**既に有効期限が未来にある場合はそこに積み増し**、失効済み(または初回)なら「今から」を起点にする。
-- `btc_payments`テーブルの`status`列を`pending → paid`に更新する際に`WHERE status = 'pending'`を条件にすることで、OpenNodeからのWebhook再送による有効期限の二重加算を防いでいる。
+- アカウントの期限延長と`btc_payments`の`pending → paid`・`extends_plan_until`の更新を1つのD1 batchで確定する。失敗時は両方をロールバックする。読取時のプラン・期限と現在値が一致し、決済がpendingのときだけ延長するため、同一通知の並列再送も二重加算しない。別の支払いや管理更新と競合した場合は最新値から再計算し、最大5回競合したら500を返してWebhookの再送に委ねる。既に不整合となった過去の支払いを自動修復する処理はない。
 - Coinbase Commerceは2026年3月に対象地域外向けサービスを終了しており、BTCPay Serverは自前サーバー運用が必要なため、いずれも不採用とした。OpenNodeはホスト型REST API+Webhookのみで完結し、現状のCloudflare Workersサーバーレス構成に合う。
 
 ### 期限切れの通知について

@@ -67,6 +67,15 @@ describe("checkRateLimit", () => {
     expect(logged).not.toContain("file-abc");
   });
 
+  it("does not log binding exception messages or attached sensitive context", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const marker = "synthetic-private-capability";
+    const limiter: RateLimit = { limit: async () => { throw new Error(`rate limit failed for ${marker}`); } };
+    expect((await checkRateLimit(limiter, marker, "GET /api/test")).ok).toBe(true);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(consoleError.mock.calls.flat().map(String).join(" ")).not.toContain(marker);
+  });
+
   it("枠内の呼び出しは何度でも通る(1回の呼び出しで枠を使い切らない)", async () => {
     const limiter = createStubRateLimiter();
     limiter.denyKeyFrom("k", 3);
