@@ -1,0 +1,27 @@
+name: Attest deployment archive with retry
+description: Retry signing after transient Sigstore failures; require a successful attestation.
+runs:
+  using: composite
+  steps:
+    - id: first
+      uses: actions/attest@v4
+      continue-on-error: true
+      with:
+        subject-path: tmp/anzdrop-deploy.tar
+    - if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      shell: bash
+      run: sleep 30
+    - id: second
+      if: ${{ !cancelled() && steps.first.outcome == 'failure' }}
+      uses: actions/attest@v4
+      continue-on-error: true
+      with:
+        subject-path: tmp/anzdrop-deploy.tar
+    - if: ${{ !cancelled() && steps.second.outcome == 'failure' }}
+      shell: bash
+      run: sleep 60
+    - id: final
+      if: ${{ !cancelled() && steps.second.outcome == 'failure' }}
+      uses: actions/attest@v4
+      with:
+        subject-path: tmp/anzdrop-deploy.tar

@@ -60,6 +60,8 @@ PR/merge queueは既存CIでLint・TypeScript・Astro・Vitest・ローカルE2E
 
 main更新では `deploy.yml` がテスト、隔離したChromium共有E2E、本番用ビルドと署名を行う。ステージングが有効な場合は同じSHAを非本番設定でビルドし、分離設定・実D1/R2の識別情報・Secret名を読取り確認する。初期Versionの組をマイグレーション前に記録し、ステージングのマイグレーション・APP→PUBLIC→ルーターのデプロイ・読取りスモーク・合成ファイルのアップロード／共有URL／復号ダウンロード検証を行う。
 
+本番用・ステージング用tarの署名には `.github/actions/attest-with-retry` を使う。Sigstoreの透明性ログ取得など外部サービスの一時障害に備え、失敗後に30秒、60秒待って最大3回実行する。成功した時点で再試行を止め、キャンセル時は再試行しない。3回とも失敗した場合はjobを失敗させ、build jobの配信用成果物の公開、後続のマイグレーション・デプロイへ進めない。ステージングの失敗調査用成果物は既存の `always()` で保存する。本番配信前の `gh attestation verify` によるworkflow・SHA・refの検証も維持する。権限・設定の誤りも3回で停止するため、継続して失敗する場合はログを確認して原因を修正する。
+
 **mainへのpushだけでは、本番マイグレーションも本番デプロイも実行しない。** 本番リリースには、GitHub Actionsの「Deploy to Cloudflare Workers」をmainで手動実行し、`production_commit_sha` に対象mainの完全なコミットSHAを入力する。同じrunでもう一度テスト・ステージング検証を行い、その成功後にproduction Environmentの承認者が成果物とステージング結果を確認して承認する。SHA不一致、ステージング未設定・失敗、承認保護未設定、事前検証失敗では本番へ進まない。
 
 production jobは同じrunの本番用tarをダウンロードし、署名のworkflow・SHA・refとハッシュを確認する。Bindingと既存リソース、必須Secret、Environment保護を確認してから、成果物に含むSQLを適用し、既存の順序で3 Workerを配信する。配信前のVersion組と比較して、外部操作でVersionが変わっていたら停止する。

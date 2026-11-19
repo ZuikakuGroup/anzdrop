@@ -50,9 +50,7 @@ jobs:
         env:
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-      - uses: actions/attest@v4
-        with:
-          subject-path: tmp/anzdrop-deploy.tar
+      - uses: ./.github/actions/attest-with-retry
       - uses: actions/upload-artifact@v7
         with:
           name: deployment-build-${{ github.run_id }}-${{ github.run_attempt }}
@@ -90,9 +88,7 @@ jobs:
         env:
           STAGING_PLAN_FILE: tmp/staging-plan.json
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
-      - uses: actions/attest@v4
-        with:
-          subject-path: tmp/anzdrop-deploy.tar
+      - uses: ./.github/actions/attest-with-retry
       - name: Validate bindings and existing resource/secret metadata
         run: node scripts/release-preflight.mjs staging
         env:
