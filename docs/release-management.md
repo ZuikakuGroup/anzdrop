@@ -64,7 +64,13 @@ main更新では `deploy.yml` がテスト、隔離したChromium共有E2E、本
 
 **mainへのpush後、buildとstagingの両jobに成功すると本番へ自動デプロイする。** ステージングが無効・失敗・スキップの場合は本番へ進まない。手動の「Deploy to Cloudflare Workers」も維持し、`production_commit_sha` が空ならステージングのみ、完全な実行コミットSHAを指定すると本番まで進める。手動指定のSHA不一致、main以外、事前検証失敗では本番へ進まない。production Environmentはmainブランチだけを許可し、Required reviewersは設定しない。
 
-自動化のコードをmainへ反映する前にproductionのRequired reviewersを外すと、旧コードのpreflightは承認保護不足として失敗する。移行中の実行は成功扱いにせず、自動化コードのmain反映後にmainから再実行する。EnvironmentのSecretとmain限定branch policyは維持する。
+自動化への移行は次の順序で行う。
+
+1. 自動化コードをmainへ反映する。
+2. production EnvironmentのRequired reviewersを解除する。EnvironmentのSecretとmain限定branch policy、管理者の保護ルール回避禁止は維持する。
+3. mainから新しいrunを開始する。手動実行の場合は、そのrunの完全なmain SHAを指定する。
+
+コード反映前にRequired reviewersを外すと旧コードのpreflightが失敗する。移行中の失敗や承認待ちは反映成功と判断せず、新しいrunの本番デプロイ・読取りスモークの成功を確認する。
 
 production jobは同じrunの本番用tarをダウンロードし、署名のworkflow・SHA・refとハッシュを確認する。Bindingと既存リソース、必須Secret、Environmentのmain限定設定を確認してから、成果物に含むSQLを適用し、既存の順序で3 Workerを配信する。配信前のVersion組と比較して、外部操作でVersionが変わっていたら停止する。
 
@@ -135,7 +141,7 @@ Workersのロールバックはデータ・外部リソース・Cron/Route等の
 
 ### 環境整備の状況（2026-11-12）
 
-- GitHubの `staging` / `production` Environmentsを作成し、対象をmainに制限した。productionのRequired reviewerは `namiyama814`、本人承認を許可し、管理者の保護ルール回避は禁止した。コード側の本人承認対応はmainへの反映が必要。
+- GitHubの `staging` / `production` Environmentsを作成し、対象をmainに制限した。productionのRequired reviewerは `namiyama814`、本人承認を許可し、管理者の保護ルール回避は禁止した。これは2026-11-12時点の記録。自動化移行では上記手順に従いRequired reviewersを解除し、main限定と管理者の回避禁止を維持する。解除の実施状況はGitHub Environmentの実設定で確認する。
 - 同じCloudflareアカウント内に `anzdrop-staging-db`、非公開R2バケット `anzdrop-staging`、ステージング用3 Workerを作成した。Workerは初期化用の503応答だけを返し、workers.dev・Preview URLは無効にした。アプリの配信・マイグレーションは未実施。
 - `staging.anzdrop.com` のDNSと専用ルート、ホスト全体のAccess保護を設定した。本人ログインとステージング専用CIサービストークンを許可する。未認証のトップ・account API・upload APIがAccessログインへ転送され、CI資格情報では初期化Workerへ到達することを確認した。
 - ステージングAPPには本番と別に生成したセッション鍵・OTP暗号化鍵とTurnstile公式テストSecretを設定した。PUBLIC・ルーターにはアプリSecretを設定していない。GitHub staging EnvironmentにはAccess資格情報、リソースplan、公式テスト用サイトキーを設定した。
