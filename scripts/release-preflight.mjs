@@ -1,14 +1,14 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertProductionApprovalPolicy, assertStagingAccess, assertReleaseConfigs, readConfig, requiredAppSecrets, validateStagingPlan } from "./release-safety.mjs";
+import { assertProductionReleaseEvent, assertProductionApprovalPolicy, assertStagingAccess, assertReleaseConfigs, readConfig, requiredAppSecrets, validateStagingPlan } from "./release-safety.mjs";
 
 /** @param {string} target @param {{environment?: Record<string, string | undefined>, fetcher?: (url: string, options: RequestInit) => Promise<Response>, directory?: string}} options */
 export async function releasePreflight(target, { environment = process.env, fetcher = fetch, directory = process.cwd() } = {}) {
   const file = value => path.resolve(directory, value);
   if (!["production", "staging"].includes(target)) throw new Error("Expected production or staging");
   if (environment.GITHUB_REF !== "refs/heads/main" || !["push", "workflow_dispatch"].includes(environment.GITHUB_EVENT_NAME) || !/^[a-f0-9]{40}$/.test(environment.GITHUB_SHA ?? "")) throw new Error("Remote releases require a trusted main event and exact commit SHA");
-  if (target === "production" && (environment.GITHUB_EVENT_NAME !== "workflow_dispatch" || environment.RELEASE_CONFIRMATION !== environment.GITHUB_SHA)) throw new Error("Production requires explicit dispatch confirmation of the exact commit SHA");
+  if (target === "production") assertProductionReleaseEvent(environment);
   const token = environment.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Error("Missing Cloudflare API token");
   const production = await readConfig(file("wrangler.jsonc"));
@@ -40,7 +40,9 @@ export async function releasePreflight(target, { environment = process.env, fetc
   if (target === "production") {
     const response = await fetcher(`https://api.github.com/repos/${environment.GITHUB_REPOSITORY}/environments/production`, { headers: { Authorization: `Bearer ${environment.GH_TOKEN}`, Accept: "application/vnd.github+json" }, redirect: "error", signal: AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error("Cannot verify production approval protection");
-    assertProductionApprovalPolicy(await response.json());
+    const branches = await fetcher(`https://api.github.com/repos/${environment.GITHUB_REPOSITORY}/environments/production/deployment-branch-policies`, { headers: { Authorization: `Bearer ${environment.GH_TOKEN}`, Accept: "application/vnd.github+json" }, redirect: "error", signal: AbortSignal.timeout(30_000) });
+    if (!branches.ok) throw new Error("Cannot verify production branch protection");
+    assertProductionApprovalPolicy(await response.json(), await branches.json());
   }
   const before = [];
   for (const config of configs) {

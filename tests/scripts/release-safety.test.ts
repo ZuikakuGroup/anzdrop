@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertProductionApprovalPolicy, assertStagingAccess, assertReleaseConfigs, readConfig, validateStagingPlan } from "@/scripts/release-safety.mjs";
+import { assertProductionReleaseEvent, assertProductionApprovalPolicy, assertStagingAccess, assertReleaseConfigs, readConfig, validateStagingPlan } from "@/scripts/release-safety.mjs";
 import { rollbackPlan } from "@/scripts/rollback-plan.mjs";
 
 const production = await readConfig("wrangler.jsonc");
@@ -63,15 +63,12 @@ describe("staging isolation", () => {
   });
 });
 
-it("requires production reviewers and rejects missing protection or admin bypass", () => {
-  expect(() => assertProductionApprovalPolicy({})).toThrow();
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [] }], can_admins_bypass: false })).toThrow();
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: true }], can_admins_bypass: true })).toThrow();
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }] }] })).toThrow();
-});
-
-it.each([false, true])("accepts required approval with prevent_self_review=%s", preventSelfReview => {
-  expect(() => assertProductionApprovalPolicy({ protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: preventSelfReview }], can_admins_bypass: false })).not.toThrow();
+it("requires a main-only production environment without admin bypass", () => {
+  const environment = { can_admins_bypass: false, deployment_branch_policy: { custom_branch_policies: true, protected_branches: false } };
+  const branches = { total_count: 1, branch_policies: [{ name: "main", type: "branch" }] };
+  expect(() => assertProductionApprovalPolicy(environment, branches)).not.toThrow();
+  for (const invalid of [{}, { ...environment, can_admins_bypass: true }]) expect(() => assertProductionApprovalPolicy(invalid, branches)).toThrow();
+  for (const invalid of [{}, { ...branches, total_count: 2 }, { total_count: 1, branch_policies: [{ name: "*", type: "branch" }] }, { total_count: 1, branch_policies: [{ name: "main", type: "tag" }] }]) expect(() => assertProductionApprovalPolicy(environment, invalid)).toThrow();
 });
 
 it("plans explicit recovery in reverse dependency order without guessing stable versions", () => {
@@ -106,4 +103,24 @@ it("requires an unauthenticated Access login challenge on staging HTML and API p
   ]) {
     await expect(assertStagingAccess(plan, async () => response)).rejects.toThrow("Staging must challenge");
   }
+});
+
+it.each([
+  { GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/heads/main", GITHUB_SHA: "a".repeat(40) },
+  { GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_REF: "refs/heads/main", GITHUB_SHA: "a".repeat(40), RELEASE_CONFIRMATION: "a".repeat(40) },
+])("accepts trusted production event $GITHUB_EVENT_NAME", environment => {
+  expect(() => assertProductionReleaseEvent(environment)).not.toThrow();
+});
+
+it.each([
+  { GITHUB_EVENT_NAME: "pull_request" },
+  { GITHUB_EVENT_NAME: "pull_request_target" },
+  { GITHUB_REF: "refs/heads/topic" },
+  { GITHUB_REF: "refs/tags/main" },
+  { GITHUB_SHA: "short" },
+  { GITHUB_SHA: "" },
+  { GITHUB_EVENT_NAME: "workflow_dispatch" },
+  { GITHUB_EVENT_NAME: "workflow_dispatch", RELEASE_CONFIRMATION: "b".repeat(40) },
+])("rejects unsafe production event %j", overrides => {
+  expect(() => assertProductionReleaseEvent({ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/heads/main", GITHUB_SHA: "a".repeat(40), ...overrides })).toThrow();
 });

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       production_commit_sha:
-        description: 'Approve production release: enter the exact main commit SHA (empty = staging only)'
+        description: 'Manual production release: enter the exact main commit SHA (empty = staging only)'
         type: string
         required: false
 
@@ -133,7 +133,7 @@ jobs:
 
   deploy:
     needs: [build, staging]
-    if: github.event_name == 'workflow_dispatch' && inputs.production_commit_sha != ''
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.production_commit_sha != ''))
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -168,7 +168,7 @@ jobs:
           sha256sum -c anzdrop-deploy.tar.sha256
           mkdir -p auditable-payload
           tar -xf anzdrop-deploy.tar -C auditable-payload
-      - name: Verify approval protection, bindings and required secrets
+      - name: Verify main-only environment, bindings and required secrets
         run: node scripts/release-preflight.mjs production
         env:
           RELEASE_CONFIRMATION: ${{ inputs.production_commit_sha }}

@@ -1,16 +1,16 @@
 # デプロイ・CI/CD
 
-## ビルド・ステージング・承認付きデプロイ
+## ビルド・ステージング・自動デプロイ
 
-main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpushだけでは本番へデプロイしない。** 本番はmainの完全なSHAを指定したworkflow_dispatch、同じrunのステージング成功、production Environmentの承認（一人で運用する場合は本人による承認を許可）を必要とする。
+main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpush後、同じrunのbuildとstagingが成功すると本番へ自動デプロイする。** production Environmentはmainブランチだけを許可し、手動承認は不要。workflow_dispatchは完全な実行SHAを指定すると本番まで、空ならステージングのみ実行する。ステージング無効・失敗時は本番へ進まない。
 
 ステージングの準備、Secretsの分離、初回bootstrap、最小権限、割合配信の判断と復旧手順は [リリース管理](./release-management.md) を参照する。初回導入時（2026-10-30）はGitHub/Cloudflare側の設定・リソースを作成していない。環境設定と初回bootstrapの完了を確認してから本番リリースへ進める。
 
 既存の成果物管理を使い、次の順で本番を更新する。
 
 1. Astroと3 Workerのdry-runバンドル、静的アセット、Wrangler設定、マイグレーションSQLを決定論的なtarにまとめ、SHA-256とGitHub Artifact Attestationを作成する。
-2. ステージング成功後、承認されたproduction jobが同じrunの本番tarを取得し、署名・コミット・ref・ハッシュを検証する。再ビルドはしない。
-3. Binding・既存D1/R2の識別情報・Secret名・承認保護を確認し、稼働中の3 WorkerのVersion組をマイグレーション前に記録する。
+2. ステージング成功後、production jobが同じrunの本番tarを取得し、署名・コミット・ref・ハッシュを検証する。再ビルドはしない。
+3. Binding・既存D1/R2の識別情報・Secret名・main限定のEnvironment設定を確認し、稼働中の3 WorkerのVersion組をマイグレーション前に記録する。
 4. tarに含むD1マイグレーションを本番へ適用する。旧Workerが動く変更だけをこのリリースに含める。
 5. 事前記録から稼働Versionが変わっていないことを確認して、APP→PUBLIC→ルーターの順にtar内のバンドルを配信する。各Version IDをDeployment IDと照合し、部分完了の記録を都度保存する。
 6. 全3 Workerの照合成功後に成功manifestを生成し、読取り専用の本番スモークを実行する。
@@ -96,7 +96,7 @@ R2直アップロード用の3つのSecretが揃っているときだけ `POST /
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
-監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`の配信スクリプトはこの成果物を使うが、mainの手動承認・preflight記録を要求する。通常は承認付きworkflow経由で実行する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
+監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`の配信スクリプトはこの成果物を使うが、信頼されたmainイベント・preflight記録を要求する。通常は自動デプロイworkflow経由で実行する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
 
 ## Cloudflareリソース
 
