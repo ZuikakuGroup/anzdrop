@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
-import { assertReleaseConfigs, readConfig, validateStagingPlan } from "./release-safety.mjs";
+import { assertProductionReleaseEvent, assertReleaseConfigs, readConfig, validateStagingPlan } from "./release-safety.mjs";
 import { parseDeployedVersion, selectDeployment } from "./deployment-provenance.mjs";
 
 const root = process.cwd();
@@ -74,7 +74,7 @@ async function findDeployment(accountId, workerName, versionId, startedAt, token
 async function main() {
   const target = process.argv[2] ?? "production";
   if (!["production", "staging"].includes(target) || requiredEnvironment("GITHUB_REF") !== "refs/heads/main") throw new Error("Releases require main and a known target");
-  if (target === "production" && (requiredEnvironment("GITHUB_EVENT_NAME") !== "workflow_dispatch" || requiredEnvironment("RELEASE_CONFIRMATION") !== requiredEnvironment("GITHUB_SHA"))) throw new Error("Production deployment requires explicit confirmation of the exact SHA");
+  if (target === "production") assertProductionReleaseEvent(process.env);
   const token = requiredEnvironment("CLOUDFLARE_API_TOKEN");
   const expected = (await readFile(`${artifact}.sha256`, "utf8")).trim().split(/\s+/)[0];
   if (!/^[0-9a-f]{64}$/.test(expected) || await sha256(artifact) !== expected) {

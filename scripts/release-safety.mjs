@@ -48,9 +48,12 @@ export function assertReleaseConfigs(configs, target, production, plan) {
   if (target === "staging" && (app.triggers?.crons?.length || app.ratelimits?.some(rate => production.ratelimits.some(prod => prod.namespace_id === rate.namespace_id)))) throw new Error("Staging must isolate rate limits and leave scheduled deletion disabled");
 }
 
-export function assertProductionApprovalPolicy(environment) {
-  const reviewers = environment?.protection_rules?.find(rule => rule.type === "required_reviewers");
-  if (!reviewers?.reviewers?.length || environment.can_admins_bypass !== false) throw new Error("Production environment requires reviewers and no admin bypass");
+export function assertProductionApprovalPolicy(environment, branches) {
+  if (environment?.can_admins_bypass !== false || environment?.deployment_branch_policy?.custom_branch_policies !== true || environment.deployment_branch_policy.protected_branches !== false || branches?.total_count !== 1 || branches.branch_policies?.length !== 1 || branches.branch_policies[0].name !== "main" || branches.branch_policies[0].type !== "branch") throw new Error("Production environment must allow only the main branch without admin bypass");
+}
+
+export function assertProductionReleaseEvent(environment) {
+  if (environment.GITHUB_REF !== "refs/heads/main" || !/^[a-f0-9]{40}$/.test(environment.GITHUB_SHA ?? "") || !["push", "workflow_dispatch"].includes(environment.GITHUB_EVENT_NAME) || (environment.GITHUB_EVENT_NAME === "workflow_dispatch" && environment.RELEASE_CONFIRMATION !== environment.GITHUB_SHA)) throw new Error("Production requires a main push or dispatch confirmation of the exact SHA");
 }
 
 

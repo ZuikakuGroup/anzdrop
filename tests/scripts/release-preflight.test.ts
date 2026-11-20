@@ -26,7 +26,8 @@ async function fixture() {
 }
 
 function remoteResult(url: string, missingSecret = false) {
-  if (url.endsWith("/environments/production")) return { protection_rules: [{ type: "required_reviewers", reviewers: [{ id: 1 }], prevent_self_review: false }], can_admins_bypass: false };
+  if (url.endsWith("/environments/production")) return { deployment_branch_policy: { custom_branch_policies: true, protected_branches: false }, can_admins_bypass: false };
+  if (url.endsWith("/deployment-branch-policies")) return { total_count: 1, branch_policies: [{ name: "main", type: "branch" }] };
   if (url.includes("/d1/database/")) return { success: true, result: { uuid: url.split("/").at(-1), name: "anzdrop-db" } };
   if (url.includes("/r2/buckets/")) return { success: true, result: { name: "anzdrop" } };
   if (url.endsWith("/secrets")) return { success: true, result: url.endsWith("/anzdrop/secrets") ? (missingSecret ? [] : requiredAppSecrets.map(name => ({ name, type: "secret_text" }))) : [] };
@@ -48,7 +49,7 @@ it("checks only remote metadata and records the full baseline before a release c
     expect(baseline.workers.map((row: { worker: string }) => row.worker)).toEqual(["anzdrop", "anzdrop-public", "anzdrop-router"]);
     expect(baseline.gitCommit).toBe(environment.GITHUB_SHA);
     expect(baseline.artifactSha256).toBe("a".repeat(64));
-    expect(requests).toHaveLength(9);
+    expect(requests).toHaveLength(10);
     expect(JSON.stringify(baseline)).not.toContain(environment.CLOUDFLARE_API_TOKEN);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -84,9 +85,9 @@ it.each([
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-it.each(["push", "wrong-sha", "missing-secret", "wrong-db", "unprotected-environment", "lookup-failure"])("fails closed on %s without producing a baseline", async failure => {
+it.each(["pull_request", "wrong-sha", "missing-secret", "wrong-db", "unprotected-environment", "lookup-failure"])("fails closed on %s without producing a baseline", async failure => {
   const { directory, environment } = await fixture();
-  if (failure === "push") environment.GITHUB_EVENT_NAME = "push";
+  if (failure === "pull_request") environment.GITHUB_EVENT_NAME = "pull_request";
   if (failure === "wrong-sha") environment.RELEASE_CONFIRMATION = "other";
   const fetcher = vi.fn(async (url: string) => {
     if (failure === "lookup-failure") return new Response(null, { status: 503 });
@@ -98,6 +99,16 @@ it.each(["push", "wrong-sha", "missing-secret", "wrong-db", "unprotected-environ
   try {
     await expect(releasePreflight("production", { environment, fetcher, directory })).rejects.toThrow();
     await expect(readFile(path.join(directory, "tmp/pre-release-deployments.json"))).rejects.toThrow();
-    if (failure === "push" || failure === "wrong-sha") expect(fetcher).not.toHaveBeenCalled();
+    if (failure === "pull_request" || failure === "wrong-sha") expect(fetcher).not.toHaveBeenCalled();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("accepts a main push without manual SHA confirmation", async () => {
+  const { directory, environment } = await fixture();
+  environment.GITHUB_EVENT_NAME = "push";
+  environment.RELEASE_CONFIRMATION = "";
+  try {
+    await releasePreflight("production", { environment, directory, fetcher: async url => Response.json(remoteResult(url)) });
+    expect(JSON.parse(await readFile(path.join(directory, "tmp/pre-release-deployments.json"), "utf8")).gitCommit).toBe(environment.GITHUB_SHA);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

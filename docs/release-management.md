@@ -1,6 +1,6 @@
-# ステージング検証と承認付きリリース
+# ステージング検証と自動本番リリース
 
-同じmainコミットのステージング検証に成功したうえで、人間がコミットSHAを指定し、GitHub Environmentで承認してから、本番を更新する。初回導入時（2026-10-30）はリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作を行っていない。設定例は未設定のままではリリースできない。
+mainへのpushを起点に、同じコミットのテスト・ステージング検証に成功してから、本番を自動更新する。production Environmentの手動承認は不要。初回導入時（2026-10-30）はリソースの作成、GitHub/Cloudflareの設定変更、デプロイ、リモートのデータ操作を行っていない。設定例は未設定のままではリリースできない。
 
 ## 現在の3 Workerと既存の成果物管理を使う
 
@@ -17,7 +17,7 @@
 
 API・Astro・ルーターを決定論的なtarにまとめ、SHA-256とGitHub Artifact Attestationを付ける既存方式を維持する。今回、適用するマイグレーションSQLもtarへ含め、本番では再ビルドせず同じrunの署名済み成果物を取得・検証して配信する。ステージングと本番はURL・公開キー・Bindingが異なるため別のtarだが、同一コミット・lockfileのソースを使う。環境差分を含めたバイト単位の同一成果物昇格ではない。
 
-調査時の問題は、main更新から本番のD1変更・デプロイまで承認なしで進むこと、ステージングがリポジトリに定義されていないこと、3 Workerの途中失敗時に成功manifestが残らないこと、本番向けの既存E2Eに書込みを伴うテストが含まれることだった。新しいフローでは本番の自動リリースを止め、事前のVersion記録と部分完了の記録を保存し、本番の自動スモークを読取り専用にした。
+調査時の問題は、main更新から本番のD1変更・デプロイまで承認なしで進むこと、ステージングがリポジトリに定義されていないこと、3 Workerの途中失敗時に成功manifestが残らないこと、本番向けの既存E2Eに書込みを伴うテストが含まれることだった。初回導入では本番の自動リリースを止めた。現在はユーザーの許可を受け、ステージング検証成功後の自動本番リリースへ変更する。事前のVersion記録と部分完了の記録、読取り専用の本番スモークは維持する。
 
 ## 実リソースの準備は人間が行う
 
@@ -29,7 +29,7 @@ API・Astro・ルーターを決定論的なtarにまとめ、SHA-256とGitHub A
 2. 専用ホスト全体をCloudflare Accessで保護する。管理者向けのaudienceは本番と別にする。APP・PUBLICのworkers.devとVersion URLは公開しない。preflightは資格情報なしのトップ・APIアクセスが設定済みAccessチームのログインへリダイレクトされることも確認する。Service Authのみで401を返す設定はこの検証を通らないため、利用者のログインポリシーと専用サービストークンの許可を併用する。Access/WAF/DNS設定全体をWorkerデプロイが作成・検証するわけではないため、初回リリース前に人間が確認する。
 3. APPの必須Secretを個別に設定する。空の既存Workerを作り、Secretと初期Versionを用意する初回bootstrapは通常リリースと分けて承認・実施する。PUBLIC・ルーターには認証・決済Secretを設定しない。本番PUBLICは既存ブログのGET専用 `MICROCMS_API_KEY` だけを許可する（未設定も可）。ルーターと初期ステージングPUBLICはSecretを持たない。
 4. ステージング全体にAccessを適用したことを確認して、Turnstileの公式テスト用サイトキーとSecretを設定する。Accessサービストークンはステージング専用とし、本番Accessアプリを許可対象にしない。
-5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionにはRequired reviewers、管理者の保護ルール回避禁止を設定する。一人で開発・運用する場合は本人をRequired reviewerに指定し、Prevent self-reviewを無効にする。実行者本人も承認できるが、完全なmain SHAを指定した手動実行、同じrunのステージング成功、Environmentでの明示的な承認は引き続き必須とする。設定を確認できない場合は本番preflightを失敗させる。
+5. GitHubに `staging` と `production` Environmentsを作成する。どちらも対象ブランチをmainに制限する。productionはRequired reviewersを設定せず、管理者の保護ルール回避は禁止する。deployment branch policyはcustom policyでbranchのmainだけを許可する。タグや他のブランチは許可しない。設定を確認できない場合は本番preflightを失敗させる。
 6. ステージング設定・Secret・アクセス経路をレビューした後、リポジトリ変数 `STAGING_RELEASE_ENABLED=true` でステージングの自動更新を有効にする。初回導入時（2026-10-30）はこの変数を設定していない。
 
 Workers作成・実行、D1・R2容量、Actions/Artifacts等には契約による利用料が発生し得る。作成や有料プランの変更は、権限と費用を確認してから人間が行う。
@@ -62,9 +62,11 @@ main更新では `deploy.yml` がテスト、隔離したChromium共有E2E、本
 
 本番用・ステージング用tarの署名には `.github/actions/attest-with-retry` を使う。Sigstoreの透明性ログ取得など外部サービスの一時障害に備え、失敗後に30秒、60秒待って最大3回実行する。成功した時点で再試行を止め、キャンセル時は再試行しない。3回とも失敗した場合はjobを失敗させ、build jobの配信用成果物の公開、後続のマイグレーション・デプロイへ進めない。ステージングの失敗調査用成果物は既存の `always()` で保存する。本番配信前の `gh attestation verify` によるworkflow・SHA・refの検証も維持する。権限・設定の誤りも3回で停止するため、継続して失敗する場合はログを確認して原因を修正する。
 
-**mainへのpushだけでは、本番マイグレーションも本番デプロイも実行しない。** 本番リリースには、GitHub Actionsの「Deploy to Cloudflare Workers」をmainで手動実行し、`production_commit_sha` に対象mainの完全なコミットSHAを入力する。同じrunでもう一度テスト・ステージング検証を行い、その成功後にproduction Environmentの承認者が成果物とステージング結果を確認して承認する。SHA不一致、ステージング未設定・失敗、承認保護未設定、事前検証失敗では本番へ進まない。
+**mainへのpush後、buildとstagingの両jobに成功すると本番へ自動デプロイする。** ステージングが無効・失敗・スキップの場合は本番へ進まない。手動の「Deploy to Cloudflare Workers」も維持し、`production_commit_sha` が空ならステージングのみ、完全な実行コミットSHAを指定すると本番まで進める。手動指定のSHA不一致、main以外、事前検証失敗では本番へ進まない。production Environmentはmainブランチだけを許可し、Required reviewersは設定しない。
 
-production jobは同じrunの本番用tarをダウンロードし、署名のworkflow・SHA・refとハッシュを確認する。Bindingと既存リソース、必須Secret、Environment保護を確認してから、成果物に含むSQLを適用し、既存の順序で3 Workerを配信する。配信前のVersion組と比較して、外部操作でVersionが変わっていたら停止する。
+自動化のコードをmainへ反映する前にproductionのRequired reviewersを外すと、旧コードのpreflightは承認保護不足として失敗する。移行中の実行は成功扱いにせず、自動化コードのmain反映後にmainから再実行する。EnvironmentのSecretとmain限定branch policyは維持する。
+
+production jobは同じrunの本番用tarをダウンロードし、署名のworkflow・SHA・refとハッシュを確認する。Bindingと既存リソース、必須Secret、Environmentのmain限定設定を確認してから、成果物に含むSQLを適用し、既存の順序で3 Workerを配信する。配信前のVersion組と比較して、外部操作でVersionが変わっていたら停止する。
 
 全jobを同じ `production-deploy` concurrencyで直列化し、途中のリリースをキャンセルしない。ただし、ダッシュボードや別workflowでの操作まではロックしない。リリースと復旧中は外部の更新を止める。
 
@@ -89,7 +91,7 @@ bash scripts/prepare-auditable-deployment.sh
 
 Versions & Deploymentsには新Versionのアップロード、無トラフィックの保存、割合指定の配信がある。ただし、3 Workerを別々に5→25→50→100%に進めると、APP・PUBLIC・ルーターの新旧組合せと、複数リクエストにまたがる共有処理が増える。CloudflareもService Binding間のversion skewを説明している。AstroではHTMLとハッシュ付きアセットを別リクエストで取得する点にも注意が必要。
 
-今回は独立ステージングでの検証と、承認後に同じソースの3 Workerを各100%へ順次更新する方式を採る。Workerのコードとアセットは同じVersionで管理するが、古いHTMLを開いたブラウザーから旧アセットが要求される問題までは解消しない。HTMLの既存no-storeを維持し、リリースをまたいで開きっぱなしのタブも確認する。
+今回は独立ステージングでの検証と、その成功後に同じソースの3 Workerを各100%へ順次更新する方式を採る。Workerのコードとアセットは同じVersionで管理するが、古いHTMLを開いたブラウザーから旧アセットが要求される問題までは解消しない。HTMLの既存no-storeを維持し、リリースをまたいで開きっぱなしのタブも確認する。
 
 将来の割合配信には、APIの新旧互換性、version affinity/overrides、旧アセット保持、Version別のエラー率・共有成功率、昇格／中止の観測時間を設計する必要がある。現時点では十分な実トラフィックと判定指標を測っていないため、5%等を安全な閾値と決めない。Version URLも本番Bindingへ接続する可能性があり、独立ステージングの代用にしない。
 

@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { parse } from "yaml";
 
 const workflow = parse(readFileSync(".github/workflows/deploy.yml", "utf8"));
-it("gates production on successful staging and explicit main SHA approval without PR secrets", () => {
+it("gates production on successful staging and trusted main events without PR secrets", () => {
   expect(workflow.on.pull_request).toBeUndefined();
   expect(workflow.on.pull_request_target).toBeUndefined();
   expect(workflow.on.workflow_dispatch.inputs.production_commit_sha).toBeDefined();
@@ -11,7 +11,7 @@ it("gates production on successful staging and explicit main SHA approval withou
   expect(workflow.jobs.staging.needs).toBe("build");
   expect(workflow.jobs.staging.environment).toBe("staging");
   expect(workflow.jobs.deploy.needs).toEqual(["build", "staging"]);
-  expect(workflow.jobs.deploy.if).toContain("workflow_dispatch");
+  expect(workflow.jobs.deploy.if).toBe("github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.production_commit_sha != ''))");
   expect(workflow.jobs.deploy.environment).toBe("production");
   const commands = workflow.jobs.deploy.steps.map((step: { run?: string }) => step.run ?? "");
   expect(commands.findIndex((command: string) => command.includes("release-preflight"))).toBeLessThan(commands.findIndex((command: string) => command.includes("migrations apply")));
