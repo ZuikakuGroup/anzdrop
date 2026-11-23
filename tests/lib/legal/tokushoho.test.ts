@@ -50,14 +50,20 @@ describe("buildTokushohoItems", () => {
     expect(byLabel("販売事業者")).not.toContain(OPERATOR.representative);
     expect(byLabel("運営統括責任者")).toBe(OPERATOR.representative);
     // 連絡先はメールアドレスのみ(お問い合わせフォームへの誘導は入れない)。
-    expect(byLabel("連絡先")).toBe(`メールアドレス: ${OPERATOR.email}`);
+    expect(byLabel("連絡先")).toBe(OPERATOR.email);
   });
 
-  it("所在地・電話番号は「請求により遅滞なく開示」方式で記載する", () => {
-    for (const label of ["所在地", "電話番号"]) {
-      expect(byLabel(label)).toContain("請求");
-      expect(byLabel(label)).toContain("開示");
-    }
+  it("指定された所在地・電話番号・メールアドレスを掲載する", () => {
+    expect(byLabel("所在地")).toBe("神奈川県茅ヶ崎市東海岸南2丁目13-47");
+    expect(byLabel("電話番号")).toBe("070-9508-6574");
+    expect(byLabel("連絡先")).toBe("support@anzdrop.com");
+  });
+
+  it("準備中の決済手段やブラウザ名の列挙を表示しない", () => {
+    expect(items.flatMap((item) => item.lines).join("\n")).not.toMatch(/ビットコイン|Bitcoin|OpenNode/i);
+    expect(byLabel("支払方法")).toBe("クレジットカード(Stripeを通じて決済します)");
+    expect(byLabel("動作環境")).not.toMatch(/Google Chrome|Mozilla Firefox|Safari|Microsoft Edge/);
+    expect(byLabel("動作環境")).toContain("JavaScriptおよびWeb Crypto API");
   });
 
   it("定期購入(自動更新)であることを契約期間・支払時期で明示する", () => {

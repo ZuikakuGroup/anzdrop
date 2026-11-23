@@ -37,13 +37,6 @@ export default function AdminGrantedPlanNotice({ status }: { status: PlanStatus 
         >
           カードで契約する
         </button>
-        <button
-          type="button"
-          disabled
-          className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3.5 text-sm font-black tracking-wider text-ink disabled:opacity-100"
-        >
-          ビットコインで支払う(準備中)
-        </button>
       </div>
 
       <p className="text-center text-xs leading-relaxed text-ink/50">
