@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   PLAN_LIMITS,
+  PLAN_DEFAULT_RETENTION,
   getMaxFileSizeBytes,
   getMaxRetentionDays,
   isRetentionAllowedForPlan,
@@ -36,9 +37,9 @@ describe("getMaxFileSizeBytes", () => {
 
 describe("getMaxRetentionDays", () => {
   it("returns the longest selectable retention per plan, excluding the 'once' safety valve", () => {
-    expect(getMaxRetentionDays("free")).toBe(7);
-    expect(getMaxRetentionDays("standard")).toBe(15);
-    expect(getMaxRetentionDays("premium")).toBe(30);
+    expect(getMaxRetentionDays("free")).toBe(30);
+    expect(getMaxRetentionDays("standard")).toBe(60);
+    expect(getMaxRetentionDays("premium")).toBe(100);
   });
 
   it("is monotonically non-decreasing from free to standard to premium", () => {
@@ -70,26 +71,22 @@ describe("isRetentionAllowedForPlan", () => {
     }
   });
 
-  it("does not allow 15d or 30d on the free plan", () => {
-    expect(isRetentionAllowedForPlan("15d", "free")).toBe(false);
-    expect(isRetentionAllowedForPlan("30d", "free")).toBe(false);
+  it("enforces the new retention tiers", () => {
+    for (const retention of ["15d", "30d"] as const) {
+      expect(isRetentionAllowedForPlan(retention, "free")).toBe(true);
+    }
+    expect(isRetentionAllowedForPlan("60d", "free")).toBe(false);
+    expect(isRetentionAllowedForPlan("60d", "standard")).toBe(true);
+    expect(isRetentionAllowedForPlan("100d", "standard")).toBe(false);
+    expect(isRetentionAllowedForPlan("100d", "premium")).toBe(true);
   });
 
-  it("allows 15d but not 30d on the standard plan", () => {
-    expect(isRetentionAllowedForPlan("15d", "standard")).toBe(true);
-    expect(isRetentionAllowedForPlan("30d", "standard")).toBe(false);
-  });
-
-  it("allows both 15d and 30d on the premium plan", () => {
-    expect(isRetentionAllowedForPlan("15d", "premium")).toBe(true);
-    expect(isRetentionAllowedForPlan("30d", "premium")).toBe(true);
-  });
 });
 
 describe("PLAN_LIMITS", () => {
-  it("free plan's allowed retentions match the pre-existing Retention values exactly", () => {
+  it("free plan allows retentions up to 30 days", () => {
     expect(PLAN_LIMITS.free.allowedRetentions.sort()).toEqual(
-      ["once", "1d", "3d", "7d"].sort()
+      ["once", "1d", "3d", "7d", "15d", "30d"].sort()
     );
   });
 
@@ -657,5 +654,12 @@ describe("isAdminGrantedPaidPlan", () => {
         hasManageableStripeSubscription: false,
       })
     ).resolves.toBe(false);
+  });
+});
+
+describe("expanded plan limits", () => {
+  it("sets the approved per-file sizes and preserves defaults", () => {
+    expect([getMaxFileSizeBytes("free"), getMaxFileSizeBytes("standard"), getMaxFileSizeBytes("premium")]).toEqual([100, 300, 500].map((gb) => gb * 1024 ** 3));
+    expect(PLAN_DEFAULT_RETENTION).toEqual({ free: "7d", standard: "15d", premium: "30d" });
   });
 });

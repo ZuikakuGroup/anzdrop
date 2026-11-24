@@ -1,7 +1,8 @@
+import { MAX_UPLOAD_PARTS } from "./partSize";
 import { timingSafeEqual } from "@/lib/timingSafeEqual";
 
 // R2のマルチパートは最終パート以外が最小5MiB。申告fileSizeからパート番号上限を
-// この粒度で見積もり、正当な8MiBパートを弾かずに濫用を抑える(chunk routeと同ロジック)。
+// この粒度で見積もり、正当な8〜56MiBパートを弾かずに濫用を抑える(chunk routeと同ロジック)。
 export const R2_MULTIPART_MIN_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
 export const MAX_PART_URLS_PER_REQUEST = 32;
@@ -50,7 +51,7 @@ export function verifyUploadSessionToken(
 }
 
 export function maxPartNumberForDeclaredFileSize(declaredFileSize: number): number {
-  return Math.max(1, Math.ceil(declaredFileSize / R2_MULTIPART_MIN_PART_SIZE_BYTES));
+  return Math.min(MAX_UPLOAD_PARTS, Math.max(1, Math.ceil(declaredFileSize / R2_MULTIPART_MIN_PART_SIZE_BYTES)));
 }
 
 export function isPartNumberAllowed(

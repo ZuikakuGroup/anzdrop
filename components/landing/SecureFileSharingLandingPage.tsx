@@ -23,8 +23,8 @@ const STEPS = [
 
 const FAQS = [
   { question: "アカウント登録やアプリのインストールは必要ですか?", answer: "どちらも不要です。ブラウザからファイルを選ぶだけで利用できます。" },
-  { question: "無料でどのくらいのファイルを送れますか?", answer: "無料プランでは、1ファイル最大5GBまで送れます。アップロード数に制限はなく、広告も表示されません。" },
-  { question: "ファイルはいつ削除されますか?", answer: "共有時に「1回」「1日」「3日」「7日」から保存期間を選べます。「1回」を選ぶと、ダウンロード後に共有ファイルが削除されます。" },
+  { question: "無料でどのくらいのファイルを送れますか?", answer: "無料プランでは、1ファイル最大100GBまで送れます。アップロード数に制限はなく、広告も表示されません。" },
+  { question: "ファイルはいつ削除されますか?", answer: "共有時に「1回」「1日」「3日」「7日」「15日」「30日」から保存期間を選べます。「1回」を選ぶと、ダウンロード後に共有ファイルが削除されます。" },
   { question: "運営者がファイルを見ることはできますか?", answer: "ファイルはブラウザ内で暗号化してから送信されます。通常の共有では復号鍵がURLの#以降に入り、サーバーへ送られません。パスワード保護時も、パスワードはサーバーへ送られません。運営者は中身を復号できません。" },
   { question: "共有URLをなくした場合、あとから復元できますか?", answer: "通常の共有では復号鍵がURLに含まれ、サーバーには保存されません。URLをなくすと運営者でも復元できません。URLは受取人へ安全な方法で共有してください。" },
 ];
@@ -52,7 +52,7 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
                   安全性について <ArrowRightIcon className="h-4 w-4 shrink-0" />
                 </a>
               </div>
-              <p className="mt-4 text-sm text-ink/60">無料プランは1ファイル最大5GB・広告なし</p>
+              <p className="mt-4 text-sm text-ink/60">無料プランは1ファイル最大100GB・広告なし</p>
             </div>
             <div className="flex items-center justify-center overflow-hidden rounded-lg bg-ink/[0.03] px-4 py-3 sm:px-8 sm:py-6 md:min-h-[23rem]">
               <img src="/images/loosedrawing/file-sharing.png" alt="2人の間でファイルを共有するイラスト" width={799} height={799} loading="eager" fetchPriority="high" sizes="(min-width: 1024px) 440px, (min-width: 768px) 360px, (min-width: 640px) 480px, 340px" className="h-52 w-full max-w-[27rem] scale-[1.15] object-contain sm:h-72 md:h-80" />
@@ -119,8 +119,8 @@ export default function SecureFileSharingLandingPage({ showChrome = true, native
               <a href="/pricing" className="inline-flex min-h-10 items-center gap-2 text-sm font-bold text-ink transition-colors hover:text-brand-text">料金プランを見る <ArrowRightIcon className="h-4 w-4 shrink-0" /></a>
             </div>
             <dl className="mt-10 grid border-y border-ink/15 sm:grid-cols-3 sm:divide-x sm:divide-ink/15">
-              <div className="flex items-baseline justify-between gap-5 py-5 sm:block sm:pr-8"><dt className="text-sm text-ink/65">1ファイルの最大容量</dt><dd className="text-2xl font-bold">5GB</dd></div>
-              <div className="flex items-baseline justify-between gap-5 border-t border-ink/15 py-5 sm:block sm:border-t-0 sm:px-8"><dt className="text-sm text-ink/65">保存期間</dt><dd className="text-base font-bold sm:mt-2">1回・1日・3日・7日</dd></div>
+              <div className="flex items-baseline justify-between gap-5 py-5 sm:block sm:pr-8"><dt className="text-sm text-ink/65">1ファイルの最大容量</dt><dd className="text-2xl font-bold">100GB</dd></div>
+              <div className="flex items-baseline justify-between gap-5 border-t border-ink/15 py-5 sm:block sm:border-t-0 sm:px-8"><dt className="text-sm text-ink/65">保存期間</dt><dd className="text-base font-bold sm:mt-2">1回・1日・3日・7日・15日・30日</dd></div>
               <div className="flex items-baseline justify-between gap-5 border-t border-ink/15 py-5 sm:block sm:border-t-0 sm:pl-8"><dt className="text-sm text-ink/65">アップロード数</dt><dd className="text-2xl font-bold">無制限</dd></div>
             </dl>
             <p className="mt-4 text-sm text-ink/60">無料プランは広告も表示されません。</p>

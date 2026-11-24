@@ -198,8 +198,8 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await page.goto('/pricing');
     const card = page.getByRole('heading', { name: 'Standard', exact: true }).locator('..');
     await expect(card).toContainText('¥250');
-    await expect(card).toContainText('20GB');
-    await expect(card).toContainText('15日');
+    await expect(card).toContainText('300GB');
+    await expect(card).toContainText('60日');
     await expect(card).not.toContainText('準備中');
     await expect(card.getByRole('link', { name: '始める', exact: true })).toHaveAttribute('href', '/mypage/billing');
   });

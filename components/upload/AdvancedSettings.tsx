@@ -11,6 +11,8 @@ const RETENTION_OPTIONS: { value: Retention; label: string }[] = [
   { value: "7d", label: "7日" },
   { value: "15d", label: "15日" },
   { value: "30d", label: "30日" },
+  { value: "60d", label: "60日" },
+  { value: "100d", label: "100日" },
 ];
 
 type AdvancedSettingsProps = {
@@ -39,7 +41,7 @@ export default function AdvancedSettings({
     <div className="mt-3 space-y-3">
       <div>
         <span className="text-xs font-bold text-ink/60">保存期間</span>
-        <div className="mt-1.5 flex gap-2">
+        <div className="mt-1.5 grid grid-cols-4 gap-2">
           {RETENTION_OPTIONS.filter((option) =>
             isRetentionAllowedForPlan(option.value, plan)
           ).map((option) => (

@@ -3,8 +3,7 @@ import { RETENTION_DAYS, type Retention } from "@/lib/retention";
 
 export type Plan = "free" | "standard" | "premium";
 
-// 各プランの上限。数値は暫定値(正式な価格・容量はビジネス判断待ち)で、
-// ここを変更するだけでアップロードフロー全体に反映される。
+// 各プランの上限。アップロードフローと料金表示で共有する。
 export const PLAN_LIMITS: Record<
   Plan,
   {
@@ -17,21 +16,21 @@ export const PLAN_LIMITS: Record<
 > = {
   free: {
     maxFileSizeBytes: MAX_FILE_SIZE_BYTES,
-    allowedRetentions: ["once", "1d", "3d", "7d"],
+    allowedRetentions: ["once", "1d", "3d", "7d", "15d", "30d"],
     previewEnabled: false,
     skipTurnstile: false,
     uploadConcurrency: 8,
   },
   standard: {
-    maxFileSizeBytes: 20 * 1024 * 1024 * 1024, // 20GB
-    allowedRetentions: ["once", "1d", "3d", "7d", "15d"],
+    maxFileSizeBytes: 300 * 1024 * 1024 * 1024, // 300GB
+    allowedRetentions: ["once", "1d", "3d", "7d", "15d", "30d", "60d"],
     previewEnabled: false,
     skipTurnstile: true,
     uploadConcurrency: 8,
   },
   premium: {
-    maxFileSizeBytes: 50 * 1024 * 1024 * 1024, // 50GB(暫定)
-    allowedRetentions: ["once", "1d", "3d", "7d", "15d", "30d"],
+    maxFileSizeBytes: 500 * 1024 * 1024 * 1024, // 500GB
+    allowedRetentions: ["once", "1d", "3d", "7d", "15d", "30d", "60d", "100d"],
     previewEnabled: true,
     skipTurnstile: true,
     uploadConcurrency: 12,
@@ -99,7 +98,7 @@ export function getMaxFileSizeBytes(plan: Plan): number {
 
 // そのプランで選べる最長の保存期間(日数)。"once"はダウンロード後即削除の
 // 安全弁として7日が入っているだけで、ユーザーが「保存期間」として選ぶものでは
-// ないため除外する。free=7 / standard=15 / premium=30。/mypageのプラン内容表示で使う。
+// ないため除外する。free=30 / standard=60 / premium=100。/mypageのプラン内容表示で使う。
 export function getMaxRetentionDays(plan: Plan): number {
   return Math.max(
     ...PLAN_LIMITS[plan].allowedRetentions

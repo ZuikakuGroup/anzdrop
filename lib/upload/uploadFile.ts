@@ -108,6 +108,7 @@ export async function uploadEncryptedFile(
     params.concurrency,
     params.onBytesUploaded,
     {
+      fileSize: params.fileSize,
       uploadMode:
         startResult.uploadMode === "direct" ? "direct" : "proxy",
     }

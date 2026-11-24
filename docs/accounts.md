@@ -61,15 +61,15 @@
 | | 無料プラン | Standardプラン | Premiumプラン |
 | --- | --- | --- | --- |
 | 価格 | ¥0 | ¥250 / 月 | ¥450 / 月(Bitcoinは参考価格) |
-| 1ファイルの上限サイズ | `lib/limits.ts`の`MAX_FILE_SIZE_BYTES`(既定5GB) | 20GB | 50GB |
-| 選べる保存期間 | 1回・1日・3日・7日 | 左記に加えて15日 | 左記に加えて15日・30日 |
+| 1ファイルの上限サイズ | `lib/limits.ts`の`MAX_FILE_SIZE_BYTES`(100GB) | 300GB | 500GB |
+| 選べる保存期間 | 1回・1日・3日・7日・15日・30日 | 左記に加えて60日 | 左記に加えて100日 |
 | ブラウザ内プレビュー | 不可 | 不可 | 可(MP4/MP3/JPEG/PNGのみ。保存期間「1回」のファイルは対象外) |
 | Turnstile認証(`POST /api/upload/start`) | あり | スキップ | スキップ |
 | アップロードの並列数(`lib/upload/chunkUploader.ts`) | 8 | 8 | 12 |
 
-すべて`lib/plan.ts`の`PLAN_LIMITS`に集約されており、ここを変更するだけでアップロードフロー全体・料金表示に反映される。具体的な容量・金額は暫定値。変更する場合は`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`STRIPE_PRICE_ID_*`/`OPENNODE_BTC_CHARGE_AMOUNT_USD_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
+すべて`lib/plan.ts`の`PLAN_LIMITS`に集約されており、ここを変更するだけでアップロードフロー全体・料金表示に反映される。保存期間の初期値はFree 7日・Standard 15日・Premium 30日のまま。容量は1024進で計算する。料金を変更する場合は`lib/plan.ts`とStripeのPrice設定・`wrangler.jsonc`の`STRIPE_PRICE_ID_*`/`OPENNODE_BTC_CHARGE_AMOUNT_USD_*`を合わせて更新する([`deployment.md`](./deployment.md)参照)。
 
-購入可能なプランは`lib/plan.ts`の`PURCHASABLE_PLANS`（`["standard", "premium"]`）を単一の情報源とし、購入画面とStripe・Bitcoin決済APIで共有する。`/pricing`から購入画面へ進み、Standard（月額250円・20GB・15日保存）またはPremiumを選択できる。既存のPrice ID・OpenNode金額・データ構造を利用し、新しい永続データの種類は追加しない。
+購入可能なプランは`lib/plan.ts`の`PURCHASABLE_PLANS`（`["standard", "premium"]`）を単一の情報源とし、購入画面とStripe・Bitcoin決済APIで共有する。`/pricing`から購入画面へ進み、Standard（月額250円・300GB・最長60日保存）またはPremiumを選択できる。既存のPrice ID・OpenNode金額・データ構造を利用し、新しい永続データの種類は追加しない。
 
 ブラウザ内プレビューの可否(`shares.preview_allowed`)も、保存期間の上限と同じく共有作成時のアップローダーの実効プランから一度だけ判定して共有に保存する(`lib/preview.ts`)。以後アカウントの状態が変わっても、既に作成済みの共有の値は変わらない。ダウンロード側は完全に匿名なので、この判定は「プレビューする人」ではなく「共有を作ったアップローダー」のプランに基づく。保存期間「1回」のファイルは、プレビューが`GET /api/file/[fileId]`の1回限りのダウンロード枠を消費し即削除を誘発してしまうため、共有がプレビュー可であっても無条件でプレビューを非表示にする。
 

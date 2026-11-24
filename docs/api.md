@@ -24,19 +24,21 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
 共有(または既存共有への相乗り)とR2マルチパートアップロードセッションを開始する。
 
 - 新規共有作成時(`shareId`未指定時)は、アップローダーの実効プラン(未ログインは常にfree)がfreeの場合のみ `turnstileToken` によるTurnstile検証が必須。Standard/Premiumはログイン済みアカウントであることが分かっているため検証をスキップする(`isTurnstileRequiredForPlan()`、[`lib/plan.ts`](../lib/plan.ts))。既存共有への相乗り(`shareId`指定時)は `uploadToken` の一致で認可し、プランに関わらずTurnstile再検証は行わない。
-- リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
+- リクエスト: `{ encryptedFileName, fileSize, retention: "once"|"1d"|"3d"|"7d"|"15d"|"30d"|"60d"|"100d", shareId?, uploadToken?, wrappedKey?, keySalt?, turnstileToken? }`
   - `wrappedKey`/`keySalt` は新規共有かつパスワード保護を設定した場合のみ。
   - `encryptedFileName`・`wrappedKey`・`keySalt` は、クライアントが送る base64url(パディングなし)を前提に、ヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する(不正な文字・長さは400)。`encrypted_file_name` は `GET /api/file/[fileId]` の `Content-Disposition` ヘッダに載るため、制御文字・改行・`"` の混入をアップロード開始時に防ぎ、さらに `GET /api/file/[fileId]` 側でもヘッダ生成直前に安全な文字集合へ丸める(`safeAttachmentFilename`。検証前に保存された古い行・破損データ対策)。
 - レスポンス: `{ success: true, shareId, uploadToken, uploadSessionId, expiresAt, uploadMode, analyticsTransferId? }`
   - `uploadMode` は `"direct"`(ブラウザからR2へ署名付きURLで直接PUT)または `"proxy"`(従来どおりWorker経由)。R2 S3 API用Secrets(`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `CLOUDFLARE_ACCOUNT_ID`)が揃っているときだけ `direct`。未設定(ローカル等)は `proxy` にフォールバックする([`deployment.md`](./deployment.md)参照)。
   - `analyticsTransferId` は `shareId` のHMAC(計測基盤用の相関ID。[`analytics.md`](./analytics.md)参照)。`ANALYTICS_SECRET`未設定などでID生成に失敗した場合は省略されるが、フィールドがなくても成功レスポンスとして有効。`shareId`自体を既に返しているため追加の情報漏洩にはならない。
-- ファイルサイズ上限・選べる`retention`はアップローダーの実効プランによって異なる(free: 5GB・`once`/`1d`/`3d`/`7d`、standard: 20GB・上記+`15d`、premium: 50GB・上記+`30d`)。詳細は[`accounts.md`](./accounts.md#プランの差libplants)の表を参照。超過・許可外の場合はそれぞれ400/403。
+- ファイルサイズ上限・選べる`retention`はアップローダーの実効プランによって異なる(free: 100GB・`once`/`1d`/`3d`/`7d`/`15d`/`30d`、standard: 300GB・上記+`60d`、premium: 500GB・上記+`100d`)。詳細は[`accounts.md`](./accounts.md#プランの差libplants)の表を参照。超過・許可外の場合はそれぞれ400/403。
+
+アップロードのパートサイズは暗号化後の推定バイト数を10,000パート以内に収める最小の8MiB倍数とする。開始時の `fileSize` は正の安全整数に限定し、署名URL・中継の両経路で既存セッションの `file_size` からサイズ上限を検証する。パート番号は最大10,000。新しい永続フィールドは追加しない。
 
 ### `POST /api/upload/part-urls`
 
 `uploadMode: "direct"` のとき、R2 UploadPart 用の署名付きPUT URLを発行する。暗号文のバイト列は受け取らない。
 
-- リクエスト: `{ uploadSessionId, uploadToken, parts: [{ partNumber, contentLength }] }`(`parts` は最大32件。`partNumber` は1始まり。`contentLength` は1〜`UPLOAD_PART_SIZE`(8MiB)。同じパート番号が複数ある場合は最後を採用)
+- リクエスト: `{ uploadSessionId, uploadToken, parts: [{ partNumber, contentLength }] }`(`parts` は最大32件。`partNumber` は1始まり。`contentLength` は1〜申告ファイルサイズから計算したパートサイズ(8〜56MiB)。同じパート番号が複数ある場合は最後を採用)
 - 署名に `Content-Length` を含めるため、クライアントはPUT時に申告どおりのバイト数を送る必要がある(proxy経路のパートサイズ上限と同等の濫用抑止)。
 - 認可: `uploadToken` の定数時間比較。パート番号は申告 `file_size` 由来の上限を超えないこと。
 - アップロードセッションID単位のレート制限あり(`UPLOAD_RATE_LIMITER`)。超過時は429。
@@ -54,13 +56,13 @@ APIを追加するときは`server/routes`にハンドラーを置き、`server/
 
 ### `POST /api/upload/chunk`
 
-本文は上限付きで読み取り、実測で8MiBを超えた時点で受信を中断して413を返す。Content-Lengthは早期拒否の補助にのみ使う。
+本文は上限付きで読み取り、実測で認証済みセッションから算出した上限(8〜56MiB)を超えた時点で受信を中断して413を返す。Content-Lengthは早期拒否の補助にのみ使う。
 
 暗号化済みバイト列の一部をR2マルチパートアップロードの1パートとして送信する。**`uploadMode: "proxy"` のフォールバック経路**として残す(Secrets未設定のローカル等)。本番でSecretsが揃っているときはクライアントは `part-urls` → R2直PUT → `part-ack` を使う。
 
-- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `UPLOAD_PART_SIZE`(8MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
+- クライアントは暗号化ストリーム(先頭のファイルsalt + 各パケット)を、パケット境界とは無関係に `getUploadPartSize(fileSize)`(8〜56MiB、[`lib/upload/partSize.ts`](../lib/upload/partSize.ts))ちょうどで切り出して送り、最終パートだけがそれ未満になる。R2の「最終パート以外は同一サイズ」制約を満たすため(GitHub issue #34)。
 - ヘッダー: `Anzdrop-Upload-Session`(アップロードセッションID)、`Anzdrop-Part-Number`(1始まりの整数)、`Anzdrop-Upload-Token`
-- ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、`UPLOAD_PART_SIZE` 以下)
+- ボディ: 暗号化済みバイナリ(`application/octet-stream`相当、ファイルごとのパート上限以下)
 - アップロードセッションID単位のレート制限あり。ボディを読み込む前に判定し、超過時は429(`Retry-After: 60`)。
 - レスポンス: `{ success: true, partNumber }`
 - **同じパート番号の再POSTに冪等**(`resumeMultipartUpload().uploadPart()` + `upload_parts` への `INSERT OR REPLACE`)。クライアント([`lib/upload/chunkUploader.ts`](../lib/upload/chunkUploader.ts))は通信断、HTTP 408・425・429、または5xxのうち500・502・503・504・520-524の場合に、パート単位で指数バックオフ付きリトライする(GitHub issue #65)。

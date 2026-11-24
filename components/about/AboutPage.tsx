@@ -14,7 +14,7 @@ const FAQ_ITEMS: { question: string; answer: React.ReactNode }[] = [
     question: "アップロードできるファイルサイズは?",
     answer: (
       <>
-        無料プランは5GBまでです。有料プランでさらに大きなファイルを送れます。詳しくは
+        無料プランは100GBまでです。有料プランでさらに大きなファイルを送れます。詳しくは
         {" "}
         <a href="/pricing" className="font-bold text-brand hover:underline">
           料金プランのページ
@@ -26,7 +26,7 @@ const FAQ_ITEMS: { question: string; answer: React.ReactNode }[] = [
   {
     question: "保存期間はどのくらいですか?",
     answer:
-      "「1回(ダウンロードされ次第削除)」「1日」「3日」「7日」から選べます(有料プランでは15日・30日も選択可能)。期限が来た共有は自動的に削除されます。",
+      "「1回(ダウンロードされ次第削除)」「1日」「3日」「7日」「15日」「30日」から選べます(Standardでは60日、Premiumでは100日も選択可能)。期限が来た共有は自動的に削除されます。",
   },
   {
     question: "パスワードやリカバリーコードを忘れてしまいました",
