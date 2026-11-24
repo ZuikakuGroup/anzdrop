@@ -186,7 +186,7 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await page.goto('/pricing');
     await expect(page.getByRole('heading', { name: '料金プラン', exact: true })).toHaveCSS('font-weight', '700');
     const premium = page.getByRole('heading', { name: 'Premium', exact: true }).locator('..');
-    await expect(premium.getByRole('link', { name: '有料プランを選ぶ' })).toHaveCSS('background-color', 'rgb(241, 90, 34)');
+    await expect(premium.getByRole('link', { name: '始める', exact: true })).toHaveCSS('background-color', 'rgb(241, 90, 34)');
     await page.route('**/api/download/ui-brand-review', route => route.fulfill({ status: 404, json: { success: false } }));
     await page.goto('/d/ui-brand-review');
     await expect(page.getByRole('heading', { name: 'ダウンロード', exact: true })).toHaveCSS('font-weight', '700');
@@ -201,7 +201,7 @@ test.describe('Astro公開ページ（ローカルWorkers）', () => {
     await expect(card).toContainText('20GB');
     await expect(card).toContainText('15日');
     await expect(card).not.toContainText('準備中');
-    await expect(card.getByRole('link', { name: '有料プランを選ぶ' })).toHaveAttribute('href', '/mypage/billing');
+    await expect(card.getByRole('link', { name: '始める', exact: true })).toHaveAttribute('href', '/mypage/billing');
   });
   test('プレビューはキーボード操作を内側に保ち、Escで閉じて元のボタンへ戻る', async ({ page }) => {
     // Synthetic encrypted image served entirely by browser routes; no server storage.
