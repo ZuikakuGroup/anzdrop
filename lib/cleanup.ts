@@ -1,8 +1,9 @@
 import { budgetCleanup, CleanupWorkLimitError } from "./storage/cleanupBudget";
 import { isMissingMultipartUpload } from "./storage/r2Errors";
 
-type ExpiredShare = {
+type CleanupCandidate = {
   id: string;
+  cleanup_at: string;
 };
 
 type FileStorageKey = {
@@ -117,20 +118,12 @@ export type CleanupResult = {
   reachedBatchLimit: boolean;
 };
 
-// 「対象をLIMIT件ずつ取得 → 1件ずつ処理」をバッチで繰り返す共通ロジック。
-//
-// - 1件の失敗がその回の実行全体を止めないよう、各件を try/catch し、失敗は
-//   ログに残して次へ進む。
-// - 削除に失敗した行は抽出条件を満たしたまま残るため、同じ実行内で再取得して
-//   無限ループにならないよう、失敗したIDを覚えて以降のバッチから除外する。
-//   さらに、恒久的に失敗する行が queryLimit 件以上あってもその後ろの正常な
-//   行が永久に掃除されないよう、取得件数を「queryLimit + これまでの失敗数」に
-//   広げ、毎バッチ必ず queryLimit 件の新しい候補を見に行く。
-// - バッチ数の上限で1回の実行あたりのサブリクエスト量を抑える。消化しきれ
-//   なかった場合は reachedBatchLimit を立てて次回以降に委ねる。
-async function runCleanupBatches<Row extends { id: string }>(
+// Keyset pagination keeps each read bounded even when candidates fail or a
+// dry-run leaves every row intact. The timestamp + ID order must match SQL.
+// Cursors live only for this invocation; failed rows are retried next run.
+async function runCleanupBatches<Row extends CleanupCandidate>(
   options: CleanupBatchOptions,
-  fetchBatch: (limit: number) => Promise<Row[]>,
+  fetchBatch: (limit: number, after: CleanupCandidate | undefined) => Promise<Row[]>,
   handle: (row: Row) => Promise<void>,
   onError: (row: Row, error: unknown) => void
 ): Promise<CleanupResult> {
@@ -138,29 +131,30 @@ async function runCleanupBatches<Row extends { id: string }>(
   const maxBatches = options.maxBatches ?? CLEANUP_MAX_BATCHES;
 
   if (!Number.isSafeInteger(queryLimit) || queryLimit < 1 || queryLimit > 100 || !Number.isSafeInteger(maxBatches) || maxBatches < 1 || maxBatches > 10) throw new Error("Invalid cleanup batch limits");
-  const previewedIds = new Set<string>();
+  let candidates = 0;
+  let after: CleanupCandidate | undefined;
   let processed = 0;
-  const failedIds = new Set<string>();
+  let failed = 0;
   let reachedBatchLimit = false;
   let workLimitReached = false;
 
   batches: for (let batch = 0; batch < maxBatches; batch++) {
-    const limit = queryLimit + failedIds.size + previewedIds.size;
+    const limit = queryLimit;
     let fetched: Row[];
-    try { fetched = await fetchBatch(limit); }
+    try { fetched = await fetchBatch(limit, after); }
     catch (error) {
       if (!(error instanceof CleanupWorkLimitError)) throw error;
       reachedBatchLimit = true; workLimitReached = true; break;
     }
-    const rows = fetched.filter((row) => !failedIds.has(row.id) && !previewedIds.has(row.id));
 
     // 新しく処理できる候補がもう無い。
-    if (rows.length === 0) {
+    if (fetched.length === 0) {
       break;
     }
 
-    for (const row of rows) {
-      if (options.dryRun) { previewedIds.add(row.id); continue; }
+    for (const row of fetched) {
+      after = row;
+      if (options.dryRun) { candidates++; continue; }
       try {
         await handle(row);
         processed++;
@@ -168,7 +162,7 @@ async function runCleanupBatches<Row extends { id: string }>(
         if (error instanceof CleanupWorkLimitError) {
           reachedBatchLimit = true; workLimitReached = true; break batches;
         }
-        failedIds.add(row.id);
+        failed++;
         onError(row, error);
       }
     }
@@ -188,8 +182,8 @@ async function runCleanupBatches<Row extends { id: string }>(
   return {
     processed,
     ...(workLimitReached ? { workLimitReached: true as const } : {}),
-    ...(options.dryRun ? { dryRun: true as const, candidates: previewedIds.size } : {}),
-    failed: failedIds.size,
+    ...(options.dryRun ? { dryRun: true as const, candidates } : {}),
+    failed,
     reachedBatchLimit,
   };
 }
@@ -200,14 +194,17 @@ export async function cleanupExpiredShares(
   options: CleanupBatchOptions = {}
 ): Promise<CleanupResult> {
   env = budgetCleanup(env, options.workLimit);
-  return runCleanupBatches<ExpiredShare>(
+  const cutoff = new Date().toISOString();
+  return runCleanupBatches<CleanupCandidate>(
     options,
-    async (limit) => {
+    async (limit, after) => {
       const result = await env.DB.prepare(
-        `SELECT id FROM shares WHERE expires_at <= ? ORDER BY expires_at ASC LIMIT ?`
+        `SELECT id, expires_at AS cleanup_at FROM shares WHERE expires_at <= ?
+          ${after ? "AND (expires_at, id) > (?, ?)" : ""}
+          ORDER BY expires_at, id LIMIT ?`
       )
-        .bind(new Date().toISOString(), limit)
-        .all<ExpiredShare>();
+        .bind(cutoff, ...(after ? [after.cleanup_at, after.id] : []), limit)
+        .all<CleanupCandidate>();
 
       return result.results ?? [];
     },
@@ -245,18 +242,17 @@ export async function cleanupStaleUploads(
   options: CleanupBatchOptions = {}
 ): Promise<CleanupResult> {
   env = budgetCleanup(env, options.workLimit);
-  return runCleanupBatches<UploadSession>(
+  const staleBefore = new Date(Date.now() - STALE_UPLOAD_THRESHOLD_MS).toISOString();
+  return runCleanupBatches<UploadSession & CleanupCandidate>(
     options,
-    async (limit) => {
-      const staleBefore = new Date(
-        Date.now() - STALE_UPLOAD_THRESHOLD_MS
-      ).toISOString();
-
+    async (limit, after) => {
       const result = await env.DB.prepare(
-        `SELECT id, storage_key, upload_id FROM uploads WHERE created_at <= ? ORDER BY created_at ASC LIMIT ?`
+        `SELECT id, storage_key, upload_id, created_at AS cleanup_at FROM uploads WHERE created_at <= ?
+          ${after ? "AND (created_at, id) > (?, ?)" : ""}
+          ORDER BY created_at, id LIMIT ?`
       )
-        .bind(staleBefore, limit)
-        .all<UploadSession>();
+        .bind(staleBefore, ...(after ? [after.cleanup_at, after.id] : []), limit)
+        .all<UploadSession & CleanupCandidate>();
 
       return result.results ?? [];
     },

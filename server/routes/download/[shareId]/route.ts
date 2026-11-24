@@ -131,8 +131,8 @@ export const GET = withApiHandler(
         shareId,
         env.ANALYTICS_SECRET
       );
-    } catch (error) {
-      console.error("GET /api/download/[shareId]: analytics transfer ID generation failed:", error);
+    } catch {
+      console.error("GET /api/download/[shareId]: analytics transfer ID generation failed");
     }
 
     const responseBody: DownloadResponse = {

@@ -63,10 +63,10 @@ export async function checkRateLimit(
 
   try {
     outcome = await limiter.limit({ key });
-  } catch (error) {
+  } catch {
     // キー自体はログに残さない(fileId / shareId は共有 URL の一部で、
     // 知っている者だけがダウンロードできるという前提を壊さないため)。
-    console.error(`${routeLabel}: rate limit check failed:`, error);
+    console.error(`${routeLabel}: rate limit check failed`);
 
     return { ok: true };
   }

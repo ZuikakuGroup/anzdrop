@@ -171,10 +171,10 @@ export default function AdminAccountsPage() {
     <AdminShell active="accounts">
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-black leading-snug tracking-normal">
+        <h1 className="text-2xl font-bold leading-snug tracking-normal">
           アカウントのプラン管理
         </h1>
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/60">
           アカウントIDを指定して、Standard / Premium
           プランを手動で付与・取り消しします
         </p>
@@ -182,8 +182,8 @@ export default function AdminAccountsPage() {
 
       <div className="space-y-3 rounded-lg border border-ink/10 bg-paper p-5">
         <div className="space-y-1">
-          <h2 className="text-sm font-black">アカウントを検索する</h2>
-          <p className="text-xs text-ink/50">
+          <h2 className="text-sm font-bold">アカウントを検索する</h2>
+          <p className="text-xs text-ink/60">
             アカウントIDを入力して現在のプランを確認します
           </p>
         </div>
@@ -226,7 +226,7 @@ export default function AdminAccountsPage() {
         {account && account.exists && (
           <div className="space-y-4 rounded border border-ink/10 p-4">
             <div className="space-y-1">
-              <p className="font-mono text-xs text-ink/50">
+              <p className="font-mono text-xs text-ink/60">
                 アカウントID: {searchedAccountId}
               </p>
               <p className="text-sm text-ink/80">
@@ -249,7 +249,7 @@ export default function AdminAccountsPage() {
             )}
 
             <div className="space-y-3 border-t border-ink/10 pt-4">
-              <h3 className="text-sm font-black">プランを付与する</h3>
+              <h3 className="text-sm font-bold">プランを付与する</h3>
 
               <div className="space-y-1.5">
                 <p className="text-xs font-bold text-ink/60">プラン</p>
@@ -338,7 +338,7 @@ export default function AdminAccountsPage() {
                   <button
                     onClick={() => setConfirmingGrant(false)}
                     disabled={actionPending}
-                    className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                    className="rounded px-2 py-1 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
                   >
                     キャンセル
                   </button>
@@ -359,8 +359,8 @@ export default function AdminAccountsPage() {
 
             {canRevoke && (
               <div className="space-y-2 border-t border-ink/10 pt-4">
-                <h3 className="text-sm font-black">無料プランに戻す</h3>
-                <p className="text-xs text-ink/50">
+                <h3 className="text-sm font-bold">無料プランに戻す</h3>
+                <p className="text-xs text-ink/60">
                   プランを無料に戻し、有効期限を消去します(誤付与の取り消しなど)
                 </p>
 
@@ -379,7 +379,7 @@ export default function AdminAccountsPage() {
                     <button
                       onClick={() => setConfirmingRevoke(false)}
                       disabled={actionPending}
-                      className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                      className="rounded px-2 py-1 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
                     >
                       キャンセル
                     </button>

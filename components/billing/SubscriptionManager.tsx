@@ -79,7 +79,7 @@ export default function SubscriptionManager({
               type="button"
               onClick={onDismissConfirm}
               disabled={busy}
-              className="w-full rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+              className="w-full rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
               解約しない
             </button>
@@ -87,7 +87,7 @@ export default function SubscriptionManager({
               type="button"
               onClick={onCancel}
               disabled={busy}
-              className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3 text-sm font-black tracking-wider text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
+              className="flex w-full items-center justify-center gap-2 rounded border-2 border-ink px-4 py-3 text-sm font-bold tracking-normal text-ink transition-colors hover:bg-ink/[0.03] disabled:opacity-30"
             >
               {action === "cancel" && <Spinner className="h-4 w-4 text-ink" />}
               解約する
@@ -98,7 +98,7 @@ export default function SubscriptionManager({
             type="button"
             onClick={onStartConfirm}
             disabled={busy}
-            className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
+            className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40 disabled:opacity-30"
           >
             解約する
           </button>
@@ -108,7 +108,7 @@ export default function SubscriptionManager({
           type="button"
           onClick={onResume}
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
         >
           {action === "resume" && <Spinner className="h-4 w-4 text-paper" />}
           解約を取り消す

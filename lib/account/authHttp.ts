@@ -1,3 +1,4 @@
+import { recordApiException } from "@/lib/observability";
 import { getWorkerRuntime } from "@/server/runtime";
 
 export class AccountAuthError extends Error {
@@ -19,7 +20,7 @@ export function withAccountAuthHandler(label: string, handler: (request: Request
       return response;
     } catch (error) {
       if (error instanceof AccountAuthError) return authJson({ success: false, error: error.message }, error.status);
-      console.error(`${label}: account authentication failed`);
+      recordApiException(label);
       return authJson({ success: false, error: "サーバー内部でエラーが発生しました" }, 500);
     }
   };

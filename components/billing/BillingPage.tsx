@@ -239,10 +239,10 @@ export default function BillingPage({
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
+            <h1 className="text-2xl font-bold leading-snug tracking-normal">
               プラン・お支払い
             </h1>
-            <p className="text-xs text-ink/50">
+            <p className="text-xs text-ink/60">
               プランの変更・お支払い方法・解約の手続きができます。
             </p>
             <a
@@ -261,7 +261,7 @@ export default function BillingPage({
               <button
                 type="button"
                 onClick={retry}
-                className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40"
+                className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40"
               >
                 再読み込み
               </button>

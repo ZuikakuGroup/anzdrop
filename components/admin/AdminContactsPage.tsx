@@ -38,10 +38,10 @@ export default function AdminContactsPage() {
     <AdminShell active="contacts">
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-black leading-snug tracking-normal">
+        <h1 className="text-2xl font-bold leading-snug tracking-normal">
           お問い合わせの管理
         </h1>
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/60">
           ユーザーから届いたお問い合わせを確認し、対応します
         </p>
       </div>
@@ -57,12 +57,12 @@ export default function AdminContactsPage() {
       {isLoading ? (
         <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
           <Spinner className="mb-1 h-6 w-6 text-brand" />
-          <span className="text-xs font-bold text-ink/50">
+          <span className="text-xs font-bold text-ink/60">
             読み込み中...
           </span>
         </div>
       ) : contacts.length === 0 ? (
-        <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/50">
+        <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/60">
           該当するお問い合わせはありません
         </div>
       ) : (
@@ -77,15 +77,15 @@ export default function AdminContactsPage() {
                   <p className="text-sm font-bold text-ink">
                     {contact.subject}
                   </p>
-                  <p className="text-xs text-ink/50">
+                  <p className="text-xs text-ink/60">
                     {contact.name ? `${contact.name} · ` : ""}
                     {contact.email}
                   </p>
-                  <p className="text-xs text-ink/40">
+                  <p className="text-xs text-ink/60">
                     受信日時: {formatDateTime(contact.createdAt)}
                   </p>
                   {contact.resolvedAt && (
-                    <p className="text-xs text-ink/40">
+                    <p className="text-xs text-ink/60">
                       対応日時: {formatDateTime(contact.resolvedAt)}
                     </p>
                   )}

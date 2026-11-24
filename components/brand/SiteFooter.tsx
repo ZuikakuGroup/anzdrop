@@ -43,7 +43,7 @@ export default function SiteFooter({ reportShareId }: SiteFooterProps) {
           <p className="max-w-xs text-xs leading-relaxed text-ink/60">
             登録不要・エンドツーエンド暗号化の匿名ファイル共有。
           </p>
-          <p className="text-[11px] text-ink/50">&copy; Anzdrop</p>
+          <p className="text-[11px] text-ink/60">&copy; Anzdrop</p>
         </div>
 
         <nav
@@ -57,7 +57,7 @@ export default function SiteFooter({ reportShareId }: SiteFooterProps) {
               <div key={group.id} className="space-y-2.5">
                 <p
                   id={headingId}
-                  className="text-[11px] font-bold tracking-wide text-ink/50"
+                  className="text-[11px] font-bold tracking-wide text-ink/60"
                 >
                   {group.heading}
                 </p>

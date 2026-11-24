@@ -97,7 +97,7 @@ function OverviewView({ data }: { data: OverviewReport }) {
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="mb-3 text-sm font-black">終了日</h2>
+        <h2 className="mb-3 text-sm font-bold">終了日</h2>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="送信完了数" value={formatNumber(data.today.successfulTransfers)} />
           <Stat label="ユニーク送信者数" value={formatNumber(data.today.uniqueSenders)} />
@@ -107,7 +107,7 @@ function OverviewView({ data }: { data: OverviewReport }) {
       </section>
       <AnalyticsBarChart title="指定期間の主要件数" labels={["送信者", "送信完了", "新規送信者", "受信→送信"]} values={[data.last30Days.uniqueSenders, data.last30Days.successfulTransfers, data.last30Days.newSenders, data.last30Days.recipientToSenderConversions]} />
       <section>
-        <h2 className="mb-3 text-sm font-black">指定期間</h2>
+        <h2 className="mb-3 text-sm font-bold">指定期間</h2>
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="ユニーク送信者数" value={formatNumber(data.last30Days.uniqueSenders)} />
           <Stat label="送信完了数" value={formatNumber(data.last30Days.successfulTransfers)} />
@@ -130,7 +130,7 @@ function FunnelView({ data }: { data: FunnelReport }) {
     <ScrollableTable label="ファネルの表">
       <table className="min-w-[30rem] w-full text-left text-xs">
         <thead>
-          <tr className="border-b border-ink/10 text-ink/50">
+          <tr className="border-b border-ink/10 text-ink/60">
             <th className="py-2.5 font-bold">段階</th>
             <th className="py-2.5 font-bold">件数</th>
             <th className="py-2.5 font-bold">前段階からの転換率</th>
@@ -182,7 +182,7 @@ function ErrorTable({ title, rows }: { title: string; rows: { code: string; coun
 
   return (
     <div>
-      <h3 className="mb-1 text-xs font-bold text-ink/50">{title}</h3>
+      <h3 className="mb-1 text-xs font-bold text-ink/60">{title}</h3>
       <table className="w-full text-left text-xs">
         <tbody>
           {rows.map((row) => (
@@ -212,7 +212,7 @@ function RateTable({
 
   return (
     <div>
-      <h3 className="mb-1 text-xs font-bold text-ink/50">{title}</h3>
+      <h3 className="mb-1 text-xs font-bold text-ink/60">{title}</h3>
       <table className="w-full text-left text-xs">
         <tbody>
           {rows.map((row) => (
@@ -236,7 +236,7 @@ function AcquisitionView({ data }: { data: { rows: AcquisitionRow[] } }) {
     <ScrollableTable label="流入経路の表">
       <table className="min-w-[48rem] w-full text-left text-xs">
       <thead>
-        <tr className="border-b border-ink/10 text-ink/50">
+        <tr className="border-b border-ink/10 text-ink/60">
           <th className="py-2 font-bold">流入元</th>
           <th className="py-2 font-bold">メディア</th>
           <th className="py-2 font-bold">キャンペーン</th>
@@ -271,7 +271,7 @@ function RetentionView({ data }: { data: RetentionReport }) {
       <ScrollableTable label="継続率の表">
         <table className="min-w-[30rem] w-full text-left text-xs">
           <thead>
-            <tr className="border-b border-ink/10 text-ink/50">
+            <tr className="border-b border-ink/10 text-ink/60">
               {(["1", "7", "14", "30", "60", "90"] as const).map((day) => (
                 <th key={day} className="py-2.5 font-bold">{day}日後</th>
               ))}
@@ -308,15 +308,15 @@ function RecipientGrowthView({ data }: { data: RecipientGrowthReport }) {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-ink/10 bg-paper p-4">
-      <dt className="text-[11px] font-bold text-ink/50">{label}</dt>
-      <dd className="mt-1 text-lg font-black">{value}</dd>
+      <dt className="text-[11px] font-bold text-ink/60">{label}</dt>
+      <dd className="mt-1 text-lg font-bold">{value}</dd>
     </div>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/50">
+    <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/60">
       データがありません
     </div>
   );
@@ -408,10 +408,10 @@ export default function AdminAnalyticsPage() {
     <AdminShell active="analytics" wide>
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-black leading-snug tracking-normal">
+        <h1 className="text-2xl font-bold leading-snug tracking-normal">
           計測ダッシュボード
         </h1>
-        <p className="max-w-2xl text-xs leading-relaxed text-ink/50">
+        <p className="max-w-2xl text-xs leading-relaxed text-ink/60">
           匿名化された利用状況の集計データです(ファイル内容・復号鍵・IPアドレス等は含まれません)
         </p>
       </div>
@@ -427,7 +427,7 @@ export default function AdminAnalyticsPage() {
         </label>
         <button type="button" onClick={applyRange} className="rounded bg-ink px-3 py-2 text-xs font-bold text-paper">期間を適用</button>
         <button type="button" onClick={downloadCsv} disabled={isLoading || isExporting} className="rounded border border-ink/20 px-3 py-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-50">{isExporting ? "CSVを作成中..." : "全レポートをCSVでダウンロード"}</button>
-        <p className="basis-full text-xs text-ink/50">詳細レポートは生イベントの保持期限により直近1年まで確認できます。</p>
+        <p className="basis-full text-xs text-ink/60">詳細レポートは生イベントの保持期限により直近1年まで確認できます。</p>
       </div>
 
       <nav
@@ -465,7 +465,7 @@ export default function AdminAnalyticsPage() {
       {isLoading ? (
         <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
           <Spinner className="mb-1 h-6 w-6 text-brand" />
-          <span className="text-xs font-bold text-ink/50">読み込み中...</span>
+          <span className="text-xs font-bold text-ink/60">読み込み中...</span>
         </div>
       ) : !error && data ? (
         <div className="rounded-xl border border-ink/10 bg-paper p-4 sm:p-6">

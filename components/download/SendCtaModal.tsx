@@ -85,11 +85,11 @@ export default function SendCtaModal({
           onClick={onClose}
           aria-label="閉じる"
           title="閉じる"
-          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
         >
           <XIcon className="h-4 w-4" />
         </button>
-        <h2 id="send-cta-title" className="text-xl font-black">
+        <h2 id="send-cta-title" className="text-xl font-bold">
           ダウンロードが完了しました
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-ink/60">
@@ -98,7 +98,7 @@ export default function SendCtaModal({
         <a
           href="/"
           onClick={onCtaClick}
-          className="mt-7 inline-flex items-center justify-center rounded bg-brand px-5 py-2.5 text-xs font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+          className="mt-7 inline-flex items-center justify-center rounded bg-brand px-5 py-2.5 text-xs font-bold tracking-normal text-paper transition-colors hover:bg-brand/90"
         >
           Anzdropでファイルを送る
         </a>

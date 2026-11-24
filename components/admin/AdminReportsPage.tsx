@@ -141,18 +141,18 @@ export default function AdminReportsPage() {
     <AdminShell active="reports">
 
       <div className="space-y-1">
-        <h1 className="text-2xl font-black leading-snug tracking-normal">
+        <h1 className="text-2xl font-bold leading-snug tracking-normal">
           通報の管理
         </h1>
-        <p className="text-xs text-ink/50">
+        <p className="text-xs text-ink/60">
           ユーザーから報告された共有を確認し、対応します
         </p>
       </div>
 
       <div className="space-y-3 rounded-lg border border-ink/10 bg-paper p-5">
         <div className="space-y-1">
-          <h2 className="text-sm font-black">共有IDを直接操作する</h2>
-          <p className="text-xs text-ink/50">
+          <h2 className="text-sm font-bold">共有IDを直接操作する</h2>
+          <p className="text-xs text-ink/60">
             通報の有無にかかわらず、共有IDを指定して一時停止・削除ができます
           </p>
         </div>
@@ -186,7 +186,7 @@ export default function AdminReportsPage() {
         {lookupResult && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-ink/10 p-3">
             <div className="space-y-0.5">
-              <p className="font-mono text-xs text-ink/50">
+              <p className="font-mono text-xs text-ink/60">
                 共有ID: {lookedUpShareId}
               </p>
               <p className="text-xs text-ink/70">
@@ -223,7 +223,7 @@ export default function AdminReportsPage() {
                     <button
                       onClick={() => setLookupConfirmingDelete(false)}
                       disabled={lookupActionPending}
-                      className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                      className="rounded px-2 py-1 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
                     >
                       キャンセル
                     </button>
@@ -253,12 +253,12 @@ export default function AdminReportsPage() {
       {isLoading ? (
         <div className="flex h-40 flex-col items-center justify-center gap-1 rounded border-2 border-ink p-10 text-center">
           <Spinner className="mb-1 h-6 w-6 text-brand" />
-          <span className="text-xs font-bold text-ink/50">
+          <span className="text-xs font-bold text-ink/60">
             読み込み中...
           </span>
         </div>
       ) : reports.length === 0 ? (
-        <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/50">
+        <div className="rounded border-2 border-ink/10 p-10 text-center text-sm text-ink/60">
           該当する通報はありません
         </div>
       ) : (
@@ -274,14 +274,14 @@ export default function AdminReportsPage() {
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="space-y-0.5">
-                  <p className="font-mono text-xs text-ink/50">
+                  <p className="font-mono text-xs text-ink/60">
                     共有ID: {report.shareId}
                   </p>
-                  <p className="text-xs text-ink/40">
+                  <p className="text-xs text-ink/60">
                     報告日時: {formatDateTime(report.createdAt)}
                   </p>
                   {report.resolvedAt && (
-                    <p className="text-xs text-ink/40">
+                    <p className="text-xs text-ink/60">
                       対応日時: {formatDateTime(report.resolvedAt)}
                     </p>
                   )}
@@ -307,7 +307,7 @@ export default function AdminReportsPage() {
                         ? "bg-amber-500/10 text-amber-700"
                         : report.share.exists
                           ? "bg-ink/10 text-ink/70"
-                          : "bg-ink/5 text-ink/40"
+                          : "bg-ink/5 text-ink/60"
                     }`}
                   >
                     {shareStatusLabel(report.share)}
@@ -382,7 +382,7 @@ export default function AdminReportsPage() {
                     <button
                       onClick={() => setConfirmingShareId("")}
                       disabled={deletingShareId === report.shareId}
-                      className="rounded px-2 py-1 text-xs font-bold text-ink/50 transition-colors hover:bg-ink/[0.06]"
+                      className="rounded px-2 py-1 text-xs font-bold text-ink/60 transition-colors hover:bg-ink/[0.06]"
                     >
                       キャンセル
                     </button>

@@ -13,6 +13,7 @@ for (const [index, file] of files.entries()) {
   const parsed = ts.parseConfigFileTextToJson(file, await readFile(file, "utf8"));
   if (parsed.error || !parsed.config?.name) throw new Error(`Invalid Wrangler config: ${file}`);
   parsed.config.account_id = app.config.account_id;
+  parsed.config.preview_urls = false;
   if (index === 1) {
     parsed.config.main = "../../compiled/public/entry.mjs";
     parsed.config.no_bundle = true;

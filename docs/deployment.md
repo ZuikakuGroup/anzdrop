@@ -1,32 +1,31 @@
 # デプロイ・CI/CD
 
-## 自動デプロイ(GitHub Actions)
+## ビルド・ステージング・自動デプロイ
 
-`main` ブランチへのpushをトリガーに [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) が実行され、以下を順に行う。
+main更新時に [deploy.yml](../.github/workflows/deploy.yml) がLint・型チェック・全Vitest・隔離した共有E2Eとビルド検証を行う。設定済みの場合は独立ステージングへ配信して検証する。**mainへのpush後、同じrunのbuildとstagingが成功すると本番へ自動デプロイする。** production Environmentはmainブランチだけを許可し、手動承認は不要。workflow_dispatchは完全な実行SHAを指定すると本番まで、空ならステージングのみ実行する。ステージング無効・失敗時は本番へ進まない。
 
-デプロイ成功後は [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) が本番 URL(`https://anzdrop.com`)へ Playwright を実行する。リンク切れチェック・週次レポートなど他の自動化は [`ci-automations.md`](./ci-automations.md) を参照。
+ステージングの準備、Secretsの分離、初回bootstrap、最小権限、割合配信の判断と復旧手順は [リリース管理](./release-management.md) を参照する。初回導入時（2026-10-30）はGitHub/Cloudflare側の設定・リソースを作成していない。環境設定と初回bootstrapの完了を確認してから本番リリースへ進める。
 
-1. 依存関係インストール(`npm ci`)
-2. `npm run lint`
-3. `npx tsc --noEmit`、ルーター型チェック、Astroチェック、全Vitest
-4. Astroをビルドし、Wranglerの`--dry-run --outdir`でHono・Astro・ルーターのアップロード用バンドルを生成する
-5. 3つのWorkerのモジュール、Astroの静的アセット、3つのWrangler設定を決定論的なtarにまとめ、tarファイルのSHA-256を計算する
-6. 公開リポジトリのGitHub Artifact Attestationをtarに対して作成し、tarとSHA-256ファイルをActions Artifactへ保存する
-7. **D1マイグレーションの本番適用**: `npx wrangler d1 migrations apply DB --remote`
-8. tarのSHA-256を再確認して展開し、`wrangler deploy --no-bundle`でHono APP、Astro PUBLIC、ルーターの順に、そのtar内のバンドルとアセットをデプロイする。各コマンドが出力したWorker Version IDと、Cloudflare APIでそのVersion IDを100%配信するDeployment IDを取得する
-9. 3つのデプロイとID照合がすべて成功した後にJSON manifestを生成し、Actions Artifactへ保存する
+既存の成果物管理を使い、次の順で本番を更新する。
 
-いずれかのステップが失敗すると後続は実行されない。Workersのデプロイは原子的な3件セットではない。たとえばAPPのデプロイ後にPUBLICの更新が失敗すると、新しいAPPと古いPUBLICが混在する。途中で失敗した場合、部分適用が残る可能性があるため、「すべて成功した」というmanifestは作成しない。マイグレーションはデプロイより先に適用されるため、新しいカラム/テーブルを前提とするコードをデプロイする場合は、対応するマイグレーションファイルを同じPR/コミットに含めておけば自動的に順序よく反映される。
+1. Astroと3 Workerのdry-runバンドル、静的アセット、Wrangler設定、マイグレーションSQLを決定論的なtarにまとめ、SHA-256とGitHub Artifact Attestationを作成する。
+2. ステージング成功後、production jobが同じrunの本番tarを取得し、署名・コミット・ref・ハッシュを検証する。再ビルドはしない。
+3. Binding・既存D1/R2の識別情報・Secret名・main限定のEnvironment設定を確認し、稼働中の3 WorkerのVersion組をマイグレーション前に記録する。
+4. tarに含むD1マイグレーションを本番へ適用する。旧Workerが動く変更だけをこのリリースに含める。
+5. 事前記録から稼働Versionが変わっていないことを確認して、APP→PUBLIC→ルーターの順にtar内のバンドルを配信する。各Version IDをDeployment IDと照合し、部分完了の記録を都度保存する。
+6. 全3 Workerの照合成功後に成功manifestを生成し、読取り専用の本番スモークを実行する。
+
+3 Workerの更新は原子的ではなく、途中失敗では新旧が混在する。成功manifestがなくても、事前Version組と部分完了記録をalwaysステップで保存する。失敗後は自動でデータやコードを戻さず、[復旧手順](./release-management.md#復旧は明示した安定versionへ戻す)で互換性を確認する。後続の [e2e.yml](../.github/workflows/e2e.yml) も読取り専用とし、本番で合成ファイルやアカウントを作らない。
 
 ### 監査用artifactとmanifest
 
-- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWorkerのモジュール、Astroの静的アセットディレクトリ、各Wrangler設定が入る。API・Astroの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のAstroビルドやWranglerバンドルは行わない。
+- ハッシュ・[GitHub Artifact Attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)の対象は`anzdrop-deploy.tar`**そのもの**。tarには3つのWorkerのモジュール、Astroの静的アセットディレクトリ、各Wrangler設定とマイグレーションSQLが入る。API・Astroの`DEPLOYMENT_ENV=production`、3つのWorkerのアカウントIDもtar内の設定に固定する。tarのファイル順とメタデータを正規化する。デプロイ前に同じtarのSHA-256を再計算し、展開したファイルを`--no-bundle`でアップロードする。Cloudflare側で別のAstroビルドやWranglerバンドルは行わない。
 - `deployment-build-<runId>-<attempt>` Actions Artifactにtarと`.sha256`、`deployment-manifest-<runId>-<attempt>` Actions Artifactに成功後の`deployment-manifest.json`を保存する。manifestはリポジトリ、コミット、ref、workflow、run ID・attempt、tarのSHA-256、3つのWorker名・Version ID・Deployment ID・作成時刻、本番URLを記録する。トークン等の秘密情報は含まない。
 - Deployment IDは「最新のDeployment」から採らない。各`wrangler deploy`が出力した固有のVersion IDと、デプロイ開始後の[Cloudflare Workers Deployment API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/)の記録を照合する。同一Version IDのDeploymentが複数ある、100%配信ではない、作成時刻が合わない等の場合は失敗する。WorkersのVersion IDはコード・設定・静的アセットのバージョン、Deployment IDはそれを配信する記録を表す。
 - GitHub Actions Artifactの保存期間は90日（組織・リポジトリの設定で短縮される場合がある）。それを超える長期保存が必要なら別途アーカイブを設計する。releaseやmainへの自動書き戻しは行わず、`contents: read`を維持する。
 - GitHub ActionsのAction参照は既存workflowと同じメジャーバージョンタグを使用する。タグの更新を信頼する運用であり、Action本体まで固定したい場合は全ActionをコミットSHAへpinする追加変更が必要。
 
-検証例（`RUN_ID`と`ATTEMPT`は対象のActions runに置き換える）:
+検証例を以下に示す。`RUN_ID`と`ATTEMPT`は対象のActions runに置き換える。
 
 ```bash
 gh run download "$RUN_ID" -R ZuikakuGroup/anzdrop -n "deployment-build-$RUN_ID-$ATTEMPT" -D build
@@ -48,7 +47,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 | Secret名 | 用途 |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | `wrangler`のD1マイグレーション適用・デプロイ両方に使用。対象アカウントの Workers / D1 / R2 への書き込み権限が必要 |
+| `CLOUDFLARE_API_TOKEN` | 環境別にGitHub Environmentへ設定。Workers更新・履歴/Secret名の参照、D1マイグレーション、R2バケット情報の読取りに必要な最小権限。R2オブジェクト書込み権限は不要 |
 | `TURNSTILE_SITE_KEY` | ビルド時に `NEXT_PUBLIC_TURNSTILE_SITE_KEY` としてクライアントバンドルへ埋め込まれる、Turnstileのサイトキー(公開情報) |
 | `STRIPE_PUBLISHABLE_KEY` | ビルド時に `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` としてクライアントバンドルへ埋め込まれる、Stripeの公開可能キー(公開情報。Stripe.js/Payment Elementの初期化に使う) |
 
@@ -71,7 +70,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 | `R2_SECRET_ACCESS_KEY` | 上記トークンのシークレットキー |
 | `CLOUDFLARE_ACCOUNT_ID` | S3エンドポイント(`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`)用のアカウントID |
 
-これら3つが揃っているときだけ `POST /api/upload/start` が `uploadMode: "direct"` を返す。未設定(ローカル Miniflare 等)では `"proxy"` にフォールバックし、従来の `/api/upload/chunk` 経路を使う。
+R2直アップロード用の3つのSecretが揃っているときだけ `POST /api/upload/start` が `uploadMode: "direct"` を返す。未設定(ローカル Miniflare 等)では `"proxy"` にフォールバックし、従来の `/api/upload/chunk` 経路を使う。
 
 #### R2 直アップロード用トークンと CORS
 
@@ -97,7 +96,7 @@ tarの`sha256:`値とmanifestの`artifact.sha256`を突き合わせ、Attestatio
 
 これらの金額・日数は暫定値([`lib/plan.ts`](../lib/plan.ts)参照)。実際のプラン内容が決まったら、この`vars`とStripeのPrice設定を合わせて更新する。
 
-監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`はこの成果物を配信する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
+監査成果物の生成時に、API・Astroの設定へ`DEPLOYMENT_ENV=production`を固定する。`npm run deploy`の配信スクリプトはこの成果物を使うが、信頼されたmainイベント・preflight記録を要求する。通常は自動デプロイworkflow経由で実行する。共有の`wrangler.jsonc`には定義しないため、通常のローカルプレビューには引き継がれない。
 
 ## Cloudflareリソース
 
@@ -135,9 +134,9 @@ Rate Limiting Rules は**ゾーン単位の機能**なので、Worker を `*.wor
    - 特性(With the same characteristics): **IP**
    - 閾値・期間・アクション・継続時間: プランごとに選べる値が違う(**Free プランはルール1本・カウント期間10秒・Block・継続10秒のみ**)。
 
-閾値を決めるときの注意として、**1回のダウンロード/アップロードが多数のリクエストに分かれる**ことを必ず考慮する。ダウンロードは8MiBウィンドウ×並列6本、アップロードは8MiBパート×最大12並列なので、高速回線の正当な利用者でも数秒間に数十リクエストを出す。ここを見誤ると正当な大容量転送を壊すため、ルール投入後は **Security Events** でしばらく実トラフィックを観察し、正当な利用がマッチしていないことを確認してから閾値を締めること。
+閾値を決めるときの注意として、**1回のダウンロード/アップロードが多数のリクエストに分かれる**ことを必ず考慮する。ダウンロードは8MiBウィンドウ×並列6本、アップロードは8MiBパート×最大12並列なので、高速回線の正当な利用者でも数秒間に数十リクエストを出す。ここを見誤ると正当な大容量転送ができなくなるため、ルール投入後は **Security Events** でしばらく実トラフィックを観察し、正当な利用がマッチしていないことを確認してから閾値を締めること。
 
-アクションについては、`fetch`/`XHR` で呼ばれる API に **Managed Challenge を当てても正しく解決できず UX を壊す**ため、Block を選ぶ(Free プランでは Block のみ)。
+アクションについては、`fetch`/`XHR` で呼ばれる API に **Managed Challenge を当てても正しく解決できず利用を妨げる**ため、Block を選ぶ(Free プランでは Block のみ)。
 
 ## セキュリティレスポンスヘッダ
 
@@ -151,7 +150,7 @@ AstroのmiddlewareとHonoが共通ヘッダーを設定します。AstroのHTML�
 
 `/admin` と `/api/admin/*` はCloudflare Access配下のアプリケーションとして1つに統合されている(コミット「管理画面のCloudflare Accessアプリを/adminと/api/adminで1つに統合」)。エッジでのアクセス制御が主たる関門で、オリジン側(`lib/access.ts`の`verifyAccessJwt()`)でもJWT検証による多層防御を行っている。`/api/admin/**`(JSON API)は未検証時に`403`を返すが、`/admin`ページ自体(`apps/public/src/pages/admin/index.astro`)は管理画面の存在を明かさないよう`404`を返す。
 
-新しい環境でセットアップする場合の概略:
+新しい環境では、次の手順でセットアップする。
 
 1. Cloudflare Zero Trustダッシュボードで `/admin*` と `/api/admin/*` を保護対象としたAccessアプリケーションを作成し、許可するIdP/メールアドレス等のポリシーを設定する。
 2. 作成したアプリの Audience Tag を `wrangler.jsonc` の `CF_ACCESS_AUD` に、チームドメイン(`https://<team>.cloudflareaccess.com`)を `CF_ACCESS_TEAM_DOMAIN` に設定する。
@@ -159,7 +158,7 @@ AstroのmiddlewareとHonoが共通ヘッダーを設定します。AstroのHTML�
 
 ## 有料プラン(Stripe / Bitcoin)のセットアップ
 
-設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境でセットアップする場合の概略:
+設計の詳細は[`accounts.md`](./accounts.md)を参照。新しい環境では、次の手順でセットアップする。
 
 1. Stripeダッシュボード(またはStripe API)でStandard用・Premium用それぞれの月額サブスクリプションProduct/Priceを作成し、そのidを`wrangler.jsonc`の`STRIPE_PRICE_ID_STANDARD`・`STRIPE_PRICE_ID_PREMIUM`に設定する。Webhook(`server/routes/billing/stripe/webhook/route.ts`)はSubscriptionの実際のPrice IDを見てプランを判定するため、ここで設定したid以外のPriceで契約された場合はプランが反映されない(意図しないプラン活性化を防ぐための防御的な挙動)。
 2. Stripeダッシュボードで秘密鍵・公開可能キーを取得し、秘密鍵は`wrangler secret put STRIPE_SECRET_KEY`で設定する。公開可能キーはGitHub Secretsの`STRIPE_PUBLISHABLE_KEY`に設定する(ビルド時に`NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`としてクライアントへ埋め込まれる、公開情報)。

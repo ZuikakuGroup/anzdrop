@@ -1,3 +1,4 @@
+import { recordApiException } from "@/lib/observability";
 import type { ApiResponse } from "@/lib/api/response";
 
 const INTERNAL_SERVER_ERROR_RESPONSE: ApiResponse = {
@@ -17,7 +18,7 @@ export function withApiHandler<Args extends unknown[]>(
     try {
       return await handler(...args);
     } catch {
-      console.error(`${routeLabel} failed`);
+      recordApiException(routeLabel);
 
       return Response.json(INTERNAL_SERVER_ERROR_RESPONSE, { status: 500 });
     }

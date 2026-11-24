@@ -201,8 +201,8 @@ export const POST = withApiHandler(
         shareId,
         env.ANALYTICS_SECRET
       );
-    } catch (error) {
-      console.error("POST /api/upload/start: analytics transfer ID generation failed:", error);
+    } catch {
+      console.error("POST /api/upload/start: analytics transfer ID generation failed");
     }
 
     const responseBody: UploadStartResponse = {

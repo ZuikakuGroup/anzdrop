@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestEnv, clearAllTables, type TestEnv } from "@/test/env";
 import {
   deleteShare,
@@ -654,4 +654,114 @@ it("shares a work ceiling across both scheduled cleanup phases", async () => {
 });
 it.each([0, 901, NaN])("rejects invalid cleanup work ceiling %s", async workLimit => {
   await expect(cleanupExpiredShares(env, { workLimit })).rejects.toThrow("Invalid cleanup work limit");
+});
+
+// Observe candidate reads from real D1, rather than replacing their results.
+function observeCandidatePages(table: "shares" | "uploads") {
+  const pages: string[][] = [];
+  const db = wrapBinding(env.DB, {
+    prepare: (sql: string) => {
+      const statement = env.DB.prepare(sql);
+      if (!sql.includes(`FROM ${table} WHERE ${table === "shares" ? "expires_at" : "created_at"}`)) return statement;
+      return wrapBinding(statement, {
+        bind: (...values: Parameters<D1PreparedStatement["bind"]>) => {
+          const bound = statement.bind(...values);
+          return wrapBinding(bound, {
+            all: async () => {
+              const result = await bound.all<{ id: string }>();
+              pages.push(result.results.map(row => row.id));
+              return result;
+            },
+          });
+        },
+      });
+    },
+  });
+  return { pages, db };
+}
+
+it("reads each dry-run candidate once in bounded, deterministic pages, including timestamp ties", async () => {
+  // Reverse insertion order exercises the ID tie-breaker, not insertion order.
+  for (const id of ["e", "d", "c", "b", "a"]) {
+    await insertShare({ id, expiresAt: "2000-01-01T00:00:00.000Z" });
+  }
+  await insertShare({ id: "future", expiresAt: "2999-01-01T00:00:00.000Z" });
+  const { pages, db } = observeCandidatePages("shares");
+  const result = await cleanupExpiredShares({ ...env, DB: db } as TestEnv, { dryRun: true, queryLimit: 2, maxBatches: 3 });
+  expect(result).toMatchObject({ candidates: 5, processed: 0, failed: 0, reachedBatchLimit: false });
+  expect(pages).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+  expect((await env.DB.prepare("SELECT COUNT(*) AS count FROM shares").first<{ count: number }>())?.count).toBe(6);
+});
+
+it("advances beyond failed stale uploads without rereading them and retries them next invocation", async () => {
+  await insertShare({ id: "stale-pages", expiresAt: "2999-01-01T00:00:00.000Z" });
+  for (const id of ["e", "d", "c", "b", "a"]) {
+    await insertUpload({ id, shareId: "stale-pages", storageKey: `page-${id}`, createdAt: "2000-01-01T00:00:00.000Z" });
+    await insertUploadPart(id);
+  }
+  await insertUpload({ id: "fresh", shareId: "stale-pages", storageKey: "page-fresh", createdAt: "2999-01-01T00:00:00.000Z" });
+  const { pages, db } = observeCandidatePages("uploads");
+  const bucket = wrapBinding(env.FILES_BUCKET, {
+    resumeMultipartUpload: (key: string, uploadId: string) => {
+      if (key === "page-a" || key === "page-b") return { abort: async () => { throw new Error("synthetic transient failure"); } };
+      return env.FILES_BUCKET.resumeMultipartUpload(key, uploadId);
+    },
+  });
+  const result = await cleanupStaleUploads({ ...env, DB: db, FILES_BUCKET: bucket } as TestEnv, { queryLimit: 2, maxBatches: 3 });
+  expect(result).toMatchObject({ processed: 3, failed: 2, reachedBatchLimit: false });
+  expect(pages).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+  for (const id of ["a", "b"]) {
+    expect(await uploadExists(id)).toBe(true);
+    expect(await uploadPartsCountFor(id)).toBe(1);
+  }
+  expect((await cleanupStaleUploads(env)).processed).toBe(2);
+  expect(await uploadExists("fresh")).toBe(true);
+});
+
+it.each(["shares", "uploads"] as const)("fixes the %s cutoff at invocation start, including the exact boundary", async table => {
+  const start = new Date("2026-10-01T12:00:00.000Z");
+  const boundary = table === "shares" ? start : new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  const later = new Date(boundary.getTime() + 1_000).toISOString();
+  if (table === "shares") {
+    await insertShare({ id: "boundary", expiresAt: boundary.toISOString() });
+    await insertShare({ id: "later", expiresAt: later });
+  } else {
+    await insertShare({ id: "boundary-share", expiresAt: "2999-01-01T00:00:00.000Z" });
+    for (const [id, createdAt] of [["boundary", boundary.toISOString()], ["later", later]]) {
+      await insertUpload({ id, shareId: "boundary-share", storageKey: `boundary-${id}`, createdAt });
+    }
+  }
+  const db = wrapBinding(env.DB, {
+    batch: async (statements: D1PreparedStatement[]) => {
+      const result = await env.DB.batch(statements);
+      vi.setSystemTime(new Date(start.getTime() + 2_000));
+      return result;
+    },
+  });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(start);
+  try {
+    const cleanup = table === "shares" ? cleanupExpiredShares : cleanupStaleUploads;
+    const result = await cleanup({ ...env, DB: db } as TestEnv, { queryLimit: 1, maxBatches: 3 });
+    expect(result).toMatchObject({ processed: 1, failed: 0, reachedBatchLimit: false });
+    const exists = table === "shares" ? shareExists : uploadExists;
+    expect(await exists("boundary")).toBe(false);
+    expect(await exists("later")).toBe(true);
+    expect((await cleanup(env)).processed).toBe(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each(["shares", "uploads"] as const)("uses an index without a temporary sort for the %s cleanup cursor", async table => {
+  const dateColumn = table === "shares" ? "expires_at" : "created_at";
+  const result = await env.DB.prepare(`EXPLAIN QUERY PLAN
+    SELECT id, ${dateColumn} AS cleanup_at FROM ${table}
+    WHERE ${dateColumn} <= ? AND (${dateColumn}, id) > (?, ?)
+    ORDER BY ${dateColumn}, id LIMIT ?`)
+    .bind("2026-01-01", "2000-01-01", "previous-id", 20)
+    .all<{ detail: string }>();
+  const plan = result.results.map(row => row.detail).join("\n");
+  expect(plan).toContain("SEARCH");
+  expect(plan).not.toContain("TEMP B-TREE");
 });

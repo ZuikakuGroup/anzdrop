@@ -1,10 +1,10 @@
 # 計測・分析基盤
 
-要件定義書「Anzdrop 計測・分析基盤 要件定義書 v1.0」に基づく、Phase 1 + Phase 2 スコープの実装について説明します。Phase 3(Google Ads連携)は未実装です。
+要件定義書「Anzdrop 計測・分析基盤 要件定義書 v1.0」に基づく、Phase 1 + Phase 2 の範囲の実装について説明します。Phase 3(Google Ads連携)は未実装です。
 
 ## 目的とプライバシー原則
 
-Anzdropの成長・改善判断に必要な最小限のデータを、E2E暗号化とプライバシー保護を損なわずに収集します。以下は計測イベントへ**一切含めません**(サーバー側のZodスキーマとPrivacy Guardで強制、[`lib/analytics/schema.ts`](../lib/analytics/schema.ts)):
+Anzdropの成長・改善判断に必要な最小限のデータを、E2E暗号化とプライバシー保護を損なわずに収集します。以下の情報は計測イベントへ**一切含めません**。サーバー側のZodスキーマとPrivacy Guardで、この制約を強制します([`lib/analytics/schema.ts`](../lib/analytics/schema.ts))。
 
 - ファイル本体・ファイル名・復号鍵・暗号鍵
 - 共有URL全体・URL Fragment・Query文字列全体
@@ -60,7 +60,7 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 ## データベース
 
-`migrations/0016_create_analytics_tables.sql`:
+`migrations/0016_create_analytics_tables.sql` で定義しています。
 
 - `analytics_events`: 生イベント。1年保持([`lib/analytics/retention.ts`](../lib/analytics/retention.ts)が毎日削除)。
 - `analytics_daily_metrics`: 日次集計。無期限保持([`lib/analytics/aggregate.ts`](../lib/analytics/aggregate.ts)が毎日UTC 00:10に前日分とその前日分を再計算)。
@@ -71,12 +71,12 @@ D1: analytics_daily_metrics (24ヶ月以上保持)
 
 `/admin/analytics`(Cloudflare Access保護 + `requireAdmin()`)、`GET /api/admin/analytics?view=...&from=YYYY-MM-DD&to=YYYY-MM-DD` から以下の6種のレポートを取得します(`lib/analytics/reports.ts`)。管理画面では開始日・終了日を指定でき、CSVは同じ選択期間における全6レポートの集計結果をブラウザ内で1ファイルにまとめて出力します。生イベントを読む詳細レポートは保持期限のため直近1年までです。
 
-- `overview` — 本日・直近30日のNorth Star / 主要KPI
-- `funnel` — landing_view → file_select → upload_start → upload_success → share → download_success
-- `reliability` — Upload/Download Success Rate、エラーコード別発生数、Size Bucket/Device Class別成功率
-- `acquisition` — source/medium/campaign/landing_path別のセッション数・New Sender数
-- `retention` — 初回upload_successを基準にしたDay 1/7/14/30/60/90の継続率
-- `recipient-growth` — Unique Recipients、CTA表示・クリック数、Recipient→Sender Conversion数・平均転換日数
+- `overview`：本日・直近30日のNorth Star / 主要KPI
+- `funnel`：landing_view → file_select → upload_start → upload_success → share → download_success
+- `reliability`：Upload/Download Success Rate、エラーコード別発生数、Size Bucket/Device Class別成功率
+- `acquisition`：source/medium/campaign/landing_path別のセッション数・New Sender数
+- `retention`：初回upload_successを基準にしたDay 1/7/14/30/60/90の継続率
+- `recipient-growth`：Unique Recipients、CTA表示・クリック数、Recipient→Sender Conversion数・平均転換日数
 
 ## KPI定義
 

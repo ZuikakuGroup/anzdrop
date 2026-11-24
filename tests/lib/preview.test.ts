@@ -20,6 +20,12 @@ describe("guessPreviewMimeType", () => {
     expect(guessPreviewMimeType("Photo.Png")).toBe("image/png");
   });
 
+  it.each(["constructor", "__proto__"])("does not treat inherited property %s as a preview MIME type", extension => {
+    const filename = `file.${extension}`;
+    expect(guessPreviewMimeType(filename)).toBeNull();
+    expect(canPreviewFile({ shareAllowsPreview: true, isOneTimeFile: false, filename })).toBe(false);
+  });
+
   it("returns null for unsupported extensions", () => {
     expect(guessPreviewMimeType("document.pdf")).toBeNull();
     expect(guessPreviewMimeType("archive.zip")).toBeNull();

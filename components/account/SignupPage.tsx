@@ -119,11 +119,11 @@ export default function SignupPage() {
             </p>
             <dl className="space-y-2 text-[13px]">
               <div>
-                <dt className="font-bold text-ink/50">アカウントID</dt>
+                <dt className="font-bold text-ink/60">アカウントID</dt>
                 <dd className="break-all font-mono">{result.accountId}</dd>
               </div>
               <div>
-                <dt className="font-bold text-ink/50">リカバリーコード</dt>
+                <dt className="font-bold text-ink/60">リカバリーコード</dt>
                 <dd className="break-all font-mono">{result.recoveryCode}</dd>
               </div>
             </dl>
@@ -146,7 +146,7 @@ export default function SignupPage() {
 
           <a
             href="/mypage/login"
-            className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+            className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90"
           >
             ログインへ進む
           </a>
@@ -156,7 +156,7 @@ export default function SignupPage() {
           <div className="space-y-1">
             <label
               htmlFor="signup-account-id"
-              className="text-xs font-bold text-ink/50"
+              className="text-xs font-bold text-ink/60"
             >
               アカウントID
             </label>
@@ -178,7 +178,7 @@ export default function SignupPage() {
           <div className="space-y-1">
             <label
               htmlFor="signup-password"
-              className="text-xs font-bold text-ink/50"
+              className="text-xs font-bold text-ink/60"
             >
               パスワード
             </label>
@@ -198,7 +198,7 @@ export default function SignupPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+            className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
           >
             {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
             {isSubmitting ? "作成中..." : "アカウントを作成する"}
@@ -211,7 +211,7 @@ export default function SignupPage() {
             {error}
           </p>
 
-          <p className="text-center text-xs text-ink/50">
+          <p className="text-center text-xs text-ink/60">
             すでにアカウントをお持ちの場合は{" "}
             <a href="/mypage/login" className="font-bold text-brand hover:underline">
               ログイン

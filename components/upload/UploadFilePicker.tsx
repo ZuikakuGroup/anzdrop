@@ -18,16 +18,16 @@ export default function UploadFilePicker({
       htmlFor={fileInputId}
       className={
         files.length === 0
-          ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-6 text-center transition-colors hover:bg-ink/[0.03] focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-brand"
-          : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03] focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-brand"
+          ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-6 text-center transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand"
+          : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand"
       }
     >
       {files.length === 0 ? (
         <>
-          <span className="text-base font-black">
+          <span className="text-base font-bold">
             ファイルを選択
           </span>
-          <span className="text-xs font-bold text-ink/50">
+          <span className="text-xs font-bold text-ink/60">
             タップ・クリックで選択<br />ファイル・フォルダをドロップ
           </span>
         </>
@@ -39,7 +39,7 @@ export default function UploadFilePicker({
               className="flex items-center justify-between gap-4 px-2 py-2"
             >
               <span className="truncate">{pendingFile.path}</span>
-              <span className="shrink-0 font-bold text-ink/40">
+              <span className="shrink-0 font-bold text-ink/60">
                 {formatBytes(pendingFile.file.size)}
               </span>
             </li>

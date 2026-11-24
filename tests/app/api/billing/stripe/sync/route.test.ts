@@ -109,6 +109,23 @@ async function getAccount(accountId: string) {
 }
 
 describe("POST /api/billing/stripe/sync", () => {
+  it.each(["retrieve", "classify"])("does not log provider private context on %s failure", async failure => {
+    const { accountId } = await insertTestAccount(env, { plan: "standard", planExpiresAt: new Date(daysFromNowUnix(10) * 1000).toISOString(), stripeSubscriptionId: "sub_log_failure" });
+    const cookie = await sessionCookieHeader(env, accountId);
+    const marker = "synthetic-sensitive-provider-error";
+    if (failure === "retrieve") mockSubscriptionsRetrieve.mockRejectedValueOnce(new Error(marker));
+    else {
+      mockSubscriptionsRetrieve.mockResolvedValueOnce(subscription("canceled", env.STRIPE_PRICE_ID_STANDARD, daysFromNowUnix(10), false, { latestInvoice: "in_failure" }));
+      mockInvoicesRetrieve.mockRejectedValueOnce(new Error(marker));
+    }
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect((await postSync(cookie)).status).toBe(200);
+      expect(log).toHaveBeenCalled();
+      expect(log.mock.calls.flat().map(String).join(" ")).not.toContain(marker);
+    } finally { log.mockRestore(); }
+  });
+
   it("requires login", async () => {
     const response = await postSync();
 

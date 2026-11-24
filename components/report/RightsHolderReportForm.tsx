@@ -126,7 +126,7 @@ export default function RightsHolderReportForm({
               <div className="space-y-1">
                 <label
                   htmlFor="rh-report-share-url"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   共有URL
                 </label>
@@ -143,7 +143,7 @@ export default function RightsHolderReportForm({
               <div className="space-y-1">
                 <label
                   htmlFor="rh-report-claimant-name"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   氏名・団体名
                 </label>
@@ -160,7 +160,7 @@ export default function RightsHolderReportForm({
               <div className="space-y-1">
                 <label
                   htmlFor="rh-report-contact-email"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   連絡先メールアドレス
                 </label>
@@ -177,7 +177,7 @@ export default function RightsHolderReportForm({
               <div className="space-y-1">
                 <label
                   htmlFor="rh-report-right-type"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   侵害されている権利
                 </label>
@@ -197,7 +197,7 @@ export default function RightsHolderReportForm({
                     ))}
                   </select>
                   <svg
-                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40"
+                    className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/60"
                     viewBox="0 0 20 20"
                     fill="none"
                     aria-hidden="true"
@@ -216,7 +216,7 @@ export default function RightsHolderReportForm({
               <div className="space-y-1">
                 <label
                   htmlFor="rh-report-reason"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   詳細
                 </label>
@@ -247,7 +247,7 @@ export default function RightsHolderReportForm({
               <button
                 onClick={submit}
                 disabled={isSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
                 {isSubmitting ? "送信中..." : "送信する"}
               </button>

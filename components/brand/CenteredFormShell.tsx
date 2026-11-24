@@ -29,10 +29,10 @@ export default function CenteredFormShell({
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
+            <h1 className="text-2xl font-bold leading-snug tracking-normal">
               {title}
             </h1>
-            <p className="text-xs text-ink/50">{description}</p>
+            <p className="text-xs text-ink/60">{description}</p>
           </div>
 
           {notice}

@@ -44,7 +44,7 @@ export default function PlanPicker({
                 : "border-ink/20 hover:border-ink/40"
             }`}
           >
-            <p className="text-sm font-black">
+            <p className="text-sm font-bold">
               {PLAN_LABELS[plan]}
             </p>
             <p className="mt-0.5 font-bold text-ink/70">
@@ -88,7 +88,7 @@ export default function PlanPicker({
         <button
           onClick={onStartStripe}
           disabled={isLoadingAction !== null}
-          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+          className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
         >
           {isLoadingAction === "stripe" && (
             <Spinner className="h-4 w-4 text-paper" />
@@ -98,7 +98,7 @@ export default function PlanPicker({
 
       </div>
 
-      <p className="text-center text-xs leading-relaxed text-ink/50">
+      <p className="text-center text-xs leading-relaxed text-ink/60">
         <a
           href="/legal/terms"
           className="font-bold text-brand hover:underline"

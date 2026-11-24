@@ -124,7 +124,7 @@ export default function RecoverPage() {
 
               <a
                 href="/mypage/login"
-                className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
+                className="block w-full rounded bg-brand px-4 py-3.5 text-center text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90"
               >
                 ログインへ進む
               </a>
@@ -134,7 +134,7 @@ export default function RecoverPage() {
               <div className="space-y-1">
                 <label
                   htmlFor="recover-account-id"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   アカウントID
                 </label>
@@ -156,7 +156,7 @@ export default function RecoverPage() {
               <div className="space-y-1">
                 <label
                   htmlFor="recover-code"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   リカバリーコード
                 </label>
@@ -178,7 +178,7 @@ export default function RecoverPage() {
               <div className="space-y-1">
                 <label
                   htmlFor="recover-new-password"
-                  className="text-xs font-bold text-ink/50"
+                  className="text-xs font-bold text-ink/60"
                 >
                   新しいパスワード
                 </label>
@@ -198,7 +198,7 @@ export default function RecoverPage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+                className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
               >
                 {isSubmitting && <Spinner className="h-4 w-4 text-paper" />}
                 {isSubmitting ? "再設定中..." : "パスワードを再設定する"}
@@ -211,7 +211,7 @@ export default function RecoverPage() {
                 {error}
               </p>
 
-              <p className="text-center text-xs text-ink/50">
+              <p className="text-center text-xs text-ink/60">
                 パスワードを思い出した場合は{" "}
                 <a
                   href="/mypage/login"

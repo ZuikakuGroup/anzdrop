@@ -26,10 +26,10 @@ export default function DownloadPage({ shareId }: { shareId: string }) {
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black tracking-normal">
+            <h1 className="text-2xl font-bold tracking-normal">
               ダウンロード
             </h1>
-            <p className="text-xs text-ink/50">
+            <p className="text-xs text-ink/60">
               ナウでヤングな暗号化ファイル共有サービス
             </p>
           </div>
@@ -76,7 +76,7 @@ export default function DownloadPage({ shareId }: { shareId: string }) {
                   isDownloadingAll ||
                   !!downloadingId
               }
-              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+              className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
             >
               {(passwordProtection ? isUnlocking : isDownloadingAll) && (
                 <Spinner className="h-4 w-4 text-paper" />

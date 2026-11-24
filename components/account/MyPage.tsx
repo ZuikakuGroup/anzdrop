@@ -49,10 +49,10 @@ export default function MyPage() {
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
+            <h1 className="text-2xl font-bold leading-snug tracking-normal">
               マイページ
             </h1>
-            <p className="text-xs text-ink/50">
+            <p className="text-xs text-ink/60">
               アカウントと現在のプランを確認できます。
             </p>
           </div>
@@ -70,7 +70,7 @@ export default function MyPage() {
                 <button
                   type="button"
                   onClick={retry}
-                  className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40"
+                  className="w-full rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40"
                 >
                   再読み込み
                 </button>
@@ -100,12 +100,12 @@ function MyPageOverview({
   return (
     <div className="space-y-5">
       <div className="rounded border border-ink/15 bg-ink/[0.02] p-4 text-sm">
-        <p className="text-xs font-bold text-ink/50">アカウントID</p>
+        <p className="text-xs font-bold text-ink/60">アカウントID</p>
         <p className="mt-0.5 break-all font-mono">{status.accountId}</p>
       </div>
 
       <div className="rounded border border-ink/15 bg-ink/[0.02] p-4 text-sm">
-        <p className="text-xs font-bold text-ink/50">現在のプラン</p>
+        <p className="text-xs font-bold text-ink/60">現在のプラン</p>
         <p className="mt-0.5 font-bold">{PLAN_LABELS[status.plan]}</p>
         <p className="mt-1 text-xs font-bold text-ink/70">
           {contract.stateLabel}
@@ -114,7 +114,7 @@ function MyPageOverview({
           <p className="mt-0.5 text-xs text-ink/60">{contract.detail}</p>
         )}
         {contract.note && (
-          <p className="mt-1 text-xs text-ink/50">{contract.note}</p>
+          <p className="mt-1 text-xs text-ink/60">{contract.note}</p>
         )}
 
         <ul className="mt-3 space-y-0.5 border-t border-ink/10 pt-3 text-xs text-ink/60">
@@ -132,14 +132,14 @@ function MyPageOverview({
         href="/mypage/billing"
         className={
           billingCta.tone === "primary"
-            ? "flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90"
-            : "flex w-full items-center justify-center gap-2 rounded border-2 border-ink/20 px-4 py-3 text-sm font-black tracking-wider text-ink/70 transition-colors hover:border-ink/40"
+            ? "flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90"
+            : "flex w-full items-center justify-center gap-2 rounded border-2 border-ink/20 px-4 py-3 text-sm font-bold tracking-normal text-ink/70 transition-colors hover:border-ink/40"
         }
       >
         {billingCta.label}
       </a>
 
-      <p className="text-xs leading-relaxed text-ink/50">
+      <p className="text-xs leading-relaxed text-ink/60">
         <a href="/mypage/security" className="mb-3 block font-bold text-brand hover:underline">ログイン・セキュリティ</a>
         パスワードを忘れた場合の再設定は、リカバリーコードでのみ行えます。<br />リカバリーコードを紛失すると復旧できません。
       </p>

@@ -67,10 +67,10 @@ export default function ContactForm() {
       <main className="flex min-h-[calc(100svh-4rem)] flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6 rounded-lg border border-ink/10 bg-paper p-6 sm:p-8">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black leading-snug tracking-normal">
+            <h1 className="text-2xl font-bold leading-snug tracking-normal">
               お問い合わせ
             </h1>
-            <p className="text-xs text-ink/50">
+            <p className="text-xs text-ink/60">
               ご質問・ご要望などお気軽にご連絡ください
             </p>
           </div>
@@ -110,7 +110,7 @@ export default function ContactForm() {
                 <div className="space-y-1">
                   <label
                     htmlFor="contact-name"
-                    className="text-xs font-bold text-ink/50"
+                    className="text-xs font-bold text-ink/60"
                   >
                     お名前(任意)
                   </label>
@@ -128,7 +128,7 @@ export default function ContactForm() {
                 <div className="space-y-1">
                   <label
                     htmlFor="contact-email"
-                    className="text-xs font-bold text-ink/50"
+                    className="text-xs font-bold text-ink/60"
                   >
                     メールアドレス
                   </label>
@@ -145,7 +145,7 @@ export default function ContactForm() {
                 <div className="space-y-1">
                   <label
                     htmlFor="contact-subject"
-                    className="text-xs font-bold text-ink/50"
+                    className="text-xs font-bold text-ink/60"
                   >
                     件名
                   </label>
@@ -163,7 +163,7 @@ export default function ContactForm() {
                 <div className="space-y-1">
                   <label
                     htmlFor="contact-message"
-                    className="text-xs font-bold text-ink/50"
+                    className="text-xs font-bold text-ink/60"
                   >
                     本文
                   </label>
@@ -183,7 +183,7 @@ export default function ContactForm() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-black tracking-wider text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
+                  className="flex w-full items-center justify-center gap-2 rounded bg-brand px-4 py-3.5 text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90 disabled:opacity-30"
                 >
                   {isSubmitting ? "送信中..." : "送信する"}
                 </button>

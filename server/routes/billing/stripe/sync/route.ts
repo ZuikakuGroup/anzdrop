@@ -134,8 +134,7 @@ async function reconcileFromStripe(
       );
     } else {
       console.error(
-        "POST /api/billing/stripe/sync: subscription retrieve failed:",
-        error
+        "POST /api/billing/stripe/sync: subscription retrieve failed"
       );
     }
 
@@ -190,10 +189,9 @@ async function reconcileFromStripe(
 
     try {
       onlyClear = await shouldOnlyClearSubscriptionPointer(stripe, subscription);
-    } catch (error) {
+    } catch {
       console.error(
-        "POST /api/billing/stripe/sync: failed to classify subscription end state:",
-        error
+        "POST /api/billing/stripe/sync: failed to classify subscription end state"
       );
 
       return toSubscriptionSummary(subscription);

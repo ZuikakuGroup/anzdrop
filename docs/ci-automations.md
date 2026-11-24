@@ -5,12 +5,12 @@ GitHub Actionsで検証・レビュー補助・Cloudflare Workersへのデプロ
 | Workflow | ファイル | 目的 |
 | --- | --- | --- |
 | Link Check | [`.github/workflows/link-check.yml`](../.github/workflows/link-check.yml) | Markdown / HTML / 公開 URL のリンク切れ検出 |
-| E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | 本番デプロイ成功後の Playwright スモーク |
+| E2E (post-deploy) | [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) | リリースworkflow完了後の読取り専用スモーク |
 | Weekly Development Report | [`.github/workflows/weekly-report.yml`](../.github/workflows/weekly-report.yml) | 週次の開発活動レポート Issue |
 | File sharing E2E | [`.github/workflows/file-sharing-e2e.yml`](../.github/workflows/file-sharing-e2e.yml) | 3ブラウザのローカル共有・保存検証 |
 | Review coverage and split | [`.github/workflows/review-split.yml`](../.github/workflows/review-split.yml) | 停止中。CodeRabbit 用の旧処理。復旧用の手動実行のみ |
 
-## PR は Copilot が自動レビューする
+## PR は Copilot と CodeRabbit が自動レビューする
 
 GitHub の [copilot-code-review ルールセット](https://github.com/ZuikakuGroup/anzdrop/rules/25293669)で、main と `review-split/**` 向けの PR を自動レビューする。PR 作成時に加え、Draft と追加 push も対象にしている。既存の `test` 必須チェックとマージキューは維持する。
 
@@ -18,7 +18,9 @@ GitHub の [copilot-code-review ルールセット](https://github.com/ZuikakuGr
 
 自動レビューの実行には、投稿者の Copilot 利用資格と利用枠が必要になる。設定の有効化だけでレビュー済みとは判断せず、現在の HEAD に対するレビュー提出と指摘の解消を確認する。実行されない場合は [GitHub の設定手順](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-code-review)を確認する。
 
-CodeRabbit の自動レビューは [`.coderabbit.yaml`](../.coderabbit.yaml) の `reviews.auto_review.enabled: false` で停止する。この停止設定は main への反映後に有効になる。移行前の未解消コメントは引き続き対応する。
+CodeRabbit の自動レビューは [`.coderabbit.yaml`](../.coderabbit.yaml) の `reviews.auto_review.enabled: true` で有効にする。日本語で、main と生成済みの `review-split/<PR番号>/<連番>` 向けのPRを対象にし、Draft・追加pushもレビューする。`auto_pause_after_reviewed_commits: 0` でコミット数による自動停止を無効にする。Copilot のルールセットは引き続き有効にする。
+
+設定の反映と実際のレビュー完了は別に確認する。マージ前には、現在のHEADに対する両Botのレビュー提出と、妥当な指摘の解消を確認する。CodeRabbit GitHub Appの接続・利用枠などは設定ファイルだけでは保証できない。設定項目は[CodeRabbit公式リファレンス](https://docs.coderabbit.ai/reference/configuration)を参照する。
 
 CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し、Workflow の自動トリガーも削除した。分割スクリプトと署名付き操作記録は復旧用に残す。Copilot の判定には対応していないため、そのまま再有効化しない。
 
@@ -51,46 +53,17 @@ CodeRabbit 専用の `Review coverage and split` は GitHub 上で無効化し�
 
 GitHub → Actions → **Link Check** → Run workflow
 
-## デプロイ後 E2E
+## リリース後のスモーク
 
-### 実行タイミング
+`E2E (post-deploy)` はDeploy workflowの成功完了後、または手動実行で、本番 `https://anzdrop.com` を読取り確認する。ステージングだけを更新したrunの後でも、本番の現状を確認する。これは本番リリースを実施した証跡ではない。
 
-- Workflow `Deploy to Cloudflare Workers` が **成功完了**したあと(`workflow_run`)
-- `workflow_dispatch`(手動。`base_url` 入力可、既定は `https://anzdrop.com`)
+`scripts/release-smoke.mjs` がHTML、参照するAstroアセット、未認証API、内部経路の非公開を確認する。リダイレクトを追わず、本番データを作成・変更しない。Playwrightの実アップロード検証はローカルと独立ステージングで行う。詳細は [リリース管理](./release-management.md) を参照する。
 
-### 対象 URL
-
-既定は本番 `https://anzdrop.com`(Workers ルーター経由)。Pages Preview は使わない。
-
-デプロイ完了後、`scripts/wait-for-url.sh` でトップが 2xx/3xx を返すまで最大180秒待つ。
-
-`workflow_run` ではデフォルトブランチのテストコードを checkout し、検証対象は常に本番 URL とする(`workflow_run.head_sha` の privileged checkout は cache poisoning 回避のため使わない)。
-
-### 実装しているテスト
-
-- Smoke: トップの「Anzdrop」見出しと「アップロードする」ボタン、致命的な pageerror がないこと
-- Navigation: `/about` `/pricing` `/blog` `/contact` `/report` `/legal/*` `/mypage/login` `/lp/secure-file-sharing` などが 4xx にならないこと、フッターリンク遷移
-
-認証が必要な `/admin` や実アップロード(Turnstile)は対象外。
-
-### 失敗時 Artifact
-
-- `playwright-report/`(HTML)
-- `test-results/`(screenshot / trace / video)
-- 保存期間 7 日。成功時はアップロードしない
-
-### ローカル実行
-
-```bash
-npx playwright install chromium
-E2E_BASE_URL=https://anzdrop.com npm run test:e2e
-# またはローカルサーバー向け
-# E2E_BASE_URL=http://127.0.0.1:3000 npm run test:e2e
+```sh
+SMOKE_ORIGIN=https://anzdrop.com EXPECTED_ORIGIN=https://anzdrop.com node scripts/release-smoke.mjs
 ```
 
-### 手動実行
-
-GitHub → Actions → **E2E (post-deploy)** → Run workflow
+上記は運用時の実行例。今回の実装作業では本番へ実行していない。失敗時はActionsログのどの検証が失敗したかを確認し、デプロイやデータ操作を自動で再試行しない。
 
 ## 毎週の開発レポート
 
@@ -143,7 +116,7 @@ Link Check / E2E / Weekly report に追加の必須 Secrets は **ない**(`GITH
 
 ### App を準備してから自動作成を有効にする
 
-初期状態では `REVIEW_SPLIT_ENABLED` が未設定のため、通知と分割候補の分析だけを行う。自動作成は、検証用 PR で確認してから有効にする。
+初期状態では `REVIEW_SPLIT_ENABLED` が未設定のため、通知と分割候補の分析だけを行う。自動作成は検証用 PR で確認してから有効にする。
 
 1. 専用 GitHub App を作り、このリポジトリだけにインストールする。Repository permissions は **Contents: Read and write、Pull requests: Read and write、Metadata: Read**。Workflow の書き込みや保護ルールの迂回権限は与えない。Webhook サーバーは不要。
 2. Repository variable `REVIEW_SPLIT_APP_ID` に App ID、Repository secret `REVIEW_SPLIT_APP_PRIVATE_KEY` に生成した PEM 秘密鍵を設定する。状態署名には独立したランダム値（32 バイト以上）を生成し、Repository secret `REVIEW_SPLIT_STATE_KEY` に設定する。App 秘密鍵を状態署名に流用しない。秘密情報をチャットやコミットへ貼り付けない。
@@ -172,7 +145,7 @@ App 秘密鍵はトークン生成ステップだけに渡す。App 秘密鍵を
 
 ### 停止理由を確認し、未完了の操作は同じ PR 番号で再実行する
 
-元 PR には通知コメントと、App が書く署名付きの操作記録を置く。記録は、対象 SHA・生成 SHA・PR 番号・更新前の状態を持つ。元の最終内容を再現し、作成済みのブランチ・PR を確認してから再開するため、途中の API 障害や再実行で重複 PR を作らない。記録を手で書き換えると署名検証に失敗する。
+元 PR には通知コメントと、App が書く署名付きの操作記録を置く。記録は対象 SHA・生成 SHA・PR 番号・更新前の状態を持つ。元の最終内容を再現し、作成済みのブランチ・PR を確認してから再開するため、途中の API 障害や再実行で重複 PR を作らない。記録を手で書き換えると署名検証に失敗する。
 
 | 停止理由 | 復旧方法 |
 | --- | --- |
@@ -197,7 +170,7 @@ npx vitest run tests/scripts/review-split --maxWorkers=1
 
 Git のテストは一時リポジトリを作り、API のテストは偽の応答で実行する。上のコマンドは GitHub に PR やブランチを作らない。実際の App 認証・レビュー・CI の確認は、main 反映後の検証用 PR で行う。運用中の不明点は #240 または後続 Issue に、秘密情報を除いて停止理由を記録する。
 
-レビュー状態の通常通知は、変更数が上限以下で分割の操作記録もない PR には投稿しない。既存の同じ通知は、自動化自身のコメントだけを削除する。明示的なレビュー省略、上限超過、分割の追従・停止に関する通知は維持する。
+レビュー状態の通常通知は変更数が上限以下で分割の操作記録もない PR には投稿しない。既存の同じ通知は、自動化自身のコメントだけを削除する。明示的なレビュー省略、上限超過、分割の追従・停止に関する通知は維持する。
 
 ## ファイル共有 E2E
 

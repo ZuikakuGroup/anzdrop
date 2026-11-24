@@ -1,0 +1,114 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { expect, it, vi } from "vitest";
+import { readConfig, requiredAppSecrets } from "@/scripts/release-safety.mjs";
+import { releasePreflight } from "@/scripts/release-preflight.mjs";
+
+async function fixture() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "anzdrop-preflight-"));
+  const production = await readConfig("wrangler.jsonc");
+  const configs = await Promise.all(["wrangler.jsonc", "apps/public/wrangler.jsonc", "wrangler.router.jsonc"].map(file => readConfig(file)));
+  for (const [index, config] of configs.entries()) {
+    config.account_id = production.account_id;
+    config.preview_urls = false;
+    if (index < 2) config.vars.DEPLOYMENT_ENV = "production";
+  }
+  await writeFile(path.join(directory, "wrangler.jsonc"), JSON.stringify(production));
+  for (const [index, file] of ["wrangler.jsonc", "apps/public/wrangler.jsonc", "wrangler.router.jsonc"].entries()) {
+    const target = path.join(directory, "tmp/auditable-payload", file);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, JSON.stringify(configs[index]));
+  }
+  await writeFile(path.join(directory, "tmp/anzdrop-deploy.tar.sha256"), `${"a".repeat(64)}  anzdrop-deploy.tar\n`);
+  const environment = { GITHUB_REF: "refs/heads/main", GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_SHA: "c".repeat(40), RELEASE_CONFIRMATION: "c".repeat(40), GITHUB_REPOSITORY: "ZuikakuGroup/anzdrop", CLOUDFLARE_API_TOKEN: "synthetic-cf-token", GH_TOKEN: "synthetic-github-token" };
+  return { directory, production, environment };
+}
+
+function remoteResult(url: string, missingSecret = false) {
+  if (url.endsWith("/environments/production")) return { deployment_branch_policy: { custom_branch_policies: true, protected_branches: false }, can_admins_bypass: false };
+  if (url.endsWith("/deployment-branch-policies")) return { total_count: 1, branch_policies: [{ name: "main", type: "branch" }] };
+  if (url.includes("/d1/database/")) return { success: true, result: { uuid: url.split("/").at(-1), name: "anzdrop-db" } };
+  if (url.includes("/r2/buckets/")) return { success: true, result: { name: "anzdrop" } };
+  if (url.endsWith("/secrets")) return { success: true, result: url.endsWith("/anzdrop/secrets") ? (missingSecret ? [] : requiredAppSecrets.map(name => ({ name, type: "secret_text" }))) : [] };
+  if (url.endsWith("/deployments")) return { success: true, result: { deployments: [{ id: "synthetic-deployment", versions: [{ version_id: "12345678-1234-4234-8234-123456789abc", percentage: 100 }] }] } };
+  throw new Error("Unexpected preflight request");
+}
+
+it("checks only remote metadata and records the full baseline before a release can mutate anything", async () => {
+  const { directory, environment } = await fixture();
+  try {
+    const requests: string[] = [];
+    const fetcher = vi.fn(async (url: string, options: RequestInit) => {
+      requests.push(url);
+      expect(options.method).toBeUndefined();
+      return Response.json(remoteResult(url));
+    });
+    await releasePreflight("production", { environment, fetcher, directory });
+    const baseline = JSON.parse(await readFile(path.join(directory, "tmp/pre-release-deployments.json"), "utf8"));
+    expect(baseline.workers.map((row: { worker: string }) => row.worker)).toEqual(["anzdrop", "anzdrop-public", "anzdrop-router"]);
+    expect(baseline.gitCommit).toBe(environment.GITHUB_SHA);
+    expect(baseline.artifactSha256).toBe("a".repeat(64));
+    expect(requests).toHaveLength(10);
+    expect(JSON.stringify(baseline)).not.toContain(environment.CLOUDFLARE_API_TOKEN);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("preserves the production PUBLIC CMS reader key without requiring it on CMS-free deployments", async () => {
+  const { directory, environment } = await fixture();
+  try {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/anzdrop-public/secrets")) return Response.json({ success: true, result: [{ name: "MICROCMS_API_KEY", type: "secret_text" }] });
+      return Response.json(remoteResult(url));
+    });
+    await releasePreflight("production", { environment, fetcher, directory });
+    const baseline = JSON.parse(await readFile(path.join(directory, "tmp/pre-release-deployments.json"), "utf8"));
+    expect(baseline.workers).toHaveLength(3);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it.each([
+  ["anzdrop-public", "SESSION_SECRET"],
+  ["anzdrop-public", "ACCOUNT_AUTH_ENCRYPTION_KEY"],
+  ["anzdrop-public", "STRIPE_SECRET_KEY"],
+  ["anzdrop-public", "UNKNOWN_SECRET"],
+  ["anzdrop-router", "MICROCMS_API_KEY"],
+])("rejects %s holding %s before recording a deployable baseline", async (worker, name) => {
+  const { directory, environment } = await fixture();
+  try {
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith(`/${worker}/secrets`)) return Response.json({ success: true, result: ["MICROCMS_API_KEY", name].map(secret => ({ name: secret, type: "secret_text" })) });
+      return Response.json(remoteResult(url));
+    });
+    await expect(releasePreflight("production", { environment, fetcher, directory })).rejects.toThrow("unexpected secrets");
+    await expect(readFile(path.join(directory, "tmp/pre-release-deployments.json"))).rejects.toThrow();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it.each(["pull_request", "wrong-sha", "missing-secret", "wrong-db", "unprotected-environment", "lookup-failure"])("fails closed on %s without producing a baseline", async failure => {
+  const { directory, environment } = await fixture();
+  if (failure === "pull_request") environment.GITHUB_EVENT_NAME = "pull_request";
+  if (failure === "wrong-sha") environment.RELEASE_CONFIRMATION = "other";
+  const fetcher = vi.fn(async (url: string) => {
+    if (failure === "lookup-failure") return new Response(null, { status: 503 });
+    const result = remoteResult(url, failure === "missing-secret");
+    if (failure === "wrong-db" && url.includes("/d1/")) return Response.json({ success: true, result: { uuid: "other", name: "anzdrop-db" } });
+    if (failure === "unprotected-environment" && url.endsWith("/environments/production")) return Response.json({});
+    return Response.json(result);
+  });
+  try {
+    await expect(releasePreflight("production", { environment, fetcher, directory })).rejects.toThrow();
+    await expect(readFile(path.join(directory, "tmp/pre-release-deployments.json"))).rejects.toThrow();
+    if (failure === "pull_request" || failure === "wrong-sha") expect(fetcher).not.toHaveBeenCalled();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("accepts a main push without manual SHA confirmation", async () => {
+  const { directory, environment } = await fixture();
+  environment.GITHUB_EVENT_NAME = "push";
+  environment.RELEASE_CONFIRMATION = "";
+  try {
+    await releasePreflight("production", { environment, directory, fetcher: async url => Response.json(remoteResult(url)) });
+    expect(JSON.parse(await readFile(path.join(directory, "tmp/pre-release-deployments.json"), "utf8")).gitCommit).toBe(environment.GITHUB_SHA);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

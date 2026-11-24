@@ -1,0 +1,6 @@
+{
+  "environment": "local-workerd-proxy",
+  "variant": "isolate-prefetch2",
+  "note": "Observed in local dev only; no production load test was performed. File transfers eventually passed SHA-256. Message count can include repeated logging of a request error.",
+  "proxyNetworkLostMessages": 18
+}

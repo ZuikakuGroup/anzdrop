@@ -43,7 +43,7 @@ export default function DownloadFileList({
             {downloadingId === file.id ? (
               <Spinner className="h-4 w-4 shrink-0 text-brand" />
             ) : (
-              <span className="shrink-0 font-bold text-ink/40">
+              <span className="shrink-0 font-bold text-ink/60">
                 {formatBytes(file.size)}
               </span>
             )}
@@ -63,7 +63,7 @@ export default function DownloadFileList({
               }
               aria-label="プレビュー"
               title="プレビュー"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-30"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink disabled:opacity-30"
             >
               {previewLoadingId === file.id ? (
                 <Spinner className="h-4 w-4 text-brand" />
