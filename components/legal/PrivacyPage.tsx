@@ -1,137 +1,161 @@
-import LegalLayout, {
-  LegalSection,
-  LegalParagraph,
-  LegalLink,
-  LegalList,
-} from "@/components/legal/LegalLayout";
-import {
-  LEGAL_LAST_UPDATED,
-  OPERATOR,
-  OPERATOR_GROUP_LABEL,
-} from "@/lib/legal/constants";
+import LegalLayout, { LegalSection, LegalParagraph, LegalLink, LegalList } from "@/components/legal/LegalLayout";
+import { LEGAL_LAST_UPDATED, OPERATOR_GROUP_LABEL, OPERATOR } from "@/lib/legal/constants";
 
 export default function PrivacyPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   return (
-    <LegalLayout showChrome={showChrome}
-      title="プライバシーポリシー"
-      description="Anzdrop(以下「本サービス」)における情報の取扱いについて定めます。"
-      lastUpdated={LEGAL_LAST_UPDATED}
-    >
+    <LegalLayout showChrome={showChrome} title="プライバシーポリシー" lastUpdated={LEGAL_LAST_UPDATED}>
       <LegalSection heading="基本方針">
         <LegalParagraph>
-          本サービスは、お預かりする情報をできる限り少なくすることを大切にしています。ファイルの暗号化と復号は、すべてお使いのブラウザの中で行われます。そのため当方のサーバーは、ファイルの中身も、元のファイル名も、知ることができません。
+          {OPERATOR_GROUP_LABEL}（以下「運営者」といいます。）は、ファイル共有サービス「Anzdrop」（以下「本サービス」といいます。）における利用者情報の取扱いについて、本ポリシーを定めます。
         </LegalParagraph>
         <LegalParagraph>
-          ファイルを開くための鍵は、共有用のURLの一部としてのみ受け渡され、サーバーには送られません。共有にパスワードを設定した場合は、ファイルを開くための情報を、そのパスワードでしか使えない形に保護したうえでサーバーに保存しますが、パスワードそのものは保存しません。そのため、いずれの場合も当方がお預かりしたファイルを開くことはできません。
+          本サービスでは、ファイルおよびファイル名の暗号化と復号を利用者のブラウザ上で行います。ファイルの復号鍵は共有URLを通じて受け渡され、サーバーには送信されません。パスワード付き共有の場合は、復号に必要な情報をパスワードで保護したうえでサーバーに保存します。
         </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="取得する情報">
         <LegalParagraph>
-          本サービスは、機能を提供するために必要な範囲で、次の情報を取り扱います。
+          運営者は、本サービスの提供に必要な範囲で利用者の情報を取得します。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">ファイル共有に関する情報</h3>
+        <LegalParagraph>
+          ファイル共有機能の利用に際して、以下の情報を取得します。
         </LegalParagraph>
         <LegalList
           items={[
-            "ファイル共有：暗号化されたファイル本体、暗号化されたファイル名、ファイルサイズ、作成日時、有効期限、ダウンロード回数、共有の一時停止の状態、パスワード保護の有無",
-            "有料プラン利用時のみ：アカウントID、現在のプランと有効期限、決済事業者が発行する顧客IDおよびサブスクリプションID、ログインの連続失敗回数",
-            "有料プランのパスワードとリカバリーコード：そのままの形では保存せず、元に戻せない値に変換して保存します",
-            "任意のログイン設定：パスキーの公開鍵・識別子・表示名・登録日・検証情報、暗号化した認証アプリの共有秘密とコードの検証情報、期限付きの認証途中情報。生体情報やパスキーの秘密鍵は保存しません。",
-            "通報フォーム：対象の共有ID、通報理由、カテゴリ",
-            "権利者向けの通報フォーム：上記に加えて、申立者名、連絡先メールアドレス、権利の種類",
-            "お問い合わせフォーム：返信先メールアドレス、件名、本文、およびご希望の場合はお名前",
-            "通信に伴う技術的な情報：本サービスはCloudflareの仕組みの上で動いており、通信の際にIPアドレスなどがCloudflareで処理されます",
-            "サービス改善のための匿名の利用状況：ブラウザが自動生成した匿名の識別番号、操作した画面や機能の種類、ファイルの大まかなサイズ区分、アップロード・ダウンロードの成功や失敗の別、広告等のリンクに含まれる流入経路の情報、参照元サイトのドメイン、大まかな端末・ブラウザの種類。ファイルの中身、ファイル名、鍵、共有URLそのもの、メールアドレス、氏名、正確なIPアドレス、詳細な端末情報は含みません。",
+            "暗号化されたファイルおよびファイル名",
+            "ファイルサイズ、作成日時、有効期限",
+            "ダウンロード回数",
+            "共有の一時停止状態",
+            "パスワード保護の有無",
+          ]}
+        />
+        <h3 className="pt-3 text-base font-bold">アカウントに関する情報</h3>
+        <LegalParagraph>
+          有料プランを利用する場合は、以下の情報を取得します。
+        </LegalParagraph>
+        <LegalList
+          items={[
+            "アカウントID",
+            "契約プランおよび有効期限",
+            "決済事業者が発行する顧客IDおよびサブスクリプションID",
+            "決済履歴",
+            "ログインの連続失敗回数",
           ]}
         />
         <LegalParagraph>
-          通報・お問い合わせの入力欄に、ファイルを開くための鍵にあたる文字列が誤って含まれていた場合は、保存する前に自動的に取り除きます。
+          また、パスワードおよびリカバリーコードは復元できない形式に変換して保存します。パスキーや認証アプリを設定した場合は、認証に必要な公開鍵、識別子、登録情報、検証情報および暗号化された認証情報を取得します。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">通報・お問い合わせに関する情報</h3>
+        <LegalParagraph>
+          通報フォームでは、対象の共有ID、通報理由およびカテゴリを取得します。権利者からの通報については、申立者名、連絡先メールアドレスおよび権利の種類も取得します。
+        </LegalParagraph>
+        <LegalParagraph>
+          お問い合わせフォームでは、返信先メールアドレス、件名、本文および任意で入力された氏名を取得します。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">サービスの利用状況に関する情報</h3>
+        <LegalParagraph>
+          サービスの利用状況を把握するため、以下の情報を取得します。
+        </LegalParagraph>
+        <LegalList
+          items={[
+            "ブラウザに割り当てられた識別番号",
+            "利用した画面および機能",
+            "ファイルサイズの区分",
+            "アップロード・ダウンロードの成否",
+            "流入経路および参照元サイトのドメイン",
+            "端末およびブラウザの種類",
+          ]}
+        />
+        <LegalParagraph>
+          また、本サービスの提供に伴い、IPアドレス等の通信情報がCloudflareによって処理されます。
         </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="利用目的">
-        <LegalList
-          items={[
-            "ファイル共有機能および有料プランの提供・維持のため",
-            "料金の決済、契約状態の管理のため",
-            "通報・お問い合わせへの対応、違法・不適切な利用への対応のため",
-            "不正アクセスや総当たり攻撃などの不正利用の防止のため",
-            "本サービスの障害対応・改善のため",
-          ]}
-        />
-      </LegalSection>
-
-      <LegalSection heading="外部サービス(第三者への提供・委託)">
         <LegalParagraph>
-          本サービスは、以下の外部サービスを利用しています。各サービスにおける情報の取扱いは、それぞれの提供事業者のプライバシーポリシーに従います。
+          運営者は、取得した情報を以下の目的で利用します。
         </LegalParagraph>
         <LegalList
           items={[
-            "Cloudflare, Inc. — ホスティング、アプリケーションの実行、データベース、ファイルの保管、迷惑行為対策(Turnstile)。通信に伴いIPアドレスなどが処理されます。迷惑行為対策の確認において、当方はユーザーのIPアドレスを当方のサーバーから外部へ渡さない設定にしています。",
-            "Stripe, Inc. — クレジットカード決済。カード番号などの情報はユーザーのブラウザから直接Stripeへ送信され、当方のサーバーを経由・保存しません。",
-            "Discord, Inc. — 運営チーム内の連絡に利用しています。通報・お問い合わせへの対応の過程で、その内容がDiscord上でも取り扱われることがあります。",
+            "本サービスおよび有料プランの提供・運営",
+            "決済処理および契約情報の管理",
+            "通報・お問い合わせへの対応",
+            "不正利用の防止および違法・不適切な利用への対応",
+            "障害の調査、サービスの維持・改善",
           ]}
         />
+      </LegalSection>
+      <LegalSection heading="外部サービスの利用">
         <LegalParagraph>
-          上記のほか、法令に基づく場合、または人の生命・身体・財産の保護のために必要がある場合には、必要な範囲で情報を提供することがあります。
+          運営者は、本サービスの運営にあたり、以下の外部事業者が提供するサービスを利用しています。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">Cloudflare, Inc.</h3>
+        <LegalParagraph>
+          本サービスのホスティング、データベース、ファイルの保管および不正利用対策にCloudflareのサービスを利用しています。これに伴い、IPアドレス等の通信情報がCloudflareによって処理されます。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">Stripe, Inc.</h3>
+        <LegalParagraph>
+          有料プランのクレジットカード決済にStripeを利用しています。決済に必要なカード情報はStripeが取得し、運営者のサーバーには保存されません。
+        </LegalParagraph>
+        <h3 className="pt-3 text-base font-bold">Discord, Inc.</h3>
+        <LegalParagraph>
+          運営者は内部連絡にDiscordを利用しています。通報やお問い合わせへの対応に必要な情報をDiscord上で取り扱う場合があります。
+        </LegalParagraph>
+        <LegalParagraph>
+          各事業者による情報の取扱いについては、それぞれのプライバシーポリシーが適用されます。
+        </LegalParagraph>
+        <LegalParagraph>
+          このほか、法令に基づく場合、または人の生命、身体もしくは財産の保護のために必要がある場合は、必要な範囲で情報を第三者に提供することがあります。
         </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="Cookie等の利用">
         <LegalParagraph>
-          本サービスは、ログイン状態の維持と認証途中の操作を確認するために、Cookie(クッキー)を使用します。ログインCookieの有効期限は約30日、認証途中Cookieは5分または10分です。本サービスは、広告目的のCookie、および第三者によるアクセス解析ツール(Google Analyticsなど外部の計測サービス)を使用していません。
+          本サービスでは、ログイン状態の維持および認証処理のためにCookieを使用します。
         </LegalParagraph>
         <LegalParagraph>
-          上記とは別に、本サービス自身の改善のため、お使いのブラウザの中に匿名の識別番号(氏名やメールアドレスなど個人を特定する情報とは結びつきません)を保存し、前段落で説明した匿名の利用状況を、当方が運営するサーバーへ直接送信しています。この識別番号や利用状況は外部の第三者アクセス解析サービスへは送信されず、当方のサーバー内でのみ集計に用います。ブラウザの設定でこの保存内容を消去した場合、識別番号は新しく発行し直されます。
+          また、サービスの利用状況を把握するため、ブラウザに識別番号を保存します。この識別番号は氏名やメールアドレスとは結び付けず、利用状況の集計に使用します。ブラウザに保存された情報が削除された場合は、新たな識別番号が発行されます。
         </LegalParagraph>
       </LegalSection>
-
-      <LegalSection heading="保存期間">
-        <LegalList
-          items={[
-            "共有・ファイル：設定された保存期間の経過、またはダウンロード回数の上限到達により自動的に削除されます。",
-            "完了しなかったアップロードのセッション：作成から24時間経過後に自動的に削除されます。",
-            "アカウント情報：アカウントが存在する間、保持されます。",
-            "任意のパスキー・OTP設定：削除・解除またはリカバリーコードによる復旧まで保持します。認証途中情報は5分、OTP設定途中は10分で無効になり、使用後または期限切れの掃除（リクエスト時・6時間ごと）で削除します。",
-            "通報・お問い合わせの記録：対応の記録および再発防止のため、対応完了後も一定期間保持することがあります。",
-            "サービス改善のための匿名の利用状況：個々の記録は1年で削除されます。日次で集計した数値(個人を特定できない統計データ)は、長期的な傾向を把握するため24ヶ月以上保持することがあります。",
-          ]}
-        />
+      <LegalSection heading="情報の保存期間">
+        <LegalParagraph>
+          共有ファイルおよび関連情報は、利用者が設定した保存期間の経過またはダウンロード回数の上限到達により、自動的に削除されます。完了しなかったアップロードに関する一時情報は、作成から24時間経過後に削除します。
+        </LegalParagraph>
+        <LegalParagraph>
+          アカウント情報は、アカウントが存在する期間中保存します。パスキーおよび認証アプリの設定情報は、設定の解除またはアカウントの復旧まで保存し、認証途中の一時情報は有効期限の経過後に削除します。
+        </LegalParagraph>
+        <LegalParagraph>
+          通報およびお問い合わせの記録は、対応履歴の管理や再発防止のため、対応完了後も一定期間保存する場合があります。
+        </LegalParagraph>
+        <LegalParagraph>
+          サービスの利用状況に関する個々の記録は1年間保存します。個人を特定できない形式に集計した統計情報については、24か月以上保存する場合があります。
+        </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="安全管理措置">
-        <LegalList
-          items={[
-            "ファイルとファイル名は、お使いのブラウザの中で暗号化してからアップロードされます。",
-            "パスワードとリカバリーコードは、元に戻せない値に変換して保存します。",
-            "認証アプリの共有秘密は専用の鍵で暗号化して保存し、コードの検証時にサーバーで復号します。ファイルの暗号化・復号鍵とは分離しています。",
-            "本サービスとの通信は暗号化されます。",
-          ]}
-        />
+        <LegalParagraph>
+          運営者は、取得した情報への不正アクセス、漏えい、滅失または毀損を防止するため、必要な安全管理措置を講じます。
+        </LegalParagraph>
+        <LegalParagraph>
+          本サービスでは、ファイルおよびファイル名の暗号化、認証情報の保護、通信の暗号化等を実施しています。
+        </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="ユーザーの権利">
         <LegalParagraph>
-          ユーザーは、当方が保有するご自身の情報について、開示・訂正・利用停止・削除などを請求できます。ご請求は下記のお問い合わせ先までご連絡ください。ただし、暗号化されたファイルの中身については、当方が開くことのできない仕組みのため、開示・訂正には応じられません。共有の削除をご希望の場合は、
-          <LegalLink href="/report">通報フォーム</LegalLink>または
-          <LegalLink href={OPERATOR.contactFormPath}>お問い合わせフォーム</LegalLink>
-          からご連絡ください。
+          利用者は、運営者が保有する自身の個人情報について、法令に定める範囲で開示、訂正、利用停止、削除等を請求できます。
+        </LegalParagraph>
+        <LegalParagraph>
+          ただし、共有ファイルの内容は運営者が復号できないため、その内容の開示および訂正には対応できません。
+        </LegalParagraph>
+        <LegalParagraph>
+          これらの請求および共有ファイルの削除に関するお問い合わせは、<LegalLink href={`https://anzdrop.com${OPERATOR.contactFormPath}`}>お問い合わせフォーム</LegalLink>から受け付けます。共有ファイルについては、<LegalLink href="https://anzdrop.com/report">通報フォーム</LegalLink>からもご連絡いただけます。
         </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="お問い合わせ先">
         <LegalParagraph>
-          本ポリシーおよび情報の取扱いに関するお問い合わせは、{OPERATOR_GROUP_LABEL}
-          まで、
-          <LegalLink href={OPERATOR.contactFormPath}>お問い合わせフォーム</LegalLink>
-          、またはメールアドレス{" "}
-          <LegalLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</LegalLink>
-          {" "}までご連絡ください。
+          本ポリシーおよび個人情報の取扱いに関するお問い合わせは、{OPERATOR_GROUP_LABEL}が<LegalLink href={`https://anzdrop.com${OPERATOR.contactFormPath}`}>お問い合わせフォーム</LegalLink>またはメールアドレス<LegalLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</LegalLink>で受け付けます。
         </LegalParagraph>
       </LegalSection>
-
       <LegalSection heading="本ポリシーの変更">
         <LegalParagraph>
-          当方は、必要に応じて本ポリシーを変更することがあります。変更後の内容は、本ページに掲載した時点から効力を生じます。
+          運営者は、必要に応じて本ポリシーを変更することがあります。変更後の内容は、本ページに掲載した時点から効力を生じます。
         </LegalParagraph>
       </LegalSection>
     </LegalLayout>
