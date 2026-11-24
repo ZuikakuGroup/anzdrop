@@ -1,6 +1,5 @@
-// "15d"はStandard/Premium限定、"30d"はPremium限定(lib/plan.ts参照)。
-// 無料プランでの選択はAPI側で拒否する。
-export type Retention = "once" | "1d" | "3d" | "7d" | "15d" | "30d";
+// プランごとの選択可否は lib/plan.ts で管理し、APIでも検証する。
+export type Retention = "once" | "1d" | "3d" | "7d" | "15d" | "30d" | "60d" | "100d";
 
 export const RETENTION_DAYS: Record<Retention, number> = {
   once: 7, // ダウンロード回数上限とは別の、安全弁としての期限
@@ -9,6 +8,8 @@ export const RETENTION_DAYS: Record<Retention, number> = {
   "7d": 7,
   "15d": 15,
   "30d": 30,
+  "60d": 60,
+  "100d": 100,
 };
 
 export function isRetention(value: unknown): value is Retention {

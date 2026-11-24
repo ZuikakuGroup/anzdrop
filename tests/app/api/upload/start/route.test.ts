@@ -223,11 +223,11 @@ describe("POST /api/upload/start", () => {
     expect(response.status).toBe(200);
   });
 
-  it("returns 403 when a free-plan uploader requests 30d retention", async () => {
+  it("returns 403 when a free-plan uploader requests 60d retention", async () => {
     const response = await postStart({
       encryptedFileName: "file.enc",
       fileSize: 1024,
-      retention: "30d",
+      retention: "60d",
       turnstileToken: "tok",
     });
 
@@ -329,6 +329,28 @@ describe("POST /api/upload/start", () => {
     }
   });
 
+  it.each([1.5, Number.MAX_SAFE_INTEGER + 1])("rejects non-integral or unsafe file sizes (%s) before creating a session", async (fileSize) => {
+    const response = await postStart({ encryptedFileName: "file.enc", fileSize, retention: "7d", turnstileToken: "tok" });
+    expect(response.status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM uploads").first("count")).toBe(0);
+  });
+
+  it.each([
+    ["free", 100, "30d"], ["standard", 300, "60d"], ["premium", 500, "100d"],
+  ] as const)("accepts %s size/retention limits and rejects one byte over", async (plan, gb, retention) => {
+    stubTurnstileSuccess();
+    const { accountId } = await insertTestAccount(env, { plan, planExpiresAt: "2099-01-01T00:00:00.000Z" });
+    const cookie = await sessionCookieHeader(env, accountId);
+    const payload = { encryptedFileName: "file.enc", fileSize: gb * 1024 ** 3, retention, turnstileToken: "tok" };
+    const response = await postStart(payload, { cookie });
+    expect(response.status).toBe(200);
+    const body = await readJson<StartResponseBody>(response);
+    const share = await getShare(body.shareId);
+    expect(new Date(share!.expires_at).getTime() - new Date(share!.created_at).getTime()).toBe(Number(retention.slice(0, -1)) * 24 * 60 * 60 * 1000);
+    const oversized = await postStart({ ...payload, fileSize: payload.fileSize + 1 }, { cookie });
+    expect(oversized.status).toBe(400);
+  });
+
   it("creates a new share for a premium uploader with preview_allowed=1", async () => {
     stubTurnstileSuccess();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -378,7 +400,7 @@ describe("POST /api/upload/start", () => {
     expect(share?.preview_allowed).toBe(0);
   });
 
-  it("returns 403 when a standard-plan uploader requests 30d retention (premium-only)", async () => {
+  it("returns 403 when a standard-plan uploader requests 100d retention (premium-only)", async () => {
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { accountId } = await insertTestAccount(env, {
       plan: "standard",
@@ -390,7 +412,7 @@ describe("POST /api/upload/start", () => {
       {
         encryptedFileName: "file.enc",
         fileSize: 1024,
-        retention: "30d",
+        retention: "100d",
       },
       { cookie }
     );

@@ -113,8 +113,8 @@ Reactの画面コンポーネントは表示と操作の接続を担当します
 
 1. キュー先頭のファイルは選択直後に最初の8MiBチャンクだけをブラウザで先行暗号化する。「アップロードする」を押すと同じストリームの続きから処理する。後続ファイルは順番が来てから暗号化を始める。チャンクごとにAES-256-GCMを使い、送信中の先読みキューは1ファイル・最大8チャンク（平文換算64MiB）に限る。暗号化の付加データや、キューから取り出して送信処理中のデータは別に保持する。選択数に比例して先読みバッファが増えることはない。鍵生成と暗号化形式は[E2EEの設計](./crypto.md)を参照。
 2. `POST /api/upload/start` で共有(または既存共有への相乗り)とマルチパートアップロードセッションを作成。レスポンスの `uploadMode` に `"direct"` または `"proxy"` を返す(R2 S3 Secrets の有無で決定)。新規共有作成時のみTurnstile検証が必須。`encryptedFileName`・`wrappedKey`・`keySalt` はヘッダに載せても安全な文字集合(`A-Za-z0-9._-`)と最大長で検証する。
-3. 暗号化ストリームを `UPLOAD_PART_SIZE`(8MiB)ごとに切り出し、パートとしてR2へ送る(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
-   - **direct**: `POST /api/upload/part-urls` で署名付きPUT URLを取得(`contentLength` を署名に含め `UPLOAD_PART_SIZE` 超を拒否) → ブラウザからR2へ直接PUT → `POST /api/upload/part-ack` でETagを `upload_parts` に記録。暗号文はWorkerを往復しない。
+3. 暗号化ストリームを `getUploadPartSize(fileSize)`(8〜56MiB)ごとに切り出し、パートとしてR2へ送る(パケット境界とは独立。R2の「最終パート以外は同一サイズ」制約に対応するため。GitHub issue #34)。
+   - **direct**: `POST /api/upload/part-urls` で署名付きPUT URLを取得(`contentLength` を署名に含め ファイルごとのパート上限超を拒否) → ブラウザからR2へ直接PUT → `POST /api/upload/part-ack` でETagを `upload_parts` に記録。暗号文はWorkerを往復しない。
    - **proxy**(Secrets未設定時のフォールバック): 従来どおり `POST /api/upload/chunk` でWorker経由。
 4. 全パート送信後 `POST /api/upload/complete` でマルチパートアップロードを完了し、`files` テーブルにレコードを作成。`start`・パート送信と同じく `uploadToken` の一致で認可し、`start` より後に共有が期限切れ/一時停止された場合は完了させない。完了時はR2オブジェクト実サイズで再検証する(クライアント申告は信頼しない)。
 5. アップロード完了後のURLは `https://.../d/{shareId}#{復号鍵(base64url)}` の形。フラグメント(`#`以降)はブラウザからサーバーへ送信されないため、サーバー側のログ・アクセス解析等にも復号鍵は一切残りません。
@@ -173,7 +173,7 @@ R2の不明なabort障害や未登録の完成実体がある場合は、D1追�
 | --- | --- | --- | --- |
 | `FILE_RATE_LIMITER` | `GET /api/file/[fileId]` | `fileId` | 1回の論理的なダウンロードが8MiBウィンドウ×並列6本の `Range` リクエストへ分かれる([`lib/download/parallelFetch.ts`](../lib/download/parallelFetch.ts))。3000/60秒 ≒ 3.2Gbps 相当で、1人の利用者では到達しない |
 | `SHARE_RATE_LIMITER` | `GET /api/download/[shareId]` | `shareId` | 正当な利用ではダウンロードページを開くたびに1回だけ([`components/download/DownloadPage.tsx`](../components/download/DownloadPage.tsx)。ポーリングもリトライもしない)。ただし1つの共有URLを多人数へ配る使い方があるため、人数ぶんの余裕を大きく取る |
-| `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk`・`POST /api/upload/part-urls`・`POST /api/upload/part-ack` | アップロードセッションID | 最大12並列で8MiBのパートを送る([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
+| `UPLOAD_RATE_LIMITER` | `POST /api/upload/chunk`・`POST /api/upload/part-urls`・`POST /api/upload/part-ack` | アップロードセッションID | 最大12並列でパートを送る(送信中パートの合計は96MiB以内)([`lib/plan.ts`](../lib/plan.ts) の `uploadConcurrency`)。キーは1ファイル1セッションなので他人と合算されない |
 | `ACCOUNT_RATE_LIMITER` | `POST /api/billing/stripe/sync`・`POST /api/billing/stripe/subscription` | アカウントID | ログイン済みだが回数無制限だと Stripe API のクォータを消費し続けられる(`subscription` は Stripe 側に Customer / Subscription を実際に作る)。正当な利用は請求ページを開いたときの数回 |
 | `ANALYTICS_RATE_LIMITER` | `POST /api/analytics/events` | エンドポイント全体の固定キー + `anonymous_client_id` | 計測イベントの送信元は無認証・無課金([`analytics.md`](./analytics.md)参照)。固定キーでD1への総書き込み量を抑え、匿名ID単位でも連打を止める。IPは扱わない |
 | `FORM_RATE_LIMITER` | `POST /api/account/signup`・`POST /api/report`・`POST /api/contact` | APIごとの固定キー(`signup` / `report` / `contact`) | 各API全体で120/60秒。Turnstile成功後、パスワードのハッシュ計算・D1書き込み前に判定する。IP・メールアドレス・アカウントID・共有IDはキーにしない |
@@ -192,7 +192,7 @@ R2の不明なabort障害や未登録の完成実体がある場合は、D1追�
 設計上の要点は次のとおりです。
 
 - **フェイルオープン**: バインディングが未設定の環境や Cloudflare 側の一時障害では、制限をかけずにリクエストを受け付けます。レート制限は認証・認可を担うものではなくコスト増加に備えるためのものであり、ここで配信やアップロードが丸ごと止まる方が利用者への影響がはるかに大きいためです。
-- **できるだけ手前で弾く**: `GET /api/file/[fileId]` は D1 / R2 に触る前、`POST /api/upload/chunk` は8MiBのボディを読み込む前にチェックします。超過したリクエスト自体がコストを発生させないようにするためです。
+- **できるだけ手前で弾く**: `GET /api/file/[fileId]` は D1 / R2 に触る前、`POST /api/upload/chunk` はパートのボディを読み込む前にチェックします。超過したリクエスト自体がコストを発生させないようにするためです。
 - **429 で弾いた分は「消費」しない**: 保存期間「1回」のファイルの `download_count` は加算されません。
 - **429 は利用者に「一時的だ」と伝える**: ダウンロード画面は429を専用の文言(`lib/download/errors.ts` の `RATE_LIMITED_MESSAGE`)で表示します。汎用の「URLが正しいかご確認のうえ」に丸めると、待てば直る混雑なのに「リンクが壊れている」と読めてしまうためです。
 - **ログにキーを残さない**: `fileId` / `shareId` は共有URLの一部なので、エラーログにも含めません。
@@ -224,3 +224,9 @@ Cookie認証の状態変更APIは既存のOrigin検証を維持します。暗�
 ブログ取得・検証は `lib/blog/core.ts` で共通化する。AstroはWorkersの環境変数をリクエスト時に読み、microCMSへ `no-store` で問い合わせる。HTMLも `no-store` とし、共有のセキュリティヘッダーとリクエストごとのnonce CSPを適用する。`session: false` を明示し、KV・D1・R2・新しいセッションや記事キャッシュは追加しない。認証APIとE2EEのデータフローは既存Workerのまま。
 
 旧互換ルートは撤去済みです。公開ページへのリンクは通常のドキュメント遷移を使います。
+
+### プラン上限の拡張
+
+1ファイルの上限はFree 100GB・Standard 300GB・Premium 500GB、最大保存期間は30日・60日・100日。初期保存期間は7日・15日・30日のまま。料金ページは共通プラン設定を参照する。新しい共有だけが新しい保存期間を選択でき、既存共有の期限を変更する処理はない。
+
+暗号化チャンクは8MiBのまま、R2への送信パートだけを申告サイズから8〜56MiBに拡大し、暗号化後も10,000パート以内に収める。送信中パートの合計は96MiB以内になるよう並列数を抑える。これはブラウザ全体やWorker全体のメモリ上限ではなく、暗号化・先読み・コピーの領域は別に必要。既存の `file_size` を使い、パートサイズ用の永続データは増やさない。

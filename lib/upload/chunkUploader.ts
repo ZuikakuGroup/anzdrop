@@ -1,4 +1,4 @@
-import { UPLOAD_PART_SIZE } from "./partSize";
+import { UPLOAD_PART_SIZE, getUploadPartSize, getPartUploadConcurrency } from "./partSize";
 
 // サーバー側の MAX_PART_URLS_PER_REQUEST(lib/upload/uploadSessionAuth.ts)と揃える。
 // クライアントバンドルに D1 認可ヘルパを引き込まないよう、ここには定数だけ置く。
@@ -95,6 +95,7 @@ type RetryOptions = {
 type UploadChunksOptions = RetryOptions & {
   // start が返す uploadMode。未指定時は従来どおり Worker プロキシ。
   uploadMode?: UploadMode;
+  fileSize?: number;
 };
 
 function defaultBackoffMs(attempt: number): number {
@@ -263,7 +264,7 @@ async function ackUploadedPart(
 }
 
 // 暗号化済みチャンクのストリームを受け取り、R2のマルチパートアップロードへ
-// パートとして送信する。ストリームはrepartitionでUPLOAD_PART_SIZE単位に
+// パートとして送信する。ストリームはrepartitionでファイルサイズに応じたパート単位に
 // 詰め直してから送るため、パート番号はR2上で順不同に受け付けられる前提で
 // チャンクを並列アップロードして1ラウンドトリップあたりの待ち時間を隠す。
 // concurrencyはプラン別(lib/plan.tsのgetUploadConcurrencyForPlan)に呼び出し元が決める。
@@ -289,7 +290,8 @@ export async function uploadChunksFromStream(
   const abort = new AbortController();
   const { signal } = abort;
   const source = typeof chunks === "function" ? chunks(signal) : chunks;
-  const parts = repartition(source, UPLOAD_PART_SIZE, signal);
+  const partSize = options.fileSize === undefined ? UPLOAD_PART_SIZE : getUploadPartSize(options.fileSize);
+  const parts = repartition(source, partSize, signal);
   const sleep = async (ms: number): Promise<void> => {
     if (signal.aborted) throw signal.reason;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -517,7 +519,7 @@ export async function uploadChunksFromStream(
   };
 
   try {
-    const workers = Promise.all(Array.from({ length: concurrency }, () => worker()));
+    const workers = Promise.all(Array.from({ length: getPartUploadConcurrency(concurrency, partSize) }, () => worker()));
     await Promise.race([workers, failure]);
   } finally {
     const cleanup = parts.return(undefined).catch(stop);

@@ -243,6 +243,14 @@ describe("POST /api/upload/chunk", () => {
     expect(response.status).toBe(200);
   });
 
+  it("accepts a large-file part at its ceiling and rejects bytes over it", async () => {
+    const { uploadSessionId, uploadToken } = await startUpload(100 * 1024 ** 3);
+    const headers = { "Anzdrop-Upload-Session": uploadSessionId, "Anzdrop-Part-Number": "1", "Anzdrop-Upload-Token": uploadToken };
+    expect((await postChunk(headers, new Uint8Array(16 * 1024 ** 2))).status).toBe(200);
+    expect((await postChunk(headers, new Uint8Array(16 * 1024 ** 2 + 1))).status).toBe(413);
+    expect((await postChunk({ ...headers, "Anzdrop-Part-Number": "10001" }, new Uint8Array(1))).status).toBe(400);
+  });
+
   it("stores the uploaded part with its part number and etag", async () => {
     const { uploadSessionId, uploadToken } = await startUpload();
 

@@ -1,5 +1,5 @@
 import { getWorkerRuntime } from "@/server/runtime";
-import { UPLOAD_PART_SIZE } from "@/lib/upload/partSize";
+import { getUploadPartSize } from "@/lib/upload/partSize";
 import {
   isPartNumberAllowed,
   loadUploadSession,
@@ -46,14 +46,14 @@ export const POST = withApiHandler(
       );
     }
 
-    // アップロードセッション単位のレート制限(GitHub issue #81)。8MiB の
+    // アップロードセッション単位のレート制限(GitHub issue #81)。パートの
     // ボディを読み込む前に弾くことで、超過したリクエストの転送コスト自体を
     // 発生させない。アップロードトークンの検証より前になるが、キーにする
     // uploadSessionId は本人しか知らない値なので、他人の枠を狙って消費するには
     // まずセッション ID を知る必要がある(知っていればトークンが要る)。
     //
-    // クライアントは最大12並列(lib/plan.ts の uploadConcurrency)で 8MiB の
-    // パートを送るため、閾値は正当な高速回線でも届かない水準にしてある
+    // 小容量では最大12並列、大容量では送信中パートの合計を96MiB以内に制限する。
+    // 閾値は正当な高速回線でも届かない水準にしてある
     // (wrangler.jsonc の UPLOAD_RATE_LIMITER)。
     const uploadLimit = await checkRateLimit(
       env.UPLOAD_RATE_LIMITER,
@@ -63,36 +63,6 @@ export const POST = withApiHandler(
 
     if (!uploadLimit.ok) {
       return uploadLimit.response;
-    }
-
-    // バイナリ取得
-    const body = await readBodyWithinLimit(request, UPLOAD_PART_SIZE);
-
-    if (body?.byteLength === 0) {
-      return Response.json(
-        {
-          success: false,
-          error: "リクエストボディが空です",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    // クライアントは暗号化ストリームをUPLOAD_PART_SIZEちょうどで切り出して送り、
-    // 最終パートだけがそれ未満になる。よってどのパートもUPLOAD_PART_SIZEを
-    // 超えることはない。これを超える場合は不正なリクエストとして拒否する。
-    if (body === null) {
-      return Response.json(
-        {
-          success: false,
-          error: "チャンクサイズが上限を超えています",
-        },
-        {
-          status: 413,
-        }
-      );
     }
 
     const upload = await loadUploadSession(env.DB, uploadSessionId);
@@ -126,6 +96,10 @@ export const POST = withApiHandler(
     // 送り続けてストレージを無制限に消費する(cleanupの猶予時間まで居座る)
     // 濫用を、各リクエスト単位でも防ぐ。
     const declaredFileSize = upload.file_size ?? 0;
+    // 旧セッションに不正なサイズがあっても、パート計算で500にしない。
+    if (!Number.isSafeInteger(declaredFileSize) || declaredFileSize < 0) {
+      return Response.json({ success: false, error: "ファイルサイズが正しくありません" }, { status: 400 });
+    }
 
     if (!isPartNumberAllowed(partNumber, declaredFileSize)) {
       return Response.json(
@@ -135,6 +109,34 @@ export const POST = withApiHandler(
         },
         {
           status: 400,
+        }
+      );
+    }
+
+    // 認証済みセッションの申告サイズから上限を計算し、本文を実測する。
+    const body = await readBodyWithinLimit(request, getUploadPartSize(declaredFileSize));
+
+    if (body?.byteLength === 0) {
+      return Response.json(
+        {
+          success: false,
+          error: "リクエストボディが空です",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    // 最終パートを含め、このファイルに許可したパートサイズを超える本文は拒否する。
+    if (body === null) {
+      return Response.json(
+        {
+          success: false,
+          error: "チャンクサイズが上限を超えています",
+        },
+        {
+          status: 413,
         }
       );
     }

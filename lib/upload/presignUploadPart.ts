@@ -1,12 +1,12 @@
 import { AwsClient } from "aws4fetch";
 import type { R2S3Credentials } from "./r2DirectCredentials";
-import { UPLOAD_PART_SIZE } from "./partSize";
+import { UPLOAD_PART_SIZE, MAX_UPLOAD_PART_SIZE } from "./partSize";
 
 export const PRESIGNED_UPLOAD_PART_EXPIRES_SECONDS = 3600;
 
 // UploadPart 用の presigned PUT URL を発行する。
 // ブラウザが Worker を経由せず R2 へ暗号文パートを直接送るためのもの。
-// Content-Length を署名に含めて、proxy 経路の UPLOAD_PART_SIZE 上限と同等に
+// Content-Length を署名に含めて、proxy 経路のファイル別パート上限と同等に
 // 巨大ボディのPUTを署名検証で拒否する。
 export async function presignUploadPartUrl(params: {
   credentials: R2S3Credentials;
@@ -15,6 +15,7 @@ export async function presignUploadPartUrl(params: {
   partNumber: number;
   contentLength: number;
   expiresInSeconds?: number;
+  maxPartSize?: number;
 }): Promise<string> {
   const {
     credentials,
@@ -22,6 +23,7 @@ export async function presignUploadPartUrl(params: {
     uploadId,
     partNumber,
     contentLength,
+    maxPartSize = UPLOAD_PART_SIZE,
     expiresInSeconds = PRESIGNED_UPLOAD_PART_EXPIRES_SECONDS,
   } = params;
 
@@ -32,9 +34,10 @@ export async function presignUploadPartUrl(params: {
   if (
     !Number.isInteger(contentLength) ||
     contentLength < 1 ||
-    contentLength > UPLOAD_PART_SIZE
+    contentLength > maxPartSize ||
+    maxPartSize > MAX_UPLOAD_PART_SIZE
   ) {
-    throw new Error("contentLength must be between 1 and UPLOAD_PART_SIZE");
+    throw new Error("contentLength must be between 1 and maxPartSize");
   }
 
   const client = new AwsClient({
@@ -75,6 +78,7 @@ export async function presignUploadPartUrls(params: {
   uploadId: string;
   parts: Array<{ partNumber: number; contentLength: number }>;
   expiresInSeconds?: number;
+  maxPartSize?: number;
 }): Promise<Array<{ partNumber: number; url: string }>> {
   const urls: Array<{ partNumber: number; url: string }> = [];
 
@@ -87,6 +91,7 @@ export async function presignUploadPartUrls(params: {
         uploadId: params.uploadId,
         partNumber: part.partNumber,
         contentLength: part.contentLength,
+        maxPartSize: params.maxPartSize,
         expiresInSeconds: params.expiresInSeconds,
       }),
     });

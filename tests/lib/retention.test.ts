@@ -74,3 +74,11 @@ describe("maxDownloadsForRetention", () => {
     expect(maxDownloadsForRetention("30d")).toBeNull();
   });
 });
+
+describe("extended retention", () => {
+  it.each([["60d", "2026-03-02T00:00:00.000Z"], ["100d", "2026-04-11T00:00:00.000Z"]] as const)("supports %s without download limits", (retention, expiresAt) => {
+    expect(isRetention(retention)).toBe(true);
+    expect(calculateExpiresAt(new Date("2026-01-01T00:00:00.000Z"), retention)).toBe(expiresAt);
+    expect(maxDownloadsForRetention(retention)).toBeNull();
+  });
+});

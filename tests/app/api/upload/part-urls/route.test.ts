@@ -119,6 +119,15 @@ describe("POST /api/upload/part-urls", () => {
     expect(body.urls[0].url).toMatch(/[Xx]-[Aa]mz-[Ss]igned[Hh]eaders=[^&]*content-length/);
   });
 
+  it("signs larger parts only for a matching large-file session and caps part numbers", async () => {
+    enableDirectSecrets();
+    const started = await startUpload(100 * 1024 ** 3);
+    const payload = { uploadSessionId: started.uploadSessionId, uploadToken: started.uploadToken };
+    expect((await postPartUrls({ ...payload, parts: [{ partNumber: 1, contentLength: 16 * 1024 ** 2 }] })).status).toBe(200);
+    expect((await postPartUrls({ ...payload, parts: [{ partNumber: 1, contentLength: 16 * 1024 ** 2 + 1 }] })).status).toBe(400);
+    expect((await postPartUrls({ ...payload, parts: [{ partNumber: 10_001, contentLength: 1 }] })).status).toBe(400);
+  });
+
   it("rejects a wrong upload token", async () => {
     enableDirectSecrets();
     const started = await startUpload();

@@ -9,7 +9,7 @@ Worker本文の余剰コピーを省き、Nodeで切り出した1GiB相当の本
 ```mermaid
 flowchart LR
   F[ブラウザのFile] --> R[8MiB読込・AES-GCM]
-  R --> P[8MiBパート・並列送信]
+  R --> P[8〜56MiBパート・並列送信]
   P -->|proxy| W[Worker: 上限検証]
   W --> R2[R2: 暗号文Multipart]
   P -->|direct: 署名URL| R2
@@ -22,9 +22,9 @@ flowchart LR
 アップロードは `useUploadSession` → `iterateFileChunks` → `iterateEncryptedChunks` → `bufferAhead` → `repartition` → `uploadChunksFromStream` → complete API の順に進む。
 
 - ブラウザは `File.slice().arrayBuffer()` で8MiBずつ読み出す。WebCryptoのAES-256-GCMで暗号化し、IV・タグをパケットへ格納する。先頭の16B salt、チャンク番号、最終チャンク判定をAADに使う。選択時に先頭チャンクを準備し、送信中は最大8チャンクを先読みする。
-- 暗号パケットは8MiBのR2パートへ詰め直す。ファイル全量は保持しないが、暗号化・パケット化・パート化にはコピーがあり、先読みと送信中パートは同時に保持される。送信並列数は無料・Standardが8、Premiumが12。
+- 暗号パケットはファイルサイズに応じて8〜56MiBのR2パートへ詰め直す。ファイル全量は保持しないが、暗号化・パケット化・パート化にはコピーがあり、先読みと送信中パートは同時に保持される。送信並列数は無料・Standardが最大8、Premiumが最大12。大きなパートでは送信中パートの合計96MiB以内になるよう減らす。
 - start APIでセッションを作成する。directモードは署名URL取得→R2 PUT→WorkerへETag ACK、proxyモードはWorkerのchunk API→R2 `uploadPart`。失敗時は同じパートを再送し、direct失敗時はproxyに戻す。completeでR2のパートを結合し、実サイズを検証する。
-- proxyは本文を上限8MiBの固定バッファへ読み込み、上限超過を実測で拒否してからR2に渡す。任意長ストリームをそのままR2へ通す方式は、この検証や異常リクエストへの対応を変えるため採用しない。
+- proxyは認証済みセッションの申告サイズから上限(8〜56MiB)を計算して固定バッファへ読み込み、上限超過を実測で拒否してからR2に渡す。任意長ストリームをそのままR2へ通す方式は、この検証や異常リクエストへの対応を変えるため採用しない。
 - 進捗は成功したパートの暗号文バイト数を加算する。再送失敗を二重加算しない。毎ネットワークチャンクのReact再描画は行っていない。
 
 ダウンロードは R2 → Worker Response → `createParallelCiphertextStream` → `iterateDecryptedChunks` → 保存先 の順に進む。
@@ -199,7 +199,7 @@ network欄は完了した測定区間に対するAPIデータリクエストの�
 
 ## 制約と次の測定
 
-Cloudflare実環境のRTT、帯域、署名URLとR2直接転送、WorkerのCPU時間・メモリは今回のローカル結果から算出できない。実環境の負荷試験は未実施。Cloudflareは大きな本文の全量バッファリングを避ける設計を推奨している（[公式のベストプラクティス](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/)）。本アプリのproxy本文バッファは既存の8MiB上限を維持する。
+Cloudflare実環境のRTT、帯域、署名URLとR2直接転送、WorkerのCPU時間・メモリは今回のローカル結果から算出できない。実環境の負荷試験は未実施。Cloudflareは大きな本文の全量バッファリングを避ける設計を推奨している（[公式のベストプラクティス](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/)）。本アプリのproxy本文バッファはファイルサイズに応じて8〜56MiBで制限する。上記の測定値は従来の8MiBパートの結果であり、新しい大容量パートの性能を示すものではない。
 
 帯域制限下の定量比較は未実施。複数利用者の同時転送は既存の耐障害性E2Eで確認する。必要なら専用環境で `E2E_WORKERS=2` を指定したローカルランナーによりベンチマーク試行を同時実行できるが、逐次実行結果と混ぜない。転送の並列数そのものや先読み数は今回変更しない。ネットワーク条件ごとの効果を測らずに増減すると、メモリと実効速度のどちらかを悪化させる可能性がある。
 

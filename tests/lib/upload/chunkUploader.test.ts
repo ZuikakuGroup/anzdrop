@@ -31,7 +31,7 @@ function expectBytesEqual(actual: Uint8Array, expected: Uint8Array): void {
 }
 
 // テストデータのバイト列(内容の一致検証用に位置ごとに異なる値を入れる)。
-function ramp(length: number, seed = 0): Uint8Array {
+function ramp(length: number, seed = 0): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(length);
   for (let i = 0; i < length; i++) {
     out[i] = (i + seed) & 0xff;
@@ -975,5 +975,62 @@ describe("uploadChunksFromStream", () => {
     expect(proxyUpload).toHaveBeenCalledTimes(1);
     expect(onBytesUploaded).toHaveBeenCalledOnce();
     expect(onBytesUploaded).toHaveBeenCalledWith(100);
+  });
+});
+
+describe("adaptive multipart transfer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("preserves ciphertext and decryption across larger parts, retries and direct-to-proxy fallback", async () => {
+    const { generateKey, iterateEncryptedChunks, iterateDecryptedChunks } = await import("@/lib/crypto");
+    const plaintext = ramp(2 * UPLOAD_PART_SIZE + 1, 5);
+    const key = await generateKey();
+    const received = new Map<number, Uint8Array>();
+    const directBodies: Uint8Array[] = [];
+    let proxyAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      if (url === "/api/upload/part-urls") {
+        const request = JSON.parse(String(init.body)) as { parts: { partNumber: number; contentLength: number }[] };
+        expect(request.parts[0].contentLength).toBe(16 * 1024 ** 2);
+        return Response.json({ success: true, urls: request.parts.map((part) => ({ partNumber: part.partNumber, url: `https://r2.test/${part.partNumber}` })) });
+      }
+      if (url.startsWith("https://r2.test/")) {
+        directBodies.push(new Uint8Array(init.body as ArrayBuffer));
+        return new Response(null, { status: 403 });
+      }
+      expect(url).toBe("/api/upload/chunk");
+      const part = Number((init.headers as Record<string, string>)["Anzdrop-Part-Number"]);
+      proxyAttempts++;
+      if (proxyAttempts === 1) return new Response(null, { status: 503 });
+      received.set(part, new Uint8Array(init.body as ArrayBuffer));
+      return new Response(null, { status: 200 });
+    }));
+    const progress = vi.fn();
+    await uploadChunksFromStream(iterateEncryptedChunks(new File([plaintext], "large.bin"), key), "session", "token", "large.bin", 1, progress, { fileSize: 100 * 1024 ** 3, uploadMode: "direct", ...noBackoff });
+    expect([...received.values()].map((body) => body.byteLength)).toEqual([16 * 1024 ** 2, 101]);
+    expectBytesEqual(directBodies[0], received.get(1)!);
+    expect(proxyAttempts).toBe(3);
+    expect(progress.mock.calls.reduce((sum, [bytes]) => sum + bytes, 0)).toBe(plaintext.byteLength + 100);
+    const stream = new ReadableStream<Uint8Array>({ start(controller) { for (const body of received.values()) controller.enqueue(body); controller.close(); } });
+    const decrypted: Uint8Array[] = [];
+    for await (const chunk of iterateDecryptedChunks(stream, key, plaintext.byteLength)) decrypted.push(chunk);
+    expectBytesEqual(concat(decrypted), plaintext);
+  });
+
+  it("limits concurrent large-file uploads by bytes, rather than the plan's request count", async () => {
+    let active = 0;
+    let peak = 0;
+    const sizes: number[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      active++;
+      peak = Math.max(peak, active);
+      sizes.push((init.body as ArrayBuffer).byteLength);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return new Response(null, { status: 200 });
+    }));
+    const piece = new Uint8Array(UPLOAD_PART_SIZE);
+    await uploadChunksFromStream(fromArray([...Array.from({ length: 7 }, () => piece), new Uint8Array(1)]), "session", "token", "huge.bin", 12, () => {}, { fileSize: 500 * 1024 ** 3 });
+    expect(sizes).toEqual([56 * 1024 ** 2, 1]);
+    expect(peak).toBe(1);
   });
 });

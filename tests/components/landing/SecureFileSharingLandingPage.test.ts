@@ -42,7 +42,7 @@ describe("SecureFileSharingLandingPage", () => {
     expect(container.querySelector("header nav a[href='/blog']")).not.toBeNull();
     expect(container.querySelector("header nav a[href='/contact']")).not.toBeNull();
     expect(container.textContent).toContain("登録不要の暗号化ファイル共有");
-    expect(container.textContent).toContain("1ファイル最大5GB");
+    expect(container.textContent).toContain("1ファイル最大100GB");
 
     const planSection = container.querySelector("#plan-heading")?.closest("section");
     const planTerms = [...(planSection?.querySelectorAll("dl > div") ?? [])].map((row) => [
@@ -50,8 +50,8 @@ describe("SecureFileSharingLandingPage", () => {
       row.querySelector("dd")?.textContent,
     ]);
     expect(planTerms).toEqual([
-      ["1ファイルの最大容量", "5GB"],
-      ["保存期間", "1回・1日・3日・7日"],
+      ["1ファイルの最大容量", "100GB"],
+      ["保存期間", "1回・1日・3日・7日・15日・30日"],
       ["アップロード数", "無制限"],
     ]);
   });

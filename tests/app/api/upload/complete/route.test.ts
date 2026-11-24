@@ -423,13 +423,16 @@ describe("POST /api/upload/complete", () => {
     // uploadChunksFromStream が呼ぶ fetch("/api/upload/chunk", ...) を、
     // 実際の chunk ルートハンドラへ転送する。
     const { POST: chunkRoute } = bindRouteHandlers(await import("@/server/routes/upload/chunk/route"), testRuntime);
-    const seenPartSizes: number[] = [];
+    const seenPartSizes = new Map<number, number>();
     vi.stubGlobal(
       "fetch",
       async (url: string, init: RequestInit): Promise<Response> => {
         expect(url).toBe("/api/upload/chunk");
         const body = init.body as ArrayBuffer;
-        seenPartSizes.push(body.byteLength);
+        const partNumber = Number((init.headers as Record<string, string>)["Anzdrop-Part-Number"]);
+        // 一時エラー時は同じパートを再送する。パート数は試行回数ではなく番号で数える。
+        if (seenPartSizes.has(partNumber)) expect(body.byteLength).toBe(seenPartSizes.get(partNumber));
+        seenPartSizes.set(partNumber, body.byteLength);
         return chunkRoute(
           new Request("http://localhost/api/upload/chunk", {
             method: "POST",
@@ -453,8 +456,8 @@ describe("POST /api/upload/complete", () => {
     vi.unstubAllGlobals();
 
     // 非最終パートは均一な UPLOAD_PART_SIZE、最終パートだけが小さい = #34 の条件。
-    const bySize = [...seenPartSizes].sort((a, b) => b - a);
-    expect(seenPartSizes).toHaveLength(3);
+    const bySize = [...seenPartSizes.values()].sort((a, b) => b - a);
+    expect([...seenPartSizes.keys()].sort()).toEqual([1, 2, 3]);
     expect(bySize[0]).toBe(UPLOAD_PART_SIZE);
     expect(bySize[1]).toBe(UPLOAD_PART_SIZE);
     expect(bySize[2]).toBeLessThan(UPLOAD_PART_SIZE);

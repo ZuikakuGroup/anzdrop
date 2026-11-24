@@ -1,3 +1,4 @@
+import { getUploadPartSize } from "@/lib/upload/partSize";
 import { getWorkerRuntime } from "@/server/runtime";
 import { withApiHandler } from "@/lib/api/handler";
 import { parseJsonBody } from "@/lib/api/validate";
@@ -71,6 +72,11 @@ export const POST = withApiHandler(
     }
 
     const declaredFileSize = upload.file_size ?? 0;
+    // 旧セッションに不正なサイズがあっても、パート計算で500にしない。
+    if (!Number.isSafeInteger(declaredFileSize) || declaredFileSize < 0) {
+      return Response.json({ success: false, error: "ファイルサイズが正しくありません" }, { status: 400 });
+    }
+    const maxPartSize = getUploadPartSize(declaredFileSize);
     // 同じパート番号が複数来た場合は最後の contentLength を採用。
     const uniqueParts = [
       ...new Map(
@@ -79,6 +85,9 @@ export const POST = withApiHandler(
     ];
 
     for (const part of uniqueParts) {
+      if (part.contentLength > maxPartSize) {
+        return Response.json({ success: false, error: "パートサイズが上限を超えています" }, { status: 400 });
+      }
       if (!isPartNumberAllowed(part.partNumber, declaredFileSize)) {
         return Response.json(
           {
@@ -95,6 +104,7 @@ export const POST = withApiHandler(
       storageKey: upload.storage_key,
       uploadId: upload.upload_id,
       parts: uniqueParts,
+      maxPartSize,
     });
 
     const response: UploadPartUrlsResponse = {

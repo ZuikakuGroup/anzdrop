@@ -1,3 +1,5 @@
+import { getMaxFileSizeBytes, getMaxRetentionDays, PLAN_MONTHLY_PRICE_JPY } from "@/lib/plan";
+import { formatBytes } from "@/lib/format";
 import SiteHeader from "@/components/brand/SiteHeader";
 import SiteFooter from "@/components/brand/SiteFooter";
 import { CheckIcon, XIcon } from "@/components/brand/ShareIcons";
@@ -34,11 +36,11 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-ink/10 py-4">
                 <div>
-                  <p className="text-xl font-bold">5GB</p>
+                  <p className="text-xl font-bold">{formatBytes(getMaxFileSizeBytes("free"))}</p>
                   <p className="text-[11px] text-ink/60">最大ファイルサイズ</p>
                 </div>
                 <div>
-                  <p className="text-xl font-bold">7日</p>
+                  <p className="text-xl font-bold">{getMaxRetentionDays("free")}日</p>
                   <p className="text-[11px] text-ink/60">最大保存期間</p>
                 </div>
               </div>
@@ -80,17 +82,17 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 容量と保存期間を増やしたい方に。
               </p>
               <p className="mt-4 text-3xl font-bold">
-                ¥250
+                ¥{PLAN_MONTHLY_PRICE_JPY.standard}
                 <span className="text-sm font-bold text-ink/60"> / 月</span>
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-ink/10 py-4">
                 <div>
-                  <p className="text-xl font-bold">20GB</p>
+                  <p className="text-xl font-bold">{formatBytes(getMaxFileSizeBytes("standard"))}</p>
                   <p className="text-[11px] text-ink/60">最大ファイルサイズ</p>
                 </div>
                 <div>
-                  <p className="text-xl font-bold">15日</p>
+                  <p className="text-xl font-bold">{getMaxRetentionDays("standard")}日</p>
                   <p className="text-[11px] text-ink/60">最大保存期間</p>
                 </div>
               </div>
@@ -132,17 +134,17 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 大きなファイルや長期保存に。
               </p>
               <p className="mt-4 text-3xl font-bold">
-                ¥450
+                ¥{PLAN_MONTHLY_PRICE_JPY.premium}
                 <span className="text-sm font-bold text-ink/60"> / 月</span>
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-brand/20 py-4">
                 <div>
-                  <p className="text-xl font-bold text-brand">50GB</p>
+                  <p className="text-xl font-bold text-brand">{formatBytes(getMaxFileSizeBytes("premium"))}</p>
                   <p className="text-[11px] text-ink/60">最大ファイルサイズ</p>
                 </div>
                 <div>
-                  <p className="text-xl font-bold text-brand">30日</p>
+                  <p className="text-xl font-bold text-brand">{getMaxRetentionDays("premium")}日</p>
                   <p className="text-[11px] text-ink/60">最大保存期間</p>
                 </div>
               </div>
