@@ -7,8 +7,8 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
     <div className={showChrome ? "flex min-h-screen flex-col" : "flex flex-1 flex-col"}>
       {showChrome && <SiteHeader />}
 
-      <main className="min-h-[calc(100svh-4rem)] flex-1 px-4 py-12 sm:px-8">
-        <div className="mx-auto max-w-5xl">
+      <main className="flex min-h-[calc(100svh-4rem)] flex-1 flex-col justify-center px-4 py-12 sm:px-8">
+        <div className="mx-auto w-full max-w-5xl">
           <div className="mb-10 space-y-2 text-center">
             <h1 className="text-2xl font-bold leading-snug tracking-normal">
               料金プラン
@@ -70,7 +70,7 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 href="/"
                 className="mt-8 block w-full rounded border-2 border-ink px-4 py-3 text-center text-sm font-bold tracking-normal text-ink transition-colors hover:bg-ink/[0.03]"
               >
-                無料でファイルを送る
+                始める
               </a>
             </div>
 
@@ -82,9 +82,6 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
               <p className="mt-4 text-3xl font-bold">
                 ¥250
                 <span className="text-sm font-bold text-ink/60"> / 月</span>
-              </p>
-              <p className="mt-1 text-[11px] text-ink/60">
-                ビットコイン決済の場合、為替レートにより変動します。
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-ink/10 py-4">
@@ -125,7 +122,7 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 href="/mypage/billing"
                 className="mt-8 block w-full rounded border-2 border-ink px-4 py-3 text-center text-sm font-bold tracking-normal text-ink transition-colors hover:bg-ink/[0.03]"
               >
-                有料プランを選ぶ
+                始める
               </a>
             </div>
 
@@ -137,9 +134,6 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
               <p className="mt-4 text-3xl font-bold">
                 ¥450
                 <span className="text-sm font-bold text-ink/60"> / 月</span>
-              </p>
-              <p className="mt-1 text-[11px] text-ink/60">
-                ビットコイン決済の場合、為替レートにより変動します。
               </p>
 
               <div className="mt-4 grid grid-cols-2 gap-3 border-y border-brand/20 py-4">
@@ -180,7 +174,7 @@ export default function PricingPage({ showChrome = true }: { showChrome?: boolea
                 href="/mypage/billing"
                 className="mt-8 block w-full rounded bg-brand px-4 py-3 text-center text-sm font-bold tracking-normal text-paper transition-colors hover:bg-brand/90"
               >
-                有料プランを選ぶ
+                始める
               </a>
             </div>
           </div>
