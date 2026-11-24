@@ -1,146 +1,110 @@
-import LegalLayout, {
-  LegalSection,
-  LegalParagraph,
-  LegalLink,
-  LegalList,
-} from "@/components/legal/LegalLayout";
-import {
-  LEGAL_LAST_UPDATED,
-  OPERATOR,
-  OPERATOR_GROUP_LABEL,
-} from "@/lib/legal/constants";
+import LegalLayout, { LegalSection, LegalParagraph, LegalLink } from "@/components/legal/LegalLayout";
+import { LEGAL_LAST_UPDATED, OPERATOR, OPERATOR_GROUP_LABEL } from "@/lib/legal/constants";
 
 export default function TermsPage({ showChrome = true }: { showChrome?: boolean } = {}) {
   return (
-    <LegalLayout showChrome={showChrome}
-      title="利用規約"
-      description="Anzdropをご利用いただく前にお読みください。"
-      lastUpdated={LEGAL_LAST_UPDATED}
-    >
-      <LegalSection heading="第1条(適用)">
+    <LegalLayout showChrome={showChrome} title="利用規約" lastUpdated={LEGAL_LAST_UPDATED}>
+      <LegalSection heading="第1条（適用）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>本規約は、{OPERATOR_GROUP_LABEL}（以下「運営者」といいます。）が提供するファイル共有サービス「Anzdrop」（以下「本サービス」といいます。）の利用条件を定めるものです。</li>
+          <li>本サービスを利用する者（以下「利用者」といいます。）は、本規約に同意したうえで本サービスを利用するものとします。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第2条（ファイルの保存および削除）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>共有ファイルは、設定された保存期間の満了またはダウンロード回数の上限到達により削除されます。</li>
+          <li>利用者は、自己の責任においてファイルの原本を管理するものとします。</li>
+          <li>運営者は、削除されたファイルの復元義務を負いません。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第3条（アカウント）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>有料プランの利用には、アカウントの登録が必要です。</li>
+          <li>利用者は、自己の責任においてアカウントID、パスワード、リカバリーコードその他の認証情報を管理するものとします。</li>
+          <li>認証情報の管理不十分または第三者による不正使用に起因する損害については、運営者に帰責事由がある場合を除き、利用者が責任を負います。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第4条（料金および支払い）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>利用者は、有料プランの利用にあたり、運営者が定める利用料金を所定の方法により支払うものとします。</li>
+          <li>利用料金、支払方法、支払時期その他の取引条件は、特定商取引法に基づく表記および申込時に提示する条件に従うものとします。</li>
+          <li>月額契約は、利用者が解約手続きを行うまで自動的に更新されます。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第5条（解約および返金）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>利用者は、運営者所定の方法により、いつでも有料プランを解約できます。</li>
+          <li>解約の効力は、支払済みの契約期間の満了時に生じるものとします。</li>
+          <li>支払済みの利用料金については、法令により返金が必要な場合を除き、返金しません。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第6条（禁止事項）">
         <LegalParagraph>
-          本規約は、{OPERATOR_GROUP_LABEL}
-          (以下「当方」)が提供する本サービスの利用に関する条件を、当方とご利用者(以下「ユーザー」)との間で定めるものです。ユーザーは、本サービスを利用することにより本規約に同意したものとみなされます。
+          利用者は、本サービスの利用にあたり、以下の行為をしてはなりません。
+        </LegalParagraph>
+        <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>法令または公序良俗に違反する行為</li>
+          <li>児童の性的搾取に関するコンテンツのアップロードまたは共有</li>
+          <li>第三者の著作権、商標権、肖像権、プライバシーその他の権利を侵害する行為</li>
+          <li>マルウェアその他の有害なプログラムのアップロードまたは共有</li>
+          <li>第三者の個人情報を不当に公開または拡散する行為</li>
+          <li>スパム、フィッシングその他の不正行為</li>
+          <li>不正アクセスまたは脆弱性を悪用する行為</li>
+          <li>本サービスの設備に過度な負荷を与える行為</li>
+          <li>本サービスの運営を妨害する行為</li>
+          <li>その他これらに準ずる行為</li>
+        </ul>
+      </LegalSection>
+      <LegalSection heading="第7条（共有ファイルの取扱い）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>共有ファイルに関する権利は、利用者または正当な権利者に帰属します。</li>
+          <li>利用者は、ファイルのアップロードおよび共有について必要な権利を有するものとし、その内容について責任を負います。</li>
+          <li>運営者は、共有ファイルが法令または本規約に違反すると合理的に判断した場合、事前の通知なく当該ファイルの共有を停止または削除することができます。</li>
+          <li>権利侵害に関する申立ては、権利者本人またはその代理人から<LegalLink href="https://anzdrop.com/report/rights">権利者向け通報フォーム</LegalLink>を通じて受け付けます。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第8条（サービスの変更・中断・終了）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>運営者は、運営上必要がある場合、本サービスの全部または一部を変更、中断または終了することができます。</li>
+          <li>本サービスの提供を終了する場合は、合理的な期間を設けて事前に周知するものとします。ただし、緊急その他やむを得ない事情がある場合は、この限りではありません。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第9条（免責および損害賠償）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>運営者は、本サービスの完全性、正確性、可用性および特定の目的への適合性を保証しません。</li>
+          <li>運営者の責任によらない認証情報の紛失、データの消失その他の事由によって利用者に生じた損害について、運営者は責任を負いません。</li>
+          <li>運営者の軽過失により利用者に損害が生じた場合、運営者が負う損害賠償責任は、現実に生じた通常かつ直接の損害に限るものとします。有料プランについては、損害発生前1か月間に当該利用者が支払った利用料金を上限とします。</li>
+          <li>事業としてまたは事業のために本サービスを利用する者に対しては、運営者の軽過失による損害賠償責任を負いません。</li>
+          <li>前各項の免責および責任の制限は、運営者の故意もしくは重大な過失による場合、または法令により認められない場合には適用しません。</li>
+          <li>利用者間または利用者と第三者との間で生じた紛争は、当事者の責任および費用において解決するものとします。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第10条（知的財産権）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>本サービスに関する知的財産権は、運営者または正当な権利者に帰属します。</li>
+          <li>オープンソースとして公開されているソフトウェアの利用条件は、当該ソフトウェアに適用されるライセンスに従うものとします。</li>
+        </ol>
+      </LegalSection>
+      <LegalSection heading="第11条（個人情報の取扱い）">
+        <LegalParagraph>
+          本サービスにおける個人情報その他の利用者情報の取扱いは、運営者が別途定めるプライバシーポリシーに従います。
         </LegalParagraph>
       </LegalSection>
-
-      <LegalSection heading="第2条(サービスの内容)">
-        <LegalList
-          items={[
-            "本サービスは、ファイルをブラウザ上でエンドツーエンド暗号化してからアップロードし、発行されたURLを通じて共有するためのサービスです。",
-            "ファイルの暗号化・復号はユーザーのブラウザ内で行われ、復号鍵は共有URLのフラグメント(#以降)にのみ含まれます。当方のサーバーは、ファイルの内容および元のファイル名を保持せず、閲覧することもできません。共有にパスワードを設定した場合も、当方はパスワードを保持しないためファイルを復号できません。",
-            "共有には保存期間(1回のダウンロードで削除・1日・3日・7日など。有料プランではさらに長い期間)が設定され、期間が過ぎた共有は自動的に削除されます。削除されたデータは復元できません。",
-            "アカウント登録なしで匿名のまま利用できます。アカウント登録は有料プランを利用する場合にのみ必要です。",
-          ]}
-        />
+      <LegalSection heading="第12条（本規約の変更）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>運営者は、民法第548条の4その他の関係法令に従い、本規約を変更することができます。</li>
+          <li>本規約を変更する場合は、変更後の内容および効力発生日を事前に周知します。</li>
+        </ol>
       </LegalSection>
-
-      <LegalSection heading="第3条(アカウント)">
-        <LegalList
-          items={[
-            "アカウントは、ユーザーが任意に定めるアカウントIDとパスワードのみで構成されます。",
-            "パスワードを忘れた場合の再設定は、登録時に一度だけ表示されるリカバリーコードによってのみ可能です。当方はパスワードの平文もリカバリーコードの平文も保持していないため、これらを失うと当方でもアカウントを復旧できません。",
-            "ユーザーは、自己の責任においてアカウントID・パスワード・リカバリーコードを管理するものとし、これらの管理不十分・第三者の使用等により生じた損害の責任はユーザーが負います。",
-          ]}
-        />
+      <LegalSection heading="第13条（準拠法および管轄）">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-ink/70 marker:text-ink/60">
+          <li>本規約の準拠法は日本法とします。</li>
+          <li>本サービスまたは本規約に関して運営者と利用者との間に生じた紛争については、法令に別段の定めがある場合を除き、横浜地方裁判所または藤沢簡易裁判所を第一審の専属的合意管轄裁判所とします。</li>
+        </ol>
       </LegalSection>
-
-      <LegalSection heading="第4条(料金・支払い)">
-        <LegalList
-          items={[
-            "無料プランは無料で提供されます。有料プランの料金・支払方法・支払時期・解約条件は、特定商取引法に基づく表記に定めるとおりです。",
-            "有料プランの決済は、クレジットカードでStripeを通じて行われます。クレジットカード番号等の情報は当方のサーバーを経由しません。",
-            "クレジットカードによる支払いは、解約されるまで毎月自動で更新・課金されます。",
-            "サービスの性質上、決済後の返金は原則として行いません。詳細は特定商取引法に基づく表記をご確認ください。",
-          ]}
-        />
-      </LegalSection>
-
-      <LegalSection heading="第5条(解約)">
+      <LegalSection heading="第14条（お問い合わせ）">
         <LegalParagraph>
-          クレジットカードによるお支払いは、契約期間の定めのない月額の自動更新契約です。自動更新は、ログイン後のマイページの「プラン・お支払い」からいつでも停止できます。停止した場合でも、既に支払い済みの期間の終了まではプランを利用でき、期間終了後は自動的に無料プランに戻ります。日割りでの返金は行いません。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第6条(禁止事項)">
-        <LegalParagraph>
-          ユーザーは、本サービスの利用にあたり、以下の行為をしてはなりません。
-        </LegalParagraph>
-        <LegalList
-          items={[
-            "法令に違反する情報、または法令に違反する態様での情報のアップロード・共有",
-            "児童ポルノ、児童の性的搾取に関する情報のアップロード・共有",
-            "第三者の著作権・商標権・肖像権・プライバシーその他の権利を侵害する情報のアップロード・共有",
-            "マルウェア、ウイルスその他の有害なプログラムのアップロード・共有",
-            "第三者の個人情報を本人の同意なく掲載・拡散する行為",
-            "スパム、フィッシングその他の不正・迷惑行為",
-            "本サービスのサーバー・ネットワークに過度の負荷をかける行為、不正アクセス、脆弱性の悪用",
-            "本サービスの運営を妨害する行為、その他当方が不適切と合理的に判断する行為",
-          ]}
-        />
-        <LegalParagraph>
-          本サービスのソースコードはオープンソースとして公開されており、ライセンスの範囲での利用・改変・再配布は禁止されません。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第7条(アップロードされたコンテンツの取扱い)">
-        <LegalList
-          items={[
-            "アップロードされたファイルに関する権利および責任は、これをアップロードしたユーザーに帰属します。当方はファイルの内容を復号・閲覧できません。",
-            "当方は、共有URLの通報を受け付けています。違法なコンテンツ、または本規約に違反すると合理的に判断されるコンテンツについては、当方の裁量により、事前の通知なく該当する共有の一時停止または削除を行うことがあります。判断は共有URL単位で行われ、ファイルの内容そのものを確認して行うものではありません。",
-            <>
-              著作権等の権利者本人またはその代理人からの申し立ては、
-              <LegalLink href="/report/rights">専用フォーム</LegalLink>
-              で受け付けます。
-            </>,
-          ]}
-        />
-      </LegalSection>
-
-      <LegalSection heading="第8条(サービスの変更・中断・終了)">
-        <LegalParagraph>
-          当方は、ユーザーへの事前の通知なく、本サービスの内容の変更、提供の一時的な中断、または提供の終了を行うことができます。これによりユーザーまたは第三者に生じた損害について、当方は本規約に定める範囲を超えて責任を負いません。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第9条(免責事項)">
-        <LegalList
-          items={[
-            "本サービスは現状有姿で提供され、当方は本サービスの完全性・正確性・有用性・特定目的への適合性・可用性・中断や不具合がないことを保証しません。",
-            "当方は、非営利の方針で本サービスを運営しており、サーバー費用等の実費を賄うことを目的として有料プランを提供しています。",
-            "パスワード・リカバリーコード・共有URL(復号鍵を含む)の紛失、保存期間の経過による自動削除、通信環境その他ユーザー側の事情によるデータの消失・復元不能について、当方は責任を負いません。",
-            "当方の故意または重過失による場合を除き、本サービスに関して当方がユーザーに対して負う損害賠償責任は、現実に生じた通常かつ直接の損害に限られ、かつ、有料プランについては、当該損害が発生した時点からさかのぼって1か月間に当該ユーザーが当方へ支払った料金の額を上限とします。",
-            "ユーザーが事業者であり、事業のために本サービスを利用する場合には、前号にかかわらず、当方の故意または重過失による場合を除き、当方は損害賠償責任を負いません。",
-            "ユーザー間またはユーザーと第三者との間で生じた紛争については、当該ユーザーの責任と費用で解決するものとします。",
-          ]}
-        />
-      </LegalSection>
-
-      <LegalSection heading="第10条(知的財産権)">
-        <LegalParagraph>
-          本サービスに関する著作権その他の知的財産権は、当方または正当な権利者に帰属します。本サービスのソースコードの利用条件は、公開されているリポジトリのライセンスに従います。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第11条(規約の変更)">
-        <LegalParagraph>
-          当方は、必要と判断した場合、本規約を変更することができます。変更後の本規約は、本ページに掲載した時点から効力を生じます。重要な変更を行う場合は、本サービス上で相当な方法により周知します。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第12条(準拠法・管轄)">
-        <LegalParagraph>
-          本規約の準拠法は日本法とします。本サービスまたは本規約に関して当方とユーザーとの間に生じた紛争については、日本の裁判所を第一審の専属的合意管轄裁判所とします。
-        </LegalParagraph>
-      </LegalSection>
-
-      <LegalSection heading="第13条(お問い合わせ)">
-        <LegalParagraph>
-          本規約に関するお問い合わせは、
-          <LegalLink href={OPERATOR.contactFormPath}>お問い合わせフォーム</LegalLink>
-          、またはメールアドレス{" "}
-          <LegalLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</LegalLink>
-          {" "}までご連絡ください。
+          本規約に関するお問い合わせは、<LegalLink href={`https://anzdrop.com${OPERATOR.contactFormPath}`}>お問い合わせフォーム</LegalLink>または<LegalLink href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</LegalLink>にて受け付けます。
         </LegalParagraph>
       </LegalSection>
     </LegalLayout>

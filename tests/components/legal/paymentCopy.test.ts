@@ -26,7 +26,7 @@ describe("公開ページの決済表記", () => {
     it(`${name}に準備中のビットコイン決済を表示せず、既存の購入案内を保つ`, () => {
       const markup = renderToStaticMarkup(page);
       expect(markup).not.toMatch(/ビットコイン|bitcoin|opennode/i);
-      expect(markup).toMatch(name === "料金表" ? /Standard|Premium/ : /カード|Stripe/);
+      expect(markup).toMatch(name === "料金表" ? /Standard|Premium/ : name === "利用規約" ? /月額契約|自動的に更新/ : /カード|Stripe/);
     });
   }
 });
