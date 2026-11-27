@@ -52,6 +52,17 @@ afterEach(async () => {
 });
 
 describe("UploadShareResult", () => {
+  it("10月5日の見出し・共有アイコン・コピーの構成を表示する", async () => {
+    await render({});
+    const heading = [...container.querySelectorAll('[role="status"]')].find(element => element.textContent === "共有リンクを発行しました")!;
+    const line = container.querySelector('[aria-label="LINEで共有"]')!;
+    const copy = [...container.querySelectorAll("button")].find(element => element.textContent === "URLをコピー")!;
+    expect(container.querySelector("input")).toBeNull();
+    expect(heading.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(line.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(copy.parentElement).toBe(heading.parentElement);
+  });
+
   it("コピー失敗時にも共有URLを選択して取得できる", async () => {
     await render({ copyState: "failed" });
     const input = container.querySelector("input")!;

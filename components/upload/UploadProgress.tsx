@@ -1,3 +1,4 @@
+import { UPLOAD_PANEL_HEIGHT } from "./uploadPanel";
 import Spinner from "@/components/brand/Spinner";
 
 type UploadProgressProps = {
@@ -7,7 +8,7 @@ type UploadProgressProps = {
 // アップロード中の進捗表示。% とバーの見た目だけを担当する。
 export default function UploadProgress({ progress }: UploadProgressProps) {
   return (
-    <div className="flex h-40 flex-col items-center justify-center gap-3 rounded border-2 border-ink p-6 text-center">
+    <div className={`flex ${UPLOAD_PANEL_HEIGHT} flex-col items-center justify-center gap-3 rounded border-2 border-ink p-6 text-center`}>
       <Spinner className="h-6 w-6 text-brand" />
       <span className="text-xs font-bold text-ink/60">
         アップロード中... {progress}%

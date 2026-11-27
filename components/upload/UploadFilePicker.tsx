@@ -1,3 +1,4 @@
+import { UPLOAD_PANEL_HEIGHT } from "./uploadPanel";
 import { formatBytes } from "@/lib/format";
 import type { PendingFile } from "@/lib/upload/dragDropFiles";
 
@@ -18,8 +19,8 @@ export default function UploadFilePicker({
       htmlFor={fileInputId}
       className={
         files.length === 0
-          ? "flex h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-6 text-center transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand"
-          : "anz-scroll block h-40 cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand"
+          ? `flex ${UPLOAD_PANEL_HEIGHT} cursor-pointer flex-col items-center justify-center gap-1 rounded border-2 border-ink p-6 text-center transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand`
+          : `anz-scroll block ${UPLOAD_PANEL_HEIGHT} cursor-pointer overflow-y-auto rounded border-2 border-ink p-2 transition-colors hover:bg-ink/[0.03] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-brand`
       }
     >
       {files.length === 0 ? (

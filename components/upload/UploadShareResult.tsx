@@ -70,18 +70,18 @@ export default function UploadShareResult({
   }, [isQrOpen]);
 
   return (
-    <div className="anz-scroll relative flex min-h-44 flex-col items-center justify-center gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter">
+    <div className={`anz-scroll relative flex h-40 flex-col items-center ${copyState === "failed" ? "justify-start [&>*]:shrink-0" : "justify-center"} gap-3 overflow-y-auto rounded border-2 border-brand p-6 text-center anz-drop-enter`}>
       <button
         onClick={onReset}
         aria-label="閉じる"
         title="閉じる"
-        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/60 transition-colors hover:bg-ink/[0.06] hover:text-ink"
+        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-ink/40 transition-colors hover:bg-ink/[0.06] hover:text-ink"
       >
         <XIcon className="h-3.5 w-3.5" />
       </button>
 
-      <p role="status" className="text-xs font-bold text-ink/60">
-        アップロード完了
+      <p role="status" className="text-xs font-bold text-ink/50">
+        共有リンクを発行しました
       </p>
 
       <div className="flex items-center gap-3">
@@ -113,17 +113,15 @@ export default function UploadShareResult({
         </button>
       </div>
 
-      <label className="block w-full text-left text-xs font-bold text-ink/60">
-        共有URL
-        <input
-          type="text"
-          readOnly
-          value={shareUrl}
-          onFocus={(event) => event.currentTarget.select()}
-          className="mt-1 min-h-11 w-full rounded border border-ink/20 bg-paper px-2 text-sm font-normal text-ink"
-        />
-      </label>
-      {copyState === "failed" && <p role="alert" className="text-xs text-brand">共有URLを選択して、手動でコピーしてください。</p>}
+      {copyState === "failed" && (
+        <label className="block w-full text-left text-xs font-bold text-ink/60">
+          共有URL
+          <input type="text" readOnly value={shareUrl}
+            onFocus={(event) => event.currentTarget.select()}
+            className="mt-1 min-h-11 w-full rounded border border-ink/20 bg-paper px-2 text-sm font-normal text-ink" />
+          <span role="alert">共有URLを選択して、手動でコピーしてください。</span>
+        </label>
+      )}
       <span role="status" className="sr-only">{copyState === "copied" ? "共有URLをコピーしました" : ""}</span>
 
       {isQrOpen && <Suspense fallback={null}>
@@ -136,7 +134,7 @@ export default function UploadShareResult({
 
       <button
         onClick={onCopy}
-        className="min-h-11 rounded bg-ink px-5 py-2.5 text-sm font-bold text-paper transition-colors hover:bg-ink/90"
+        className="rounded bg-ink px-5 py-1.5 text-sm font-bold text-paper transition-colors hover:bg-ink/90"
       >
         {copyState === "copied"
           ? "コピーしました"
