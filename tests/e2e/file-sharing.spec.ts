@@ -109,7 +109,7 @@ async function upload(page: Page, files: Fixture[], protectedShare = false): Pro
 }
 
 async function copyShareUrl(page: Page, protectedShare = false): Promise<string> {
-  await expect(page.getByRole("status").filter({ hasText: /^アップロード完了$/ })).toBeVisible({ timeout: transferWaitMs });
+  await expect(page.getByRole("status").filter({ hasText: /^共有リンクを発行しました$/ })).toBeVisible({ timeout: transferWaitMs });
   await expect(page.getByRole("button", { name: "URLをコピー", exact: true })).toBeVisible({ timeout: transferWaitMs });
   await page.getByRole("button", { name: "URLをコピー", exact: true }).click();
   const url = await page.evaluate(() => (window as unknown as { sharingTestState: BrowserState }).sharingTestState.copied);
@@ -497,7 +497,7 @@ test.describe("file sharing", () => {
           await selectFiles(page, files);
           uploadMetrics = await measure(page, async () => {
             await page.getByRole("button", { name: "アップロードする", exact: true }).click();
-            await expect(page.getByRole("status").filter({ hasText: /^アップロード完了$/ })).toBeVisible({ timeout: 900_000 });
+            await expect(page.getByRole("status").filter({ hasText: /^共有リンクを発行しました$/ })).toBeVisible({ timeout: 900_000 });
           });
           const url = await copyShareUrl(page);
           receiver = await createReceiver(browser);
